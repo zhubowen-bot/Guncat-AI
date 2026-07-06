@@ -1,0 +1,1624 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Guncat AI - 官方应用</title>
+
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- Marked.js for Markdown rendering -->
+  <script src="https://cdn.jsdelivr.net/npm/marked@11/marked.min.js"></script>
+
+  <!-- Highlight.js for code syntax highlighting -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@highlightjs/cdn-assets@11.9.0/styles/atom-one-dark.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/@highlightjs/cdn-assets@11.9.0/highlight.min.js"></script>
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    img, video { max-width: 100%; height: auto; display: block; }
+    body { overflow-wrap: break-word; }
+
+    /* Custom scrollbar */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: hsl(222 15% 25%); border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: hsl(222 15% 35%); }
+
+    /* Typing indicator animation */
+    @keyframes typing-dot {
+      0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
+      30% { transform: translateY(-6px); opacity: 1; }
+    }
+    .typing-dot { animation: typing-dot 1.4s infinite ease-in-out; }
+    .typing-dot:nth-child(2) { animation-delay: 0.2s; }
+    .typing-dot:nth-child(3) { animation-delay: 0.4s; }
+
+    /* Fade in animation */
+    @keyframes fadeInUp {
+      from { opacity: 0; transform: translateY(12px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .msg-enter { animation: fadeInUp 0.3s ease-out; }
+    .fade-in { animation: fadeInUp 0.5s ease-out; }
+
+    /* Pulse glow for streaming indicator */
+    @keyframes pulse-glow {
+      0%, 100% { box-shadow: 0 0 0 0 hsla(195, 85%, 52%, 0.4); }
+      50% { box-shadow: 0 0 0 6px hsla(195, 85%, 52%, 0); }
+    }
+    .streaming-indicator {
+      animation: pulse-glow 2s infinite;
+    }
+
+    /* Slide animations */
+    @keyframes slideInLeft {
+      from { transform: translateX(-100%); }
+      to { transform: translateX(0); }
+    }
+    @keyframes slideOutLeft {
+      from { transform: translateX(0); }
+      to { transform: translateX(-100%); }
+    }
+    .sidebar-open { animation: slideInLeft 0.25s ease-out forwards; }
+    .sidebar-close { animation: slideOutLeft 0.25s ease-in forwards; }
+
+    /* Shimmer effect */
+    @keyframes shimmer {
+      0% { background-position: -200% 0; }
+      100% { background-position: 200% 0; }
+    }
+    .shimmer {
+      background: linear-gradient(90deg, hsl(222 20% 14%) 25%, hsl(222 20% 20%) 50%, hsl(222 20% 14%) 75%);
+      background-size: 200% 100%;
+      animation: shimmer 1.5s infinite;
+    }
+
+    /* Markdown content styling */
+    .msg-content h1 { font-size: 1.5rem; font-weight: 700; margin: 1rem 0 0.5rem; color: hsl(220 15% 92%); }
+    .msg-content h2 { font-size: 1.25rem; font-weight: 600; margin: 0.875rem 0 0.5rem; color: hsl(220 15% 92%); }
+    .msg-content h3 { font-size: 1.1rem; font-weight: 600; margin: 0.75rem 0 0.375rem; color: hsl(220 15% 92%); }
+    .msg-content p { margin: 0.5rem 0; line-height: 1.7; }
+    .msg-content ul, .msg-content ol { margin: 0.5rem 0; padding-left: 1.5rem; }
+    .msg-content li { margin: 0.25rem 0; line-height: 1.6; }
+    .msg-content code {
+      background: hsl(222 20% 18%);
+      padding: 0.15em 0.4em;
+      border-radius: 4px;
+      font-size: 0.875em;
+      font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', 'JetBrains Mono', monospace;
+    }
+    .msg-content pre {
+      background: hsl(222 25% 10%);
+      border: 1px solid hsl(222 15% 20%);
+      border-radius: 8px;
+      padding: 1rem;
+      overflow-x: auto;
+      margin: 0.75rem 0;
+    }
+    .msg-content pre code {
+      background: none;
+      padding: 0;
+      font-size: 0.8125rem;
+      line-height: 1.6;
+    }
+    .msg-content blockquote {
+      border-left: 3px solid hsl(195 85% 52%);
+      padding-left: 1rem;
+      margin: 0.75rem 0;
+      color: hsl(220 10% 65%);
+    }
+    .msg-content a {
+      color: hsl(195 85% 60%);
+      text-decoration: underline;
+      text-underline-offset: 2px;
+    }
+    .msg-content table {
+      border-collapse: collapse;
+      margin: 0.75rem 0;
+      width: 100%;
+    }
+    .msg-content th, .msg-content td {
+      border: 1px solid hsl(222 15% 22%);
+      padding: 0.5rem 0.75rem;
+      text-align: left;
+    }
+    .msg-content th {
+      background: hsl(222 20% 16%);
+      font-weight: 600;
+    }
+    .msg-content hr {
+      border: none;
+      border-top: 1px solid hsl(222 15% 22%);
+      margin: 1rem 0;
+    }
+    .msg-content strong { color: hsl(220 15% 92%); font-weight: 600; }
+
+    /* Toast notification */
+    @keyframes toastIn {
+      from { opacity: 0; transform: translateY(-8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .toast { animation: toastIn 0.3s ease-out; }
+    
+    /* Platform card hover effect */
+    .platform-card {
+      transition: all 0.3s ease;
+    }
+    .platform-card:hover {
+      transform: translateY(-2px);
+    }
+  </style>
+
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            'bg':           'hsl(222 20% 6%)',
+            'bg-alt':       'hsl(222 20% 9%)',
+            'surface':      'hsl(222 20% 11%)',
+            'surface-hover':'hsl(222 20% 15%)',
+            'card':         'hsl(222 20% 14%)',
+            'border':       'hsl(222 15% 18%)',
+            'border-light': 'hsl(222 15% 24%)',
+            'text':         'hsl(220 15% 88%)',
+            'text-secondary':'hsl(220 10% 55%)',
+            'text-muted':   'hsl(220 8% 40%)',
+            'primary':      'hsl(195 85% 52%)',
+            'primary-hover':'hsl(195 85% 60%)',
+            'primary-dim':  'hsl(195 50% 25%)',
+            'accent':       'hsl(35 90% 55%)',
+            'accent-hover': 'hsl(35 90% 62%)',
+            'success':      'hsl(150 60% 45%)',
+            'danger':       'hsl(0 70% 55%)',
+            'warning':      'hsl(40 80% 55%)',
+          }
+        }
+      }
+    };
+  </script>
+</head>
+<body class="bg-bg text-text font-sans antialiased h-screen overflow-hidden">
+
+  <!-- ============ APP CONTAINER ============ -->
+  <div id="app" class="flex flex-col h-full">
+
+    <!-- ============ TOP NAVBAR ============ -->
+    <header class="flex-shrink-0 h-14 border-b border-border bg-surface flex items-center justify-between px-4 z-30">
+      <div class="flex items-center gap-3">
+        <!-- Mobile menu toggle -->
+        <button id="sidebarToggle" class="lg:hidden flex items-center justify-center w-8 h-8 rounded-lg hover:bg-surface-hover transition-colors" title="切换侧栏">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="3" x2="9" y2="21"/></svg>
+        </button>
+        <!-- Brand -->
+        <div class="flex items-center gap-2.5">
+          <img src="https://aka.doubaocdn.com/s/1cXM1whslV" alt="Guncat Logo" class="w-8 h-8 rounded-full object-cover ring-1 ring-border-light" />
+          <div class="hidden sm:block">
+            <h1 class="text-sm font-semibold text-text tracking-wide">Guncat AI</h1>
+            <p class="text-[10px] text-text-muted -mt-0.5">官方应用平台</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-1.5">
+        <!-- Home Button -->
+        <button id="homeBtn" class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-text-secondary hover:text-text hover:bg-surface-hover transition-colors" title="返回首页">
+          <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+          <span class="hidden sm:inline">首页</span>
+        </button>
+        <!-- New Chat (only for chat mode) -->
+        <button id="newChatBtn" class="hidden flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-text-secondary hover:text-text hover:bg-surface-hover transition-colors" title="新建对话">
+          <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          <span class="hidden sm:inline">新对话</span>
+        </button>
+        <!-- API Config (only for Zhipu mode) -->
+        <button id="configBtn" class="hidden flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors" title="API 配置">
+          <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+          <span class="hidden sm:inline">API 配置</span>
+        </button>
+        <!-- About -->
+        <button id="aboutBtn" class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-text-secondary hover:text-text hover:bg-surface-hover transition-colors" title="使用说明">
+          <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+          <span class="hidden sm:inline">使用说明</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- ============ MAIN CONTENT ============ -->
+    <div class="flex flex-1 overflow-hidden relative">
+
+      <!-- ============ LEFT SIDEBAR ============ -->
+      <aside id="sidebar" class="fixed lg:relative inset-y-14 lg:inset-y-0 left-0 w-72 lg:w-80 bg-bg-alt border-r border-border flex flex-col z-20 transform -translate-x-full lg:translate-x-0 transition-transform duration-0 lg:transition-none overflow-hidden">
+        <!-- Sidebar Content (dynamically rendered) -->
+        <div id="sidebarContent" class="flex-1 overflow-y-auto">
+          <!-- Rendered by JS -->
+        </div>
+
+        <!-- Sidebar Footer -->
+        <div class="flex-shrink-0 p-4 border-t border-border">
+          <div class="flex items-center gap-2 text-xs text-text-muted">
+            <img src="https://aka.doubaocdn.com/s/1cXM1whslV" alt="Guncat" class="w-5 h-5 rounded-full" />
+            <span>Guncat Agent Platform</span>
+          </div>
+        </div>
+      </aside>
+
+      <!-- Sidebar overlay for mobile -->
+      <div id="sidebarOverlay" class="fixed inset-0 bg-black/50 z-10 hidden lg:hidden" aria-hidden="true"></div>
+
+      <!-- ============ MAIN AREA ============ -->
+      <main id="mainArea" class="flex-1 flex flex-col min-w-0 bg-bg">
+        <!-- Content rendered by JS -->
+      </main>
+    </div>
+  </div>
+
+  <!-- ============ API CONFIG MODAL ============ -->
+  <div id="configModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 hidden">
+    <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" id="configModalOverlay"></div>
+    <div class="relative bg-surface border border-border rounded-2xl w-full max-w-md p-6 shadow-2xl toast">
+      <h3 class="text-lg font-semibold text-text mb-1">API 配置</h3>
+      <p class="text-xs text-text-muted mb-5">
+        配置智谱清言 API 密钥以使用对话功能。
+        <a href="https://chatglm.cn/developersPanel/apiSet" target="_blank" class="text-primary hover:underline">获取 API Key →</a>
+      </p>
+
+      <div class="space-y-4">
+        <div>
+          <label class="block text-xs font-medium text-text-secondary mb-1.5">API Key</label>
+          <input id="apiKeyInput" type="password" placeholder="输入你的 API Key" class="w-full bg-card border border-border rounded-lg px-3 py-2.5 text-sm text-text placeholder:text-text-muted focus:outline-none focus:border-primary/50 transition-colors" />
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-text-secondary mb-1.5">API Secret</label>
+          <input id="apiSecretInput" type="password" placeholder="输入你的 API Secret" class="w-full bg-card border border-border rounded-lg px-3 py-2.5 text-sm text-text placeholder:text-text-muted focus:outline-none focus:border-primary/50 transition-colors" />
+        </div>
+      </div>
+
+      <div class="flex items-center gap-3 mt-6">
+        <button id="configSaveBtn" class="flex-1 bg-primary hover:bg-primary-hover text-bg font-medium text-sm py-2.5 rounded-lg transition-colors">保存配置</button>
+        <button id="configCancelBtn" class="px-4 py-2.5 text-sm text-text-secondary hover:text-text rounded-lg hover:bg-surface-hover transition-colors">取消</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ ABOUT MODAL ============ -->
+  <div id="aboutModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 hidden">
+    <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" id="aboutModalOverlay"></div>
+    <div class="relative bg-surface border border-border rounded-2xl w-full max-w-2xl max-h-[85vh] overflow-y-auto p-6 shadow-2xl toast">
+      <div class="flex items-center justify-between mb-5">
+        <div class="flex items-center gap-3">
+          <img src="https://aka.doubaocdn.com/s/1cXM1whslV" alt="Guncat" class="w-10 h-10 rounded-xl ring-1 ring-border-light" />
+          <div>
+            <h3 class="text-lg font-semibold text-text">Guncat AI 官方应用</h3>
+            <p class="text-xs text-text-muted">使用说明与介绍</p>
+          </div>
+        </div>
+        <button id="aboutCloseBtn" class="w-8 h-8 rounded-lg hover:bg-surface-hover flex items-center justify-center transition-colors">
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+
+      <div class="space-y-5 text-sm text-text-secondary leading-relaxed">
+        <!-- About Guncat -->
+        <section>
+          <h4 class="text-text font-semibold mb-2">关于 Guncat</h4>
+          <p>Guncat 是新一代 AI 智能体框架,包含通用智能体(2.0/2.5系列)与面向准确信息检索的垂直智能体(Srch系列)和文本转换智能体(Cnvt系列)。核心理念:结构化思维链 × 多Agent协同 × 工具生态。</p>
+          <div class="flex gap-3 mt-2 text-xs">
+            <a href="https://guncat-agent.space-z.ai/" target="_blank" class="text-primary hover:underline">官网 →</a>
+            <a href="https://github.com/Guncat-Agent/Guncat-Agent" target="_blank" class="text-primary hover:underline">GitHub →</a>
+          </div>
+        </section>
+
+        <!-- Two Platforms -->
+        <section>
+          <h4 class="text-text font-semibold mb-2">两种访问方式</h4>
+          <div class="space-y-3">
+            <div class="bg-card border border-border rounded-xl p-4">
+              <div class="flex items-center gap-2 mb-2">
+                <span class="text-lg">🔬</span>
+                <span class="text-sm font-semibold text-text">智谱智能体平台</span>
+                <span class="text-[10px] text-primary bg-primary-dim px-1.5 py-0.5 rounded">本地运行</span>
+              </div>
+              <p class="text-xs text-text-secondary">需要配置API Key和Secret,可本地运行,支持流式对话,对话历史本地保存。适合需要频繁使用、自定义配置的用户。</p>
+            </div>
+            <div class="bg-card border border-border rounded-xl p-4">
+              <div class="flex items-center gap-2 mb-2">
+                <span class="text-lg">🌐</span>
+                <span class="text-sm font-semibold text-text">元器智能体平台</span>
+                <span class="text-[10px] text-accent bg-accent/20 px-1.5 py-0.5 rounded">在线访问</span>
+              </div>
+              <p class="text-xs text-text-secondary">点击即用,无需配置,在线网页访问。适合快速体验、临时使用的用户。</p>
+            </div>
+          </div>
+        </section>
+
+        <!-- How to use -->
+        <section>
+          <h4 class="text-text font-semibold mb-2">使用步骤</h4>
+          <ol class="list-decimal pl-5 space-y-1.5">
+            <li>在首页选择访问平台(智谱或元器)</li>
+            <li>如选择智谱平台:点击右上角"API 配置",输入API Key和Secret</li>
+            <li>选择要使用的Guncat智能体版本</li>
+            <li>开始对话(智谱平台支持本地对话,元器平台跳转在线网页)</li>
+          </ol>
+        </section>
+
+        <!-- Version Introduction -->
+        <section>
+          <h4 class="text-text font-semibold mb-3">智能体版本介绍</h4>
+          <div class="space-y-2">
+            <div class="bg-card border border-border rounded-lg p-3">
+              <div class="flex items-center gap-2 mb-1">
+                <span class="text-base">⚡</span>
+                <span class="text-sm font-medium text-text">Guncat 2.0-flash / 2.5-lite</span>
+              </div>
+              <p class="text-xs text-text-muted">极速响应版本,快速完成日常问答和工具调用任务。2.5-lite比2.0-flash速度更快,稳定性更强。</p>
+            </div>
+            <div class="bg-card border border-border rounded-lg p-3">
+              <div class="flex items-center gap-2 mb-1">
+                <span class="text-base">🧠</span>
+                <span class="text-sm font-medium text-text">Guncat 2.5-lite-thinking / 2.5-max</span>
+              </div>
+              <p class="text-xs text-text-muted">深度思考版本,采用结构化思维链(Sequential Thinking),适合复杂推理和多步骤任务。2.5-max是最强版本。</p>
+            </div>
+            <div class="bg-card border border-border rounded-lg p-3">
+              <div class="flex items-center gap-2 mb-1">
+                <span class="text-base">🔍</span>
+                <span class="text-sm font-medium text-text">Guncat Srch-Sift</span>
+              </div>
+              <p class="text-xs text-text-muted">AI信息筛滤检索专家,采用九步深度搜索法,从AI污染信息中筛选官方一手信息,适合时效性强和幻觉率高的信息查询。</p>
+            </div>
+            <div class="bg-card border border-border rounded-lg p-3">
+              <div class="flex items-center gap-2 mb-1">
+                <span class="text-base">📊</span>
+                <span class="text-sm font-medium text-text">Guncat Srch-Research</span>
+              </div>
+              <p class="text-xs text-text-muted">多轮验证研究专家,强制4-6轮搜索验证,跨领域检索与交叉验证,输出结构化研究报告。</p>
+            </div>
+            <div class="bg-card border border-border rounded-lg p-3">
+              <div class="flex items-center gap-2 mb-1">
+                <span class="text-base">⚖️</span>
+                <span class="text-sm font-medium text-text">Guncat Srch-Law</span>
+              </div>
+              <p class="text-xs text-text-muted">国企法律分析专家,强制6轮串行检索,深度分析商事/行政/刑事交叉案件,输出结构化法律意见书。</p>
+            </div>
+            <div class="bg-card border border-border rounded-lg p-3">
+              <div class="flex items-center gap-2 mb-1">
+                <span class="text-base">📝</span>
+                <span class="text-sm font-medium text-text">Guncat Cnvt-Paper</span>
+              </div>
+              <p class="text-xs text-text-muted">论文改写专家,将各类文本(综述、散文、笔记、报告等)转化为符合学术规范的论文。</p>
+            </div>
+          </div>
+        </section>
+
+        <!-- Tips -->
+        <section>
+          <h4 class="text-text font-semibold mb-2">提示</h4>
+          <ul class="list-disc pl-5 space-y-1">
+            <li>智谱平台API Key和Secret仅存储在浏览器本地,不会上传服务器</li>
+            <li>智谱平台支持流式输出,AI回复会实时逐字显示</li>
+            <li>元器平台无需配置,点击即可在线使用</li>
+            <li>建议根据任务类型选择合适的智能体版本</li>
+          </ul>
+        </section>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ TOAST ============ -->
+  <div id="toast" class="fixed bottom-6 left-1/2 -translate-x-1/2 z-[60] hidden">
+    <div class="bg-card border border-border rounded-xl px-4 py-2.5 text-sm text-text shadow-xl toast flex items-center gap-2">
+      <span id="toastMsg"></span>
+    </div>
+  </div>
+
+  <!-- ============ SCRIPTS ============ -->
+  <script>
+  (function() {
+    'use strict';
+
+    // ==================== DATA ====================
+    // 智谱平台智能体
+    const ZHIPU_AGENTS = [
+      {
+        id: '6a268764647639eb9a129fdd',
+        name: 'Guncat 2.5-fast',
+        emoji: '⚡',
+        tag: '极速版',
+        tagColor: 'text-success',
+        desc: '极速响应,高质量输出,适合日常快速问答和工具调用场景。',
+        abilities: ['联网搜索', '图片理解', '文档解析', '代码解释器', '多Agent协同'],
+        platform: 'zhipu'
+      },
+      {
+        id: '6a26a619ca829781c9be5fba',
+        name: 'Guncat 2.5-fast-思考',
+        emoji: '🧠',
+        tag: '深度思考',
+        tagColor: 'text-accent',
+        desc: '搭载Sequential Thinking结构化思维链,开启深度思考模式,追求高质量输出。',
+        abilities: ['联网搜索', '图片理解', '文档解析', '代码解释器', '深度思考', '多Agent协同', '结构化思维链'],
+        platform: 'zhipu'
+      },
+      {
+        id: '6a46925e23705ff1b4526612',
+        name: 'Guncat Cnvt-Paper',
+        emoji: '📝',
+        tag: '论文改写',
+        tagColor: 'text-primary',
+        desc: '论文改写专家,擅长将各种非论文文体转化为符合学术规范的论文。',
+        abilities: ['文体转换', '学术规范', '结构化输出'],
+        platform: 'zhipu'
+      },
+      {
+        id: '6a40b6a970ee24630d0159d2',
+        name: 'Guncat Srch-Sift',
+        emoji: '🔍',
+        tag: '信息筛滤',
+        tagColor: 'text-warning',
+        desc: 'AI信息筛滤检索专家,采用九步深度搜索法,提供准确、可溯源的信息检索。',
+        abilities: ['官方渠道溯源', '实体状态锚定', 'AI内容过滤', '来源权威性分级', '溯源验证报告'],
+        platform: 'zhipu'
+      },
+      {
+        id: '6a3e80e726b12d09e147551e',
+        name: 'Guncat Srch-Research',
+        emoji: '📊',
+        tag: '研究专家',
+        tagColor: 'text-primary',
+        desc: '跨领域信息检索、多源交叉验证、复杂概念辨析。强制4-6轮搜索验证,输出结构化研究报告。',
+        abilities: ['跨领域检索', '多源交叉验证', '概念辨析', '趋势评估', '结构化报告'],
+        platform: 'zhipu'
+      },
+      {
+        id: '6a3ab4386d045e0ee30269bf',
+        name: 'Guncat Srch-Law',
+        emoji: '⚖️',
+        tag: '法律分析',
+        tagColor: 'text-danger',
+        desc: '国有企业法律事务、商事/行政/刑事交叉案件。强制6轮串行检索,输出结构化法律意见书。',
+        abilities: ['商事案件分析', '国资监管合规', '法律概念辨析', '法理分析', '法律意见书'],
+        platform: 'zhipu'
+      }
+    ];
+
+    // 元器平台智能体
+    const YUANQI_AGENTS = [
+      {
+        id: 'yuanqi_2.0-flash',
+        name: 'Guncat 2.0-flash',
+        emoji: '⚡',
+        tag: '极速版',
+        tagColor: 'text-success',
+        desc: '极速响应全能型Agent,速度与质量的完美平衡。',
+        url: 'https://yuanqi.tencent.com/webim/#/chat/TKgILE?appid=2037888361351429632&experience=true',
+        abilities: ['联网搜索', '图片理解', '文档解析', '代码解释器', '多Agent协同'],
+        platform: 'yuanqi'
+      },
+      {
+        id: 'yuanqi_2.5-lite',
+        name: 'Guncat 2.5-lite',
+        emoji: '⚡',
+        tag: '极速版',
+        tagColor: 'text-success',
+        desc: '极速响应,结构化思维链,稳定性大幅提升,速度比2.0-flash更快。',
+        url: 'https://yuanqi.tencent.com/webim/#/chat/Tvprwh?appid=2055608596077149248&experience=true',
+        abilities: ['联网搜索', '图片理解', '文档解析', '结构化思维链'],
+        platform: 'yuanqi'
+      },
+      {
+        id: 'yuanqi_2.5-lite-thinking',
+        name: 'Guncat 2.5-lite-thinking',
+        emoji: '🧠',
+        tag: '深度思考',
+        tagColor: 'text-accent',
+        desc: '结构化思维链+深度思考,质量大幅提升,性价比极高。',
+        url: 'https://yuanqi.tencent.com/webim/#/chat/ZvILBE?appid=2055564062957960256&experience=true',
+        abilities: ['联网搜索', '图片理解', '文档解析', '深度思考', '结构化思维链'],
+        platform: 'yuanqi'
+      },
+      {
+        id: 'yuanqi_2.5-max',
+        name: 'Guncat 2.5-max',
+        emoji: '🧠',
+        tag: '最强版',
+        tagColor: 'text-primary',
+        desc: 'Guncat 2.5系列最强大版本,推理速度和工具调用稳定性质的飞跃。',
+        url: 'https://yuanqi.tencent.com/webim/#/chat/DIaNnY?appid=2055612536249838656&experience=true',
+        abilities: ['联网搜索', '图片理解', '文档解析', '深度思考', '结构化思维链', '多模式切换'],
+        platform: 'yuanqi'
+      },
+      {
+        id: 'yuanqi_srch-law',
+        name: 'Guncat Srch-Law',
+        emoji: '⚖️',
+        tag: '法律分析',
+        tagColor: 'text-danger',
+        desc: '国企法律分析专家,结构化法律意见书。',
+        url: 'https://yuanqi.tencent.com/webim/#/chat/MLJene?appid=2069454002722615552&experience=true',
+        abilities: ['商事案件分析', '国资监管合规', '法律概念辨析', '法理分析', '法律意见书'],
+        platform: 'yuanqi'
+      },
+      {
+        id: 'yuanqi_srch-research',
+        name: 'Guncat Srch-Research',
+        emoji: '📊',
+        tag: '研究专家',
+        tagColor: 'text-primary',
+        desc: '多轮验证研究专家,跨领域检索与交叉验证。',
+        url: 'https://yuanqi.tencent.com/webim/#/chat/yRawBd?appid=2070496574139722816&experience=true',
+        abilities: ['跨领域检索', '多源交叉验证', '概念辨析', '趋势评估', '结构化报告'],
+        platform: 'yuanqi'
+      },
+      {
+        id: 'yuanqi_srch-sift',
+        name: 'Guncat Srch-Sift',
+        emoji: '🔍',
+        tag: '信息筛滤',
+        tagColor: 'text-warning',
+        desc: 'AI信息筛滤检索专家,九步深度搜索法。',
+        url: 'https://yuanqi.tencent.com/webim/#/chat/RYghAU?appid=2070811038332924160&experience=true',
+        abilities: ['官方渠道溯源', '实体状态锚定', 'AI内容过滤', '来源权威性分级', '溯源验证报告'],
+        platform: 'yuanqi'
+      },
+      {
+        id: 'yuanqi_cnvt-paper',
+        name: 'Guncat Cnvt-Paper',
+        emoji: '📝',
+        tag: '论文改写',
+        tagColor: 'text-primary',
+        desc: '论文改写专家,将各类文本转化为学术论文。',
+        url: 'https://yuanqi.tencent.com/webim/#/chat/xKqHqE?appid=2072726818385473792&experience=true',
+        abilities: ['文体转换', '学术规范', '结构化输出'],
+        platform: 'yuanqi'
+      }
+    ];
+
+    // ==================== STATE ====================
+    const STORAGE_KEY_CONFIG = 'guncat_api_config';
+    const STORAGE_KEY_CHATS = 'guncat_chats';
+    const STORAGE_KEY_ACTIVE = 'guncat_active_chat';
+
+    let state = {
+      currentView: 'home', // 'home', 'zhipu', 'yuanqi', 'chat'
+      config: { apiKey: '', apiSecret: '' },
+      accessToken: null,
+      tokenExpiry: 0,
+      chats: [],
+      activeChatId: null,
+      activeAgentId: null,
+      activePlatform: null,
+      isStreaming: false,
+      abortController: null
+    };
+
+    // ==================== DOM REFS ====================
+    const $ = (sel) => document.querySelector(sel);
+    const $$ = (sel) => document.querySelectorAll(sel);
+
+    const dom = {
+      sidebar: $('#sidebar'),
+      sidebarOverlay: $('#sidebarOverlay'),
+      sidebarToggle: $('#sidebarToggle'),
+      sidebarContent: $('#sidebarContent'),
+      mainArea: $('#mainArea'),
+      homeBtn: $('#homeBtn'),
+      newChatBtn: $('#newChatBtn'),
+      configBtn: $('#configBtn'),
+      aboutBtn: $('#aboutBtn'),
+      configModal: $('#configModal'),
+      configModalOverlay: $('#configModalOverlay'),
+      apiKeyInput: $('#apiKeyInput'),
+      apiSecretInput: $('#apiSecretInput'),
+      configSaveBtn: $('#configSaveBtn'),
+      configCancelBtn: $('#configCancelBtn'),
+      aboutModal: $('#aboutModal'),
+      aboutModalOverlay: $('#aboutModalOverlay'),
+      aboutCloseBtn: $('#aboutCloseBtn'),
+      toast: $('#toast'),
+      toastMsg: $('#toastMsg')
+    };
+
+    // ==================== UTILS ====================
+    function genId() {
+      return 'chat_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
+    }
+
+    function formatTime(ts) {
+      const d = new Date(ts);
+      const now = new Date();
+      const isToday = d.toDateString() === now.toDateString();
+      const hh = String(d.getHours()).padStart(2, '0');
+      const mm = String(d.getMinutes()).padStart(2, '0');
+      if (isToday) return hh + ':' + mm;
+      const M = d.getMonth() + 1;
+      const D = d.getDate();
+      return M + '/' + D + ' ' + hh + ':' + mm;
+    }
+
+    function showToast(msg, duration = 2500) {
+      dom.toastMsg.textContent = msg;
+      dom.toast.classList.remove('hidden');
+      clearTimeout(showToast._timer);
+      showToast._timer = setTimeout(() => {
+        dom.toast.classList.add('hidden');
+      }, duration);
+    }
+
+    function escapeHtml(str) {
+      const div = document.createElement('div');
+      div.textContent = str;
+      return div.innerHTML;
+    }
+
+    // ==================== STORAGE ====================
+    function loadConfig() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY_CONFIG);
+        if (raw) {
+          const cfg = JSON.parse(raw);
+          state.config.apiKey = cfg.apiKey || '';
+          state.config.apiSecret = cfg.apiSecret || '';
+        }
+      } catch (e) { /* ignore */ }
+    }
+
+    function saveConfig() {
+      localStorage.setItem(STORAGE_KEY_CONFIG, JSON.stringify(state.config));
+    }
+
+    function loadChats() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY_CHATS);
+        if (raw) state.chats = JSON.parse(raw);
+      } catch (e) { state.chats = []; }
+      try {
+        const activeId = localStorage.getItem(STORAGE_KEY_ACTIVE);
+        if (activeId && state.chats.find(c => c.id === activeId)) {
+          state.activeChatId = activeId;
+        }
+      } catch (e) { /* ignore */ }
+    }
+
+    function saveChats() {
+      localStorage.setItem(STORAGE_KEY_CHATS, JSON.stringify(state.chats));
+    }
+
+    function saveActiveChat() {
+      if (state.activeChatId) {
+        localStorage.setItem(STORAGE_KEY_ACTIVE, state.activeChatId);
+      } else {
+        localStorage.removeItem(STORAGE_KEY_ACTIVE);
+      }
+    }
+
+    // ==================== VIEW MANAGEMENT ====================
+    function showView(viewName) {
+      state.currentView = viewName;
+      updateUI();
+    }
+
+    // ==================== RENDER FUNCTIONS ====================
+    function renderHomeView() {
+      dom.mainArea.innerHTML = `
+        <div class="flex-1 flex items-center justify-center px-4 py-6 fade-in">
+          <div class="max-w-4xl w-full">
+            <!-- Header -->
+            <div class="text-center mb-8">
+              <img src="https://aka.doubaocdn.com/s/1cXM1whslV" alt="Guncat" class="w-20 h-20 rounded-2xl mx-auto mb-4 ring-2 ring-primary/30 shadow-lg shadow-primary/10" />
+              <h2 class="text-3xl font-bold text-text mb-2">Guncat AI</h2>
+              <p class="text-text-secondary text-sm max-w-md mx-auto leading-relaxed">
+                新一代AI智能体框架,提供多种智能体版本和访问方式
+              </p>
+            </div>
+
+            <!-- Platform Selection Cards -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+              <!-- Zhipu Platform -->
+              <button class="platform-card bg-surface border-2 border-border hover:border-primary/40 rounded-2xl p-6 text-left group" onclick="selectPlatform('zhipu')">
+                <div class="flex items-center gap-3 mb-4">
+                  <div class="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center">
+                    <span class="text-2xl">🔬</span>
+                  </div>
+                  <div>
+                    <h3 class="text-lg font-semibold text-text group-hover:text-primary transition-colors">智谱智能体平台</h3>
+                    <p class="text-xs text-text-muted">本地运行 · 需API配置</p>
+                  </div>
+                </div>
+                <p class="text-sm text-text-secondary leading-relaxed">
+                  配置API Key后本地运行,支持流式对话、历史记录保存、多智能体切换。适合频繁使用和自定义配置需求。
+                </p>
+                <div class="flex items-center gap-2 mt-4 text-xs text-primary">
+                  <span>点击进入 →</span>
+                </div>
+              </button>
+
+              <!-- Yuanqi Platform -->
+              <button class="platform-card bg-surface border-2 border-border hover:border-accent/40 rounded-2xl p-6 text-left group" onclick="selectPlatform('yuanqi')">
+                <div class="flex items-center gap-3 mb-4">
+                  <div class="w-12 h-12 rounded-xl bg-accent/10 flex items-center justify-center">
+                    <span class="text-2xl">🌐</span>
+                  </div>
+                  <div>
+                    <h3 class="text-lg font-semibold text-text group-hover:text-accent transition-colors">元器智能体平台</h3>
+                    <p class="text-xs text-text-muted">在线访问 · 无需配置</p>
+                  </div>
+                </div>
+                <p class="text-sm text-text-secondary leading-relaxed">
+                  点击即用,无需配置API,跳转到在线网页直接对话。适合快速体验和临时使用。
+                </p>
+                <div class="flex items-center gap-2 mt-4 text-xs text-accent">
+                  <span>点击进入 →</span>
+                </div>
+              </button>
+            </div>
+
+            <!-- Quick Links -->
+            <div class="bg-surface border border-border rounded-xl p-4">
+              <div class="flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                  <span class="text-lg">📚</span>
+                  <span class="text-sm text-text-secondary">了解更多智能体版本和功能特性</span>
+                </div>
+                <button onclick="openAboutModal()" class="text-xs text-primary hover:underline">查看说明 →</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+      
+      // Hide chat-specific buttons
+      dom.newChatBtn.classList.add('hidden');
+      dom.configBtn.classList.add('hidden');
+    }
+
+    function renderPlatformView(platform) {
+      const agents = platform === 'zhipu' ? ZHIPU_AGENTS : YUANQI_AGENTS;
+      const platformName = platform === 'zhipu' ? '智谱智能体平台' : '元器智能体平台';
+      const platformEmoji = platform === 'zhipu' ? '🔬' : '🌐';
+      const platformColor = platform === 'zhipu' ? 'primary' : 'accent';
+      
+      dom.mainArea.innerHTML = `
+        <div class="flex-1 overflow-y-auto px-4 py-6 fade-in">
+          <div class="max-w-4xl mx-auto">
+            <!-- Header -->
+            <div class="text-center mb-6">
+              <div class="inline-flex items-center gap-2 bg-${platformColor}/10 px-4 py-2 rounded-xl mb-3">
+                <span class="text-xl">${platformEmoji}</span>
+                <span class="text-sm font-semibold text-${platformColor}">${platformName}</span>
+              </div>
+              <p class="text-xs text-text-muted max-w-md mx-auto">
+                ${platform === 'zhipu' ? '选择智能体后需配置API Key才能开始对话' : '点击智能体卡片即可跳转到在线对话页面'}
+              </p>
+            </div>
+
+            <!-- Agent Grid -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              ${agents.map(agent => `
+                <button 
+                  class="platform-card bg-surface border border-border hover:border-${platformColor}/40 rounded-xl p-4 text-left group transition-all"
+                  onclick="selectAgent('${platform}', '${agent.id}')"
+                >
+                  <div class="flex items-center gap-2 mb-2">
+                    <span class="text-xl">${agent.emoji}</span>
+                    <div class="flex-1 min-w-0">
+                      <div class="flex items-center gap-1.5">
+                        <span class="text-sm font-semibold text-text truncate group-hover:text-${platformColor} transition-colors">${escapeHtml(agent.name)}</span>
+                      </div>
+                      <span class="text-[10px] ${agent.tagColor} bg-surface-hover px-1.5 py-0.5 rounded">${agent.tag}</span>
+                    </div>
+                  </div>
+                  <p class="text-xs text-text-secondary mb-2 line-clamp-2">${escapeHtml(agent.desc)}</p>
+                  <div class="flex flex-wrap gap-1">
+                    ${agent.abilities.slice(0, 3).map(ab => `<span class="text-[10px] text-text-muted bg-bg px-1.5 py-0.5 rounded">${escapeHtml(ab)}</span>`).join('')}
+                  </div>
+                  <div class="flex items-center justify-end mt-3 text-xs text-${platformColor}">
+                    <span>${platform === 'zhipu' ? '选择对话 →' : '在线访问 →'}</span>
+                  </div>
+                </button>
+              `).join('')}
+            </div>
+          </div>
+        </div>
+      `;
+      
+      // Show/hide buttons based on platform
+      if (platform === 'zhipu') {
+        dom.configBtn.classList.remove('hidden');
+        dom.newChatBtn.classList.add('hidden');
+      } else {
+        dom.configBtn.classList.add('hidden');
+        dom.newChatBtn.classList.add('hidden');
+      }
+    }
+
+    function renderSidebarHome() {
+      dom.sidebarContent.innerHTML = `
+        <div class="p-4">
+          <h2 class="text-xs font-semibold text-text-muted uppercase tracking-wider mb-3 px-1">快速导航</h2>
+          <div class="space-y-2">
+            <button class="w-full text-left px-3 py-2.5 rounded-lg hover:bg-surface-hover transition-all flex items-center gap-3" onclick="showView('home')">
+              <span class="text-lg">🏠</span>
+              <span class="text-sm text-text">返回首页</span>
+            </button>
+            <button class="w-full text-left px-3 py-2.5 rounded-lg hover:bg-surface-hover transition-all flex items-center gap-3" onclick="selectPlatform('zhipu')">
+              <span class="text-lg">🔬</span>
+              <div class="flex-1 min-w-0">
+                <span class="text-sm text-text">智谱平台</span>
+                <p class="text-[10px] text-text-muted">本地运行</p>
+              </div>
+            </button>
+            <button class="w-full text-left px-3 py-2.5 rounded-lg hover:bg-surface-hover transition-all flex items-center gap-3" onclick="selectPlatform('yuanqi')">
+              <span class="text-lg">🌐</span>
+              <div class="flex-1 min-w-0">
+                <span class="text-sm text-text">元器平台</span>
+                <p class="text-[10px] text-text-muted">在线访问</p>
+              </div>
+            </button>
+          </div>
+        </div>
+        
+        <div class="px-4 py-2">
+          <div class="border-t border-border"></div>
+        </div>
+        
+        <div class="p-4">
+          <h2 class="text-xs font-semibold text-text-muted uppercase tracking-wider mb-3 px-1">智能体系列</h2>
+          <div class="space-y-1 text-xs text-text-secondary">
+            <p class="px-1 py-1"><strong class="text-text">⚡ 2.0/2.5系列:</strong> 通用智能体</p>
+            <p class="px-1 py-1"><strong class="text-text">🔍 Srch系列:</strong> 信息检索专家</p>
+            <p class="px-1 py-1"><strong class="text-text">📝 Cnvt系列:</strong> 文本转换专家</p>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderSidebarPlatform(platform) {
+      const agents = platform === 'zhipu' ? ZHIPU_AGENTS : YUANQI_AGENTS;
+      const platformName = platform === 'zhipu' ? '智谱平台' : '元器平台';
+      
+      dom.sidebarContent.innerHTML = `
+        <div class="flex-shrink-0 p-4 pb-2">
+          <div class="flex items-center justify-between mb-3">
+            <h2 class="text-xs font-semibold text-text-muted uppercase tracking-wider px-1">${platformName}</h2>
+            <button onclick="showView('home')" class="text-xs text-primary hover:underline">返回首页</button>
+          </div>
+          <div class="space-y-1">
+            ${agents.map(agent => `
+              <button
+                class="w-full text-left px-3 py-2 rounded-lg transition-all flex items-center gap-3 hover:bg-surface-hover group"
+                onclick="selectAgent('${platform}', '${agent.id}')"
+              >
+                <span class="text-lg flex-shrink-0">${agent.emoji}</span>
+                <div class="min-w-0 flex-1">
+                  <div class="flex items-center gap-1">
+                    <span class="text-xs font-medium text-text truncate">${escapeHtml(agent.name)}</span>
+                    <span class="text-[10px] ${agent.tagColor} flex-shrink-0">${agent.tag}</span>
+                  </div>
+                </div>
+              </button>
+            `).join('')}
+          </div>
+        </div>
+        
+        ${platform === 'zhipu' ? `
+        <div class="px-4 py-2">
+          <div class="border-t border-border"></div>
+        </div>
+        
+        <div class="flex-1 overflow-y-auto px-4 pb-4">
+          <h2 class="text-xs font-semibold text-text-muted uppercase tracking-wider mb-3 px-1">对话历史</h2>
+          <div id="chatHistory" class="space-y-0.5">
+            <!-- Rendered separately -->
+          </div>
+          <div id="noHistory" class="text-xs text-text-muted text-center py-6 ${state.chats.length > 0 ? 'hidden' : ''}">
+            暂无对话历史
+          </div>
+        </div>
+        ` : ''}
+      `;
+      
+      // Render chat history if zhipu platform
+      if (platform === 'zhipu') {
+        renderChatHistory();
+      }
+    }
+
+    function renderChatHistory() {
+      const chatHistoryEl = dom.sidebarContent.querySelector('#chatHistory');
+      const noHistoryEl = dom.sidebarContent.querySelector('#noHistory');
+      
+      if (!chatHistoryEl) return;
+      
+      const list = state.chats.slice().sort((a, b) => b.createdAt - a.createdAt);
+      
+      if (list.length === 0) {
+        chatHistoryEl.innerHTML = '';
+        if (noHistoryEl) noHistoryEl.classList.remove('hidden');
+        return;
+      }
+      
+      if (noHistoryEl) noHistoryEl.classList.add('hidden');
+      
+      chatHistoryEl.innerHTML = list.map(c => {
+        const isActive = state.activeChatId === c.id;
+        return `
+          <div class="chat-history-item flex items-center gap-2 px-2 py-1.5 rounded-lg transition-all group ${isActive ? 'bg-primary-dim/50' : 'hover:bg-surface-hover'}" data-chat-id="${c.id}">
+            <button class="flex-1 min-w-0 text-left" onclick="switchChat('${c.id}')">
+              <p class="text-xs text-text truncate">${escapeHtml(c.title || '新对话')}</p>
+              <p class="text-[10px] text-text-muted">${escapeHtml(c.agentName)} · ${formatTime(c.createdAt)}</p>
+            </button>
+            <button class="flex-shrink-0 w-6 h-6 rounded-md hover:bg-danger/20 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity" onclick="deleteChat('${c.id}')" title="删除对话">
+              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="hsl(0 70% 55%)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+            </button>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function renderChatView(chat) {
+      const agent = ZHIPU_AGENTS.find(a => a.id === state.activeAgentId);
+      
+      dom.mainArea.innerHTML = `
+        <!-- Messages Container -->
+        <div id="messagesContainer" class="flex-1 overflow-y-auto px-4 py-6">
+          <!-- Messages -->
+          <div id="messagesList" class="max-w-3xl mx-auto space-y-6">
+            ${chat && chat.messages.length > 0 ? renderMessages(chat.messages) : `
+              <div class="flex flex-col items-center justify-center py-16 text-center">
+                <img src="https://aka.doubaocdn.com/s/1cXM1whslV" alt="Guncat" class="w-14 h-14 rounded-xl mb-4 opacity-60" />
+                <p class="text-text-secondary text-sm">开始与 ${escapeHtml(agent?.name || 'Guncat')} 对话吧</p>
+              </div>
+            `}
+          </div>
+          
+          <!-- Streaming placeholder -->
+          <div id="streamingMsg" class="max-w-3xl mx-auto hidden"></div>
+        </div>
+
+        <!-- Input Area -->
+        <div class="flex-shrink-0 border-t border-border bg-surface/80 backdrop-blur-sm">
+          <div class="max-w-3xl mx-auto px-4 py-3">
+            <!-- Current agent indicator -->
+            <div id="currentAgentBadge" class="flex items-center gap-2 mb-2 text-xs text-text-muted">
+              <span>当前智能体：</span>
+              <span id="currentAgentName" class="font-medium text-primary">${escapeHtml(agent?.name || '')}</span>
+            </div>
+            <div class="flex items-end gap-2">
+              <textarea
+                id="messageInput"
+                rows="1"
+                placeholder="输入消息... (Enter 发送，Shift+Enter 换行)"
+                class="flex-1 bg-card border border-border rounded-xl px-4 py-2.5 text-sm text-text placeholder:text-text-muted resize-none focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/30 transition-all"
+                style="min-height: 42px; max-height: 150px;"
+              ></textarea>
+              <button
+                id="sendBtn"
+                class="flex-shrink-0 w-10 h-10 rounded-xl bg-primary hover:bg-primary-hover disabled:opacity-40 disabled:cursor-not-allowed transition-all flex items-center justify-center"
+                title="发送消息"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="hsl(222 20% 6%)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+              </button>
+            </div>
+            <p class="text-[10px] text-text-muted text-center mt-2">
+              Guncat AI 可能产生不准确信息，请谨慎核实重要内容
+            </p>
+          </div>
+        </div>
+      `;
+      
+      // Show chat buttons
+      dom.newChatBtn.classList.remove('hidden');
+      dom.configBtn.classList.remove('hidden');
+      
+      // Bind input events
+      bindChatInputEvents();
+    }
+
+    function renderMessages(messages) {
+      if (!messages || messages.length === 0) return '';
+      return messages.map((m, i) => {
+        const isUser = m.role === 'user';
+        return `
+          <div class="msg-enter flex gap-3 ${isUser ? 'flex-row-reverse' : ''}" style="animation-delay: ${i * 0.05}s">
+            ${isUser ? `
+              <div class="w-8 h-8 rounded-lg bg-primary/20 flex-shrink-0 flex items-center justify-center text-xs font-bold text-primary">U</div>
+            ` : `
+              <img src="https://aka.doubaocdn.com/s/1cXM1whslV" alt="Guncat" class="w-8 h-8 rounded-lg flex-shrink-0 ring-1 ring-border-light object-cover" />
+            `}
+            <div class="min-w-0 flex-1 ${isUser ? 'flex flex-col items-end' : ''}">
+              <div class="flex items-center gap-2 mb-1 ${isUser ? 'flex-row-reverse' : ''}">
+                <span class="text-xs font-medium text-text-secondary">${isUser ? '你' : (state.activeAgentId ? (ZHIPU_AGENTS.find(a => a.id === state.activeAgentId)?.name || 'Guncat') : 'Guncat')}</span>
+                <span class="text-[10px] text-text-muted">${formatTime(m.time)}</span>
+              </div>
+              <div class="${isUser ? 'bg-primary-dim/40 border border-primary/20 rounded-2xl rounded-tr-md' : 'bg-surface border border-border rounded-2xl rounded-tl-md'} px-4 py-3 text-sm leading-relaxed ${isUser ? 'text-text' : 'msg-content'} max-w-[85%]">
+                ${isUser ? escapeHtml(m.content) : renderMarkdown(m.content)}
+              </div>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function renderMarkdown(text) {
+      if (!text) return '';
+      try {
+        let html = marked.parse(text, { breaks: true, gfm: true });
+        return html;
+      } catch (e) {
+        return escapeHtml(text);
+      }
+    }
+
+    function highlightCodeBlocks(container) {
+      if (!container) return;
+      container.querySelectorAll('pre code').forEach(block => {
+        try {
+          hljs.highlightElement(block);
+        } catch (e) { /* ignore */ }
+      });
+    }
+
+    // ==================== ACTION HANDLERS ====================
+    function selectPlatform(platform) {
+      state.activePlatform = platform;
+      showView(platform);
+      if (window.innerWidth < 1024) closeSidebar();
+    }
+
+    function selectAgent(platform, agentId) {
+      if (platform === 'yuanqi') {
+        // For Yuanqi platform, open external URL
+        const agent = YUANQI_AGENTS.find(a => a.id === agentId);
+        if (agent && agent.url) {
+          window.open(agent.url, '_blank');
+          showToast(`正在打开 ${agent.name}...`);
+        }
+      } else if (platform === 'zhipu') {
+        // For Zhipu platform, start local chat
+        state.activeAgentId = agentId;
+        state.activePlatform = 'zhipu';
+        
+        // Check if API configured
+        if (!state.config.apiKey || !state.config.apiSecret) {
+          showToast('请先配置 API Key 和 Secret');
+          openConfigModal();
+          return;
+        }
+        
+        // Create new chat
+        const agent = ZHIPU_AGENTS.find(a => a.id === agentId);
+        const chat = {
+          id: genId(),
+          title: '',
+          agentId: agentId,
+          agentName: agent ? agent.name : '',
+          messages: [],
+          conversationId: null,
+          createdAt: Date.now()
+        };
+        state.chats.push(chat);
+        state.activeChatId = chat.id;
+        saveChats();
+        saveActiveChat();
+        
+        showView('chat');
+        if (window.innerWidth < 1024) closeSidebar();
+      }
+    }
+
+    function switchChat(chatId) {
+      const chat = state.chats.find(c => c.id === chatId);
+      if (!chat) return;
+      state.activeChatId = chatId;
+      state.activeAgentId = chat.agentId;
+      state.activePlatform = 'zhipu';
+      state.currentView = 'chat';
+      saveActiveChat();
+      updateUI();
+      if (window.innerWidth < 1024) closeSidebar();
+    }
+
+    function deleteChat(chatId) {
+      state.chats = state.chats.filter(c => c.id !== chatId);
+      if (state.activeChatId === chatId) {
+        state.activeChatId = null;
+        state.activeAgentId = null;
+        saveActiveChat();
+        showView('zhipu');
+      }
+      saveChats();
+      updateUI();
+      showToast('对话已删除');
+    }
+
+    function newChat() {
+      state.activeChatId = null;
+      state.activeAgentId = null;
+      saveActiveChat();
+      showView('zhipu');
+      updateUI();
+    }
+    
+    // ==================== EXPOSE FUNCTIONS TO WINDOW ====================
+    // 将关键函数暴露到window对象,以便onclick可以调用
+    window.selectPlatform = selectPlatform;
+    window.selectAgent = selectAgent;
+    window.switchChat = switchChat;
+    window.deleteChat = deleteChat;
+    window.newChat = newChat;
+    window.showView = showView;
+    window.openAboutModal = openAboutModal;
+
+    function getActiveChat() {
+      if (!state.activeChatId) return null;
+      return state.chats.find(c => c.id === state.activeChatId) || null;
+    }
+
+    function addMessage(role, content) {
+      const chat = getActiveChat();
+      if (!chat) return null;
+      const msg = { role, content, time: Date.now() };
+      chat.messages.push(msg);
+      if (role === 'user' && !chat.title) {
+        chat.title = content.slice(0, 30) + (content.length > 30 ? '...' : '');
+      }
+      saveChats();
+      return msg;
+    }
+
+    // ==================== API CALL (Same as original index.html) ====================
+    const API_BASE = 'https://chatglm.cn/chatglm/assistant-api/v1';
+
+    async function getAccessToken() {
+      if (state.accessToken && Date.now() < state.tokenExpiry - 300000) {
+        return state.accessToken;
+      }
+
+      const resp = await fetch(API_BASE + '/get_token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          api_key: state.config.apiKey,
+          api_secret: state.config.apiSecret
+        })
+      });
+
+      if (!resp.ok) {
+        const errText = await resp.text();
+        throw new Error('获取 Token 失败 (' + resp.status + '): ' + (errText || resp.statusText));
+      }
+
+      const data = await resp.json();
+      if (!data.result || !data.result.access_token) {
+        throw new Error('Token 响应格式异常: ' + JSON.stringify(data));
+      }
+
+      state.accessToken = data.result.access_token;
+      state.tokenExpiry = Date.now() + (data.result.expires_in ? data.result.expires_in * 1000 : 1800000);
+      return state.accessToken;
+    }
+
+    function parseSSEDelta(parsed) {
+      if (parsed.message && parsed.message.content) {
+        const c = parsed.message.content;
+        if (c.type === 'text' && c.text) {
+          return { text: c.text, conversationId: parsed.conversation_id || null };
+        }
+        if (c.type === 'image' && c.image) {
+          const urls = c.image.map(img => img.image_url || '').filter(Boolean);
+          return { text: urls.length ? '\n![图片](' + urls[0] + ')\n' : '', conversationId: parsed.conversation_id || null };
+        }
+        if (c.type === 'code' && c.text) {
+          return { text: '\n```\n' + c.text + '\n```\n', conversationId: parsed.conversation_id || null };
+        }
+        if (c.type === 'execution_output' && c.text) {
+          return { text: '\n> ' + c.text.replace(/\n/g, '\n> ') + '\n', conversationId: parsed.conversation_id || null };
+        }
+        return { text: '', conversationId: parsed.conversation_id || null };
+      }
+      if (parsed.choices && parsed.choices[0]) {
+        const delta = parsed.choices[0].delta?.content || parsed.choices[0].message?.content || '';
+        return { text: delta, conversationId: parsed.conversation_id || null };
+      }
+      return { text: '', conversationId: parsed.conversation_id || null };
+    }
+
+    async function sendMessage(content) {
+      if (state.isStreaming) return;
+      if (!state.config.apiKey || !state.config.apiSecret) {
+        showToast('请先配置 API Key 和 Secret');
+        openConfigModal();
+        return;
+      }
+      if (!state.activeAgentId) {
+        showToast('请先选择一个智能体');
+        return;
+      }
+
+      if (!state.activeChatId) {
+        const agent = ZHIPU_AGENTS.find(a => a.id === state.activeAgentId);
+        const chat = {
+          id: genId(),
+          title: '',
+          agentId: state.activeAgentId,
+          agentName: agent ? agent.name : '',
+          messages: [],
+          conversationId: null,
+          createdAt: Date.now()
+        };
+        state.chats.push(chat);
+        state.activeChatId = chat.id;
+        saveChats();
+        saveActiveChat();
+      }
+
+      addMessage('user', content);
+      updateUI();
+      scrollToBottom();
+
+      const agentName = ZHIPU_AGENTS.find(a => a.id === state.activeAgentId)?.name || 'Guncat';
+      const streamingMsg = $('#streamingMsg');
+      if (streamingMsg) {
+        streamingMsg.classList.remove('hidden');
+        streamingMsg.innerHTML = `
+          <div class="flex gap-3">
+            <img src="https://aka.doubaocdn.com/s/1cXM1whslV" alt="Guncat" class="w-8 h-8 rounded-lg flex-shrink-0 ring-1 ring-border-light object-cover streaming-indicator" />
+            <div class="min-w-0 flex-1">
+              <div class="flex items-center gap-2 mb-1">
+                <span class="text-xs font-medium text-text-secondary">${escapeHtml(agentName)}</span>
+                <span class="text-[10px] text-text-muted">回复中...</span>
+              </div>
+              <div class="bg-surface border border-border rounded-2xl rounded-tl-md px-4 py-3">
+                <div class="flex items-center gap-1.5">
+                  <span class="typing-dot w-2 h-2 rounded-full bg-primary inline-block"></span>
+                  <span class="typing-dot w-2 h-2 rounded-full bg-primary inline-block"></span>
+                  <span class="typing-dot w-2 h-2 rounded-full bg-primary inline-block"></span>
+                </div>
+              </div>
+            </div>
+          </div>
+        `;
+      }
+
+      state.isStreaming = true;
+      updateSendButton();
+      state.abortController = new AbortController();
+
+      try {
+        const accessToken = await getAccessToken();
+        const chat = getActiveChat();
+        const body = {
+          assistant_id: state.activeAgentId,
+          prompt: content
+        };
+        if (chat && chat.conversationId) {
+          body.conversation_id = chat.conversationId;
+        }
+
+        const response = await fetch(API_BASE + '/stream', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer ' + accessToken
+          },
+          body: JSON.stringify(body),
+          signal: state.abortController.signal
+        });
+
+        if (!response.ok) {
+          const errText = await response.text();
+          throw new Error('API 请求失败 (' + response.status + '): ' + (errText || response.statusText));
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let fullContent = '';
+        let buffer = '';
+        let newConversationId = null;
+
+        if (streamingMsg) {
+          streamingMsg.innerHTML = `
+            <div class="flex gap-3">
+              <img src="https://aka.doubaocdn.com/s/1cXM1whslV" alt="Guncat" class="w-8 h-8 rounded-lg flex-shrink-0 ring-1 ring-border-light object-cover" />
+              <div class="min-w-0 flex-1">
+                <div class="flex items-center gap-2 mb-1">
+                  <span class="text-xs font-medium text-text-secondary">${escapeHtml(agentName)}</span>
+                  <span class="text-[10px] text-text-muted">回复中...</span>
+                </div>
+                <div class="bg-surface border border-border rounded-2xl rounded-tl-md px-4 py-3 text-sm leading-relaxed msg-content">
+                  <span id="streamContent"></span><span id="streamCursor" class="inline-block w-0.5 h-4 bg-primary align-text-bottom animate-pulse"></span>
+                </div>
+              </div>
+            </div>
+          `;
+        }
+
+        const streamContent = $('#streamContent');
+        const streamCursor = $('#streamCursor');
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || '';
+
+          for (const line of lines) {
+            if (!line.startsWith('data: ')) continue;
+            const data = line.slice(6).trim();
+            if (!data || data === '[DONE]') continue;
+
+            try {
+              const parsed = JSON.parse(data);
+              const { text, conversationId } = parseSSEDelta(parsed);
+              if (conversationId) newConversationId = conversationId;
+              if (text) {
+                fullContent = text;
+                if (streamContent) {
+                  streamContent.innerHTML = renderMarkdown(fullContent);
+                  highlightCodeBlocks(streamContent.parentElement);
+                }
+                scrollToBottom();
+              }
+            } catch (e) {
+              // Non-JSON line, skip
+            }
+          }
+        }
+
+        if (streamCursor) streamCursor.remove();
+
+        if (newConversationId && chat) {
+          chat.conversationId = newConversationId;
+          saveChats();
+        }
+
+        if (fullContent) {
+          addMessage('assistant', fullContent);
+        } else {
+          addMessage('assistant', '（无响应内容）');
+        }
+
+      } catch (err) {
+        if (err.name === 'AbortError') {
+          const partialContent = $('#streamContent')?.textContent || '';
+          if (partialContent) {
+            addMessage('assistant', partialContent);
+          }
+        } else {
+          if (streamingMsg) {
+            streamingMsg.innerHTML = `
+              <div class="flex gap-3">
+                <img src="https://aka.doubaocdn.com/s/1cXM1whslV" alt="Guncat" class="w-8 h-8 rounded-lg flex-shrink-0 ring-1 ring-border-light object-cover" />
+                <div class="min-w-0 flex-1">
+                  <div class="flex items-center gap-2 mb-1">
+                    <span class="text-xs font-medium text-text-secondary">系统</span>
+                  </div>
+                  <div class="bg-danger/10 border border-danger/30 rounded-2xl rounded-tl-md px-4 py-3 text-sm text-danger">
+                    ${escapeHtml(err.message || '请求失败，请检查 API 配置和网络连接')}
+                  </div>
+                </div>
+              </div>
+            `;
+          }
+          showToast('请求失败: ' + (err.message || '未知错误'));
+        }
+      } finally {
+        state.isStreaming = false;
+        state.abortController = null;
+        const streamingMsgEl = $('#streamingMsg');
+        if (streamingMsgEl) streamingMsgEl.classList.add('hidden');
+        updateUI();
+        updateSendButton();
+        scrollToBottom();
+      }
+    }
+
+    function cancelStream() {
+      if (state.abortController) {
+        state.abortController.abort();
+        state.abortController = null;
+      }
+    }
+
+    function bindChatInputEvents() {
+      const messageInput = $('#messageInput');
+      const sendBtn = $('#sendBtn');
+      
+      if (!messageInput || !sendBtn) return;
+      
+      sendBtn.addEventListener('click', () => {
+        if (state.isStreaming) {
+          cancelStream();
+          return;
+        }
+        const content = messageInput.value.trim();
+        if (!content) return;
+        messageInput.value = '';
+        messageInput.style.height = 'auto';
+        sendMessage(content);
+      });
+
+      messageInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+          e.preventDefault();
+          if (state.isStreaming) {
+            cancelStream();
+            return;
+          }
+          const content = messageInput.value.trim();
+          if (!content) return;
+          messageInput.value = '';
+          messageInput.style.height = 'auto';
+          sendMessage(content);
+        }
+      });
+
+      messageInput.addEventListener('input', () => {
+        messageInput.style.height = 'auto';
+        messageInput.style.height = Math.min(messageInput.scrollHeight, 150) + 'px';
+      });
+    }
+
+    function updateSendButton() {
+      const sendBtn = $('#sendBtn');
+      if (!sendBtn) return;
+      
+      if (state.isStreaming) {
+        sendBtn.innerHTML = `
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="hsl(222 20% 6%)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+        `;
+        sendBtn.title = '停止生成';
+        sendBtn.classList.add('bg-danger', 'hover:bg-danger/80');
+        sendBtn.classList.remove('bg-primary', 'hover:bg-primary-hover');
+      } else {
+        sendBtn.innerHTML = `
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="hsl(222 20% 6%)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+        `;
+        sendBtn.title = '发送消息';
+        sendBtn.classList.add('bg-primary', 'hover:bg-primary-hover');
+        sendBtn.classList.remove('bg-danger', 'hover:bg-danger/80');
+      }
+    }
+
+    function scrollToBottom() {
+      const messagesContainer = $('#messagesContainer');
+      if (messagesContainer) {
+        requestAnimationFrame(() => {
+          messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        });
+      }
+    }
+
+    // ==================== UI UPDATE ====================
+    function updateUI() {
+      // Update sidebar based on current view
+      if (state.currentView === 'home') {
+        renderSidebarHome();
+        renderHomeView();
+      } else if (state.currentView === 'zhipu' || state.currentView === 'yuanqi') {
+        renderSidebarPlatform(state.currentView);
+        renderPlatformView(state.currentView);
+      } else if (state.currentView === 'chat') {
+        renderSidebarPlatform('zhipu');
+        const chat = getActiveChat();
+        renderChatView(chat);
+      }
+    }
+
+    // ==================== SIDEBAR TOGGLE ====================
+    function openSidebar() {
+      dom.sidebar.classList.remove('-translate-x-full');
+      dom.sidebar.classList.add('sidebar-open');
+      dom.sidebar.classList.remove('sidebar-close');
+      dom.sidebarOverlay.classList.remove('hidden');
+      document.body.style.overflow = 'hidden';
+    }
+
+    function closeSidebar() {
+      dom.sidebar.classList.add('sidebar-close');
+      dom.sidebar.classList.remove('sidebar-open');
+      setTimeout(() => {
+        dom.sidebar.classList.add('-translate-x-full');
+        dom.sidebar.classList.remove('sidebar-close');
+      }, 200);
+      dom.sidebarOverlay.classList.add('hidden');
+      document.body.style.overflow = '';
+    }
+
+    // ==================== MODALS ====================
+    function openConfigModal() {
+      dom.apiKeyInput.value = state.config.apiKey;
+      dom.apiSecretInput.value = state.config.apiSecret;
+      dom.configModal.classList.remove('hidden');
+    }
+
+    function closeConfigModal() {
+      dom.configModal.classList.add('hidden');
+    }
+
+    function openAboutModal() {
+      dom.aboutModal.classList.remove('hidden');
+    }
+
+    function closeAboutModal() {
+      dom.aboutModal.classList.add('hidden');
+    }
+
+    // ==================== EVENT BINDINGS ====================
+    dom.sidebarToggle.addEventListener('click', () => {
+      if (dom.sidebar.classList.contains('-translate-x-full') || dom.sidebar.classList.contains('sidebar-close')) {
+        openSidebar();
+      } else {
+        closeSidebar();
+      }
+    });
+
+    dom.sidebarOverlay.addEventListener('click', closeSidebar);
+
+    dom.homeBtn.addEventListener('click', () => showView('home'));
+
+    dom.newChatBtn.addEventListener('click', newChat);
+
+    dom.configBtn.addEventListener('click', openConfigModal);
+    dom.configModalOverlay.addEventListener('click', closeConfigModal);
+    dom.configCancelBtn.addEventListener('click', closeConfigModal);
+    dom.configSaveBtn.addEventListener('click', () => {
+      state.config.apiKey = dom.apiKeyInput.value.trim();
+      state.config.apiSecret = dom.apiSecretInput.value.trim();
+      saveConfig();
+      closeConfigModal();
+      showToast('API 配置已保存');
+    });
+
+    dom.aboutBtn.addEventListener('click', openAboutModal);
+    dom.aboutModalOverlay.addEventListener('click', closeAboutModal);
+    dom.aboutCloseBtn.addEventListener('click', closeAboutModal);
+
+    // Keyboard shortcuts
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        if (!dom.configModal.classList.contains('hidden')) closeConfigModal();
+        if (!dom.aboutModal.classList.contains('hidden')) closeAboutModal();
+        if (window.innerWidth < 1024 && !dom.sidebar.classList.contains('-translate-x-full')) closeSidebar();
+      }
+    });
+
+    // Resize handler
+    window.addEventListener('resize', () => {
+      if (window.innerWidth >= 1024) {
+        dom.sidebar.classList.remove('-translate-x-full', 'sidebar-open', 'sidebar-close');
+        dom.sidebarOverlay.classList.add('hidden');
+        document.body.style.overflow = '';
+      }
+    });
+
+    // ==================== INIT ====================
+    function init() {
+      loadConfig();
+      loadChats();
+
+      if (state.activeChatId) {
+        const chat = state.chats.find(c => c.id === state.activeChatId);
+        if (chat) {
+          state.activeAgentId = chat.agentId;
+          state.activePlatform = 'zhipu';
+          state.currentView = 'chat';
+        }
+      }
+
+      updateUI();
+    }
+
+    init();
+
+    console.log('🐱 Guncat AI 官方应用已就绪');
+  })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,56 @@
+{
+  "app": {
+    "signingConfigs": [
+      {
+        "name": "default",
+        "type": "HarmonyOS",
+        "material": {
+          "certpath": "C:\\Users\\a1519\\.ohos\\config\\default_GuncatAI-HMOS_pNLX7Cz5K_2STajWI6tFIhoydwNHUmdS43An597HuGs=.cer",
+          "keyAlias": "debugKey",
+          "keyPassword": "0000001B1C2FD52784A5DB8A1F88FC9A550D08EA5705D1E7F131D33E2535E50DD5C42292A9864C1B5F9D7A",
+          "profile": "C:\\Users\\a1519\\.ohos\\config\\default_GuncatAI-HMOS_pNLX7Cz5K_2STajWI6tFIhoydwNHUmdS43An597HuGs=.p7b",
+          "signAlg": "SHA256withECDSA",
+          "storeFile": "C:\\Users\\a1519\\.ohos\\config\\default_GuncatAI-HMOS_pNLX7Cz5K_2STajWI6tFIhoydwNHUmdS43An597HuGs=.p12",
+          "storePassword": "0000001BE6BAB3CCC3B0F96E567545788AFA691D2ED2DFD7EEE18C4C67B9737342C5062EE8F236E669CF40"
+        }
+      }
+    ],
+    "products": [
+      {
+        "name": "default",
+        "signingConfig": "default",
+        "targetSdkVersion": "5.1.0(18)",
+        "compatibleSdkVersion": "5.0.3(15)",
+        "runtimeOS": "HarmonyOS",
+        "buildOption": {
+          "strictMode": {
+            "caseSensitiveCheck": true,
+            "useNormalizedOHMUrl": true
+          }
+        }
+      }
+    ],
+    "buildModeSet": [
+      {
+        "name": "debug",
+      },
+      {
+        "name": "release"
+      }
+    ]
+  },
+  "modules": [
+    {
+      "name": "entry",
+      "srcPath": "./entry",
+      "targets": [
+        {
+          "name": "default",
+          "applyToProducts": [
+            "default"
+          ]
+        }
+      ]
+    }
+  ]
+}
