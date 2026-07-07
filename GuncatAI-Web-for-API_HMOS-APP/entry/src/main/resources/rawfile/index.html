@@ -429,7 +429,7 @@
         <div class="about-logo">
           <img src="cat-avatar(1).png" alt="Guncat">
           <div class="about-name">Guncat AI</div>
-          <div class="about-version">version 3.0.0</div>
+          <div class="about-version">version 3.1.0</div>
         </div>
         <div class="about-links">
           <a href="https://github.com/zhubowen-bot" target="_blank" rel="noopener noreferrer">
@@ -1347,18 +1347,22 @@
       async function streamChat(userText, config) {
         isStreaming = true;
         updateInputButtons();
-        const { el } = appendMessage('assistant', '', true);
-        const bubble = el.querySelector('.bubble');
-        const conv = getCurrentConversation();
-
         const baseUrl = (config.baseUrl || '').replace(/\/$/, '');
         const isVolcano = config.provider === 'volcano';
         const url = baseUrl + (isVolcano ? '/responses' : '/chat/completions');
 
+        // 必须在追加空 assistant 消息前构建请求体，
+        // 否则 buildChatCompletionsBody / buildResponsesBody 内的 conv.messages.slice(0, -1)
+        // 会把刚追加的 user 消息误判为"最后一条"而漏掉，又在末尾再 push 一次，导致 user 消息被发两次。
         const body = isVolcano ? buildResponsesBody(userText, config) : buildChatCompletionsBody(userText, config);
+
+        const { el, msg: assistantMsg } = appendMessage('assistant', '', true);
+        const bubble = el.querySelector('.bubble');
+        const conv = getCurrentConversation();
 
         abortController = new AbortController();
         let fullContent = '';
+        let aborted = false;
         try {
           const res = await fetch(url, {
             method: 'POST',
@@ -1378,13 +1382,27 @@
           if (err.name !== 'AbortError') {
             bubble.innerHTML = `<span style="color:#ef4444">请求出错：${escapeHtml(err.message)}</span>`;
             fullContent = '请求出错：' + err.message;
+          } else {
+            // AbortError 正常情况下被流式函数内部吞掉并返回 partial content；
+            // 这里只是为了兜底（例如 fetch 阶段就失败），仍然标记为已中断。
+            aborted = true;
           }
         } finally {
           flushStreamUpdate();
           el.classList.remove('streaming');
+          // 中断以 abortController.signal.aborted 为准，覆盖流式函数正常返回 + 用户后点终止的边界情况
+          if (abortController && abortController.signal.aborted) aborted = true;
           if (conv) {
-            const last = conv.messages[conv.messages.length - 1];
-            if (last) last.content = fullContent;
+            if (aborted && !fullContent) {
+              // 中断且没有任何内容流出：清掉这条空 assistant 消息
+              const idx = conv.messages.findIndex(m => m === assistantMsg);
+              if (idx !== -1) conv.messages.splice(idx, 1);
+              if (el && el.parentNode) el.parentNode.removeChild(el);
+            } else {
+              // 正常完成 / 出错 / 中断但有部分内容：把内容回填到会话历史
+              const last = conv.messages[conv.messages.length - 1];
+              if (last) last.content = fullContent;
+            }
             saveConversations();
           }
           isStreaming = false;
@@ -1401,7 +1419,9 @@
         const conv = getCurrentConversation();
         if (conv) {
           conv.messages.slice(0, -1).forEach(m => {
-            if (m.role !== 'system') messages.push({ role: m.role, content: m.content });
+            // 跳过空内容消息，避免触发 MissingParameter / 400
+            if (m.role === 'system' || !m.content) return;
+            messages.push({ role: m.role, content: m.content });
           });
         }
         messages.push({ role: 'user', content: userText });
@@ -1431,9 +1451,10 @@
         const conv = getCurrentConversation();
         if (conv) {
           conv.messages.slice(0, -1).forEach(m => {
-            if (m.role === 'user' || m.role === 'assistant') {
-              input.push({ role: m.role, content: m.content });
-            }
+            if (m.role !== 'user' && m.role !== 'assistant') return;
+            // 跳过空内容消息，火山 Responses API 会拒绝并报 MissingParameter
+            if (!m.content) return;
+            input.push({ role: m.role, content: m.content });
           });
         }
         input.push({ role: 'user', content: userText });
@@ -1464,26 +1485,31 @@
         const reader = res.body.getReader();
         const decoder = new TextDecoder('utf-8');
         let buffer = '';
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split('\n');
-          buffer = lines.pop();
-          for (const line of lines) {
-            const trimmed = line.trim();
-            if (!trimmed || trimmed === 'data: [DONE]') continue;
-            if (trimmed.startsWith('data: ')) {
-              try {
-                const data = JSON.parse(trimmed.slice(6));
-                const delta = data.choices?.[0]?.delta?.content;
-                if (delta) {
-                  fullContent += delta;
-                  updateStreamingMessage(el, fullContent);
-                }
-              } catch (e) { /* ignore malformed json */ }
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop();
+            for (const line of lines) {
+              const trimmed = line.trim();
+              if (!trimmed || trimmed === 'data: [DONE]') continue;
+              if (trimmed.startsWith('data: ')) {
+                try {
+                  const data = JSON.parse(trimmed.slice(6));
+                  const delta = data.choices?.[0]?.delta?.content;
+                  if (delta) {
+                    fullContent += delta;
+                    updateStreamingMessage(el, fullContent);
+                  }
+                } catch (e) { /* ignore malformed json */ }
+              }
             }
           }
+        } catch (err) {
+          // 中断时返回已累积的部分内容，保留给用户看；其它错误继续抛出
+          if (err.name !== 'AbortError') throw err;
         }
         return fullContent;
       }
@@ -1493,31 +1519,35 @@
         const reader = res.body.getReader();
         const decoder = new TextDecoder('utf-8');
         let buffer = '';
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split('\n');
-          buffer = lines.pop();
-          for (const line of lines) {
-            const trimmed = line.trim();
-            if (!trimmed || trimmed === 'data: [DONE]') continue;
-            if (trimmed.startsWith('data: ')) {
-              try {
-                const data = JSON.parse(trimmed.slice(6));
-                if (data.type === 'response.output_text.delta' && data.delta) {
-                  fullContent += data.delta;
-                  updateStreamingMessage(el, fullContent);
-                } else if (data.type === 'response.failed') {
-                  const msg = data.response?.error?.message || 'Responses API 返回失败';
-                  throw new Error(msg);
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop();
+            for (const line of lines) {
+              const trimmed = line.trim();
+              if (!trimmed || trimmed === 'data: [DONE]') continue;
+              if (trimmed.startsWith('data: ')) {
+                try {
+                  const data = JSON.parse(trimmed.slice(6));
+                  if (data.type === 'response.output_text.delta' && data.delta) {
+                    fullContent += data.delta;
+                    updateStreamingMessage(el, fullContent);
+                  } else if (data.type === 'response.failed') {
+                    const msg = data.response?.error?.message || 'Responses API 返回失败';
+                    throw new Error(msg);
+                  }
+                } catch (e) {
+                  if (e instanceof Error && e.message.includes('Responses API')) throw e;
+                  /* ignore malformed json */
                 }
-              } catch (e) {
-                if (e instanceof Error && e.message.includes('Responses API')) throw e;
-                /* ignore malformed json */
               }
             }
           }
+        } catch (err) {
+          if (err.name !== 'AbortError') throw err;
         }
         return fullContent;
       }
