@@ -1,1 +1,2 @@
 *.ets linguist-language=TypeScript
+**/*.ets linguist-language=TypeScript
