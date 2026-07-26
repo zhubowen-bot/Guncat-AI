@@ -215,7 +215,7 @@ Built on the **LangChain / LangGraph** ecosystem, Python code-driven, equipped w
 
 ## Deployment Solutions
 
-The same set of agents can be carried by different clients or platforms. Guncat offers 6 deployment forms.
+The same set of agents can be carried by different clients or platforms. Guncat offers 7 deployment forms.
 
 | Deployment Solution     | Applicable Agents                     | Form                    | Description                                                                                                      |
 | ----------------------- | ------------------------------------- | ----------------------- | ---------------------------------------------------------------------------------------------------------------- |
@@ -224,7 +224,8 @@ The same set of agents can be carried by different clients or platforms. Guncat 
 | **Guncat AI-zhipu Web** | Zhipu Qingyan chat client             | Browser H5              | Official chat webpage based on Zhipu's free GLM API, ready out of the box                                        |
 | **Guncat Web for API**  | Universal prompts (platform-agnostic) | Web / Windows / Android | "Configuration-as-Agent" architecture; users select their own OpenAI-compatible API                              |
 | **Coze Service**        | Guncat 2.5-Pro                        | Cloud API               | Python agent deployed as a Coze API service for external capability provision                                    |
-| **HarmonyOS App**       | Web for API universal prompts         | HarmonyOS native app    | Secondary packaging based on Web for API, with HarmonyOS rawfile preloading + resource interception optimization |
+| **HarmonyOS H5 App**    | Web for API universal prompts         | HarmonyOS H5 wrapper    | Secondary packaging based on Web for API, with HarmonyOS rawfile preloading + resource interception optimization |
+| **HarmonyOS Native App**| Universal prompts (platform-agnostic) | HarmonyOS native app    | Pure ArkTS + ArkUI implementation, native SSE streaming, Markdown rendering, multi-agent system                 |
 
 ### 1. Tencent Yuanqi
 
@@ -264,6 +265,17 @@ A pre-built `.bat` file is included; simply click to launch the local HTTP servi
 * Supports the OpenAI-compatible `/v1/chat/completions` interface.
 * Suitable for: Integrating 2.5-Pro as a backend service into other applications.
 
+### 6. HarmonyOS Native App (ArkTS)
+
+* A **pure ArkTS + ArkUI** native HarmonyOS application, **not a WebView wrapper**.
+* Native SSE streaming communication via `@kit.NetworkKit`'s `http.requestInStream`.
+* High-level native Markdown rendering via `@luvi/lv-markdown-in` component (CommonMark + GFM, LaTeX math, code highlighting, Mermaid diagrams).
+* Built-in 8 professional agents managed via `agents.json` + independent Markdown prompt files.
+* Multimodal file parsing via GLM-4.6V-Flash (image, text, Office documents).
+* Native Light/Dark theme system based on HarmonyOS resource framework.
+* MVVM architecture with Preferences API persistence.
+* Suitable for: Users seeking a truly native HarmonyOS AI experience with optimal performance and system integration.
+
 * * *
 
 ## Project Structure
@@ -276,7 +288,8 @@ This project has been fully restructured, with **agent series** and **deployment
 | [Guncat AI Python](./Guncat%20AI%20Python/)                                       | Agent              | Two Python code-driven projects: Guncat 2.5-Pro and Srch-Law V2                              |
 | [Guncat AI Web for API](./Guncat%20AI%20Web%20for%20API/)                         | Deployment         | Universal prompt web client, self-configured API                                             |
 | [Guncat AI Web for API_local-setup](./Guncat%20AI%20Web%20for%20API_local-setup/) | Deployment         | Windows one-click local launch version of the web client                                     |
-| [GuncatAI-Web-for-API_HMOS-APP](./GuncatAI-Web-for-API_HMOS-APP/)                 | Deployment         | HarmonyOS native application                                                                 |
+| [GuncatAI-Web-for-API_HMOS-APP](./GuncatAI-Web-for-API_HMOS-APP/)                 | Deployment         | HarmonyOS H5 wrapper application (based on Web for API)                                      |
+| [GuncatAI_HMOS-APP](./GuncatAI_HMOS-APP/)                                         | Deployment         | HarmonyOS native application (pure ArkTS + ArkUI)                                            |
 
 * * *
 
@@ -288,7 +301,8 @@ This project has been fully restructured, with **agent series** and **deployment
 | Run or further develop Python agents            | [Guncat AI Python](./Guncat%20AI%20Python/)                                       |
 | Use your own API Key in the browser             | [Guncat AI Web for API](./Guncat%20AI%20Web%20for%20API/)                         |
 | Windows one-click local launch                  | [Guncat AI Web for API_local-setup](./Guncat%20AI%20Web%20for%20API_local-setup/) |
-| Install and use on HarmonyOS devices            | [GuncatAI-Web-for-API_HMOS-APP](./GuncatAI-Web-for-API_HMOS-APP/)                 |
+| Install H5 wrapper on HarmonyOS devices         | [GuncatAI-Web-for-API_HMOS-APP](./GuncatAI-Web-for-API_HMOS-APP/)                 |
+| Install native ArkTS app on HarmonyOS devices   | [GuncatAI_HMOS-APP](./GuncatAI_HMOS-APP/)                                         |
 
 * * *
 
@@ -509,7 +523,7 @@ Prompt 驱动，创新搭载 **Sequential Thinking** 结构化思维链与多 Ag
 
 ## 搭载 / 部署方案
 
-同一套智能体可以由不同的客户端或平台承载，Guncat 提供 6 种部署形态。
+同一套智能体可以由不同的客户端或平台承载，Guncat 提供 7 种部署形态。
 
 | 部署方案                   | 适用智能体                 | 形态                      | 说明                                           |
 | ---------------------- | --------------------- | ----------------------- | -------------------------------------------- |
@@ -518,7 +532,8 @@ Prompt 驱动，创新搭载 **Sequential Thinking** 结构化思维链与多 Ag
 | **Guncat AI-zhipu 网页** | 智谱清言对话客户端             | 浏览器 H5                  | 基于智谱免费 GLM API 的官方对话网页，开箱即用                  |
 | **Guncat Web for API** | 通用提示词（不绑定平台）          | Web / Windows / Android | 「配置即智能体」架构，用户自选 OpenAI 兼容 API                |
 | **Coze 服务**            | Guncat 2.5-Pro        | 云端 API                  | Python 智能体部署为 Coze API 服务对外提供能力              |
-| **HarmonyOS 鸿蒙应用**     | Web for API 通用提示词     | 鸿蒙原生 App                | 基于 Web for API 二次包装，鸿蒙端 rawfile 预加载 + 资源拦截优化 |
+| **鸿蒙 H5 应用**           | Web for API 通用提示词     | 鸿蒙 H5 套壳 App            | 基于 Web for API 二次包装，鸿蒙端 rawfile 预加载 + 资源拦截优化 |
+| **鸿蒙原生应用**             | 通用提示词（不绑定平台）          | 鸿蒙原生 App                | 纯 ArkTS + ArkUI 实现，原生 SSE 流式通信、Markdown 渲染、多智能体系统 |
 
 ### 1. 腾讯元器
 
@@ -558,6 +573,17 @@ Prompt 驱动，创新搭载 **Sequential Thinking** 结构化思维链与多 Ag
 - 支持 OpenAI 兼容的 `/v1/chat/completions` 接口。
 - 适合：将 2.5-Pro 作为后端服务集成到其他应用。
 
+### 6. 鸿蒙原生应用（ArkTS）
+
+- **纯 ArkTS + ArkUI** 鸿蒙原生应用，**非 WebView 套壳**。
+- 基于 `@kit.NetworkKit` 的 `http.requestInStream` 实现原生 SSE 流式通信。
+- 使用 `@luvi/lv-markdown-in` 原生组件实现高级 Markdown 渲染（CommonMark + GFM、LaTeX 数学公式、代码高亮、Mermaid 图表）。
+- 内置 8 个专业智能体，通过 `agents.json` + 独立 Markdown 提示词文件管理。
+- 多模态文件解析（图片、文本、Office 文档），基于 GLM-4.6V-Flash。
+- 基于 HarmonyOS 资源框架的原生 Light/Dark 主题系统。
+- MVVM 架构 + Preferences API 持久化。
+- 适合：追求真正鸿蒙原生体验、最优性能与系统集成深度的用户。
+
 ---
 
 ## 项目结构
@@ -570,7 +596,8 @@ Prompt 驱动，创新搭载 **Sequential Thinking** 结构化思维链与多 Ag
 | [Guncat AI Python](./Guncat%20AI%20Python/)                                       | 智能体      | Guncat 2.5-Pro 与 Srch-Law V2 两个 Python 代码驱动项目 |
 | [Guncat AI Web for API](./Guncat%20AI%20Web%20for%20API/)                         | 部署       | 通用提示词 Web 客户端，自主配置 API                        |
 | [Guncat AI Web for API_local-setup](./Guncat%20AI%20Web%20for%20API_local-setup/) | 部署       | Web 客户端的 Windows 一键本地启动版                      |
-| [GuncatAI-Web-for-API_HMOS-APP](./GuncatAI-Web-for-API_HMOS-APP/)                 | 部署       | HarmonyOS 鸿蒙原生应用                              |
+| [GuncatAI-Web-for-API_HMOS-APP](./GuncatAI-Web-for-API_HMOS-APP/)                 | 部署       | 鸿蒙 H5 套壳应用（基于 Web for API）                       |
+| [GuncatAI_HMOS-APP](./GuncatAI_HMOS-APP/)                                         | 部署       | 鸿蒙原生应用（纯 ArkTS + ArkUI）                          |
 
 ---
 
@@ -582,7 +609,8 @@ Prompt 驱动，创新搭载 **Sequential Thinking** 结构化思维链与多 Ag
 | 运行 Python 版智能体或二次开发 | [Guncat AI Python](./Guncat%20AI%20Python/)                                       |
 | 在浏览器中使用自己的 API Key  | [Guncat AI Web for API](./Guncat%20AI%20Web%20for%20API/)                         |
 | Windows 一键本地启动      | [Guncat AI Web for API_local-setup](./Guncat%20AI%20Web%20for%20API_local-setup/) |
-| 在鸿蒙设备上安装使用          | [GuncatAI-Web-for-API_HMOS-APP](./GuncatAI-Web-for-API_HMOS-APP/)                 |
+| 在鸿蒙设备上安装 H5 套壳应用    | [GuncatAI-Web-for-API_HMOS-APP](./GuncatAI-Web-for-API_HMOS-APP/)                 |
+| 在鸿蒙设备上安装原生 ArkTS 应用  | [GuncatAI_HMOS-APP](./GuncatAI_HMOS-APP/)                                         |
 
 ---
 

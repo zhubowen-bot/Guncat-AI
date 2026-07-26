@@ -1,0 +1,69 @@
+// AgentLoader: 读取 rawfile 下的 agents.json 与对应提示词 .md
+import { Agent } from '../model/Agent';
+import { AgentConfigEntry } from '../common/Types';
+import { util } from '@kit.ArkTS';
+
+export class AgentLoader {
+  static async loadAllAgents(context: Context): Promise<Agent[]> {
+    let entries: AgentConfigEntry[] = [];
+    try {
+      entries = await AgentLoader.loadAgentConfig(context);
+    } catch (e) {
+      return [];
+    }
+    let agents: Agent[] = [];
+    for (let i: number = 0; i < entries.length; i++) {
+      let entry: AgentConfigEntry = entries[i];
+      let prompt: string = '';
+      try {
+        prompt = await AgentLoader.loadPromptContent(context, entry.promptFile);
+      } catch (e) {
+        prompt = '';
+      }
+      agents.push(Agent.of(entry.id, entry.name, entry.description, entry.category, entry.promptFile, prompt));
+    }
+    return agents;
+  }
+
+  static async loadAgentConfig(context: Context): Promise<AgentConfigEntry[]> {
+    let raw: Uint8Array = await context.resourceManager.getRawFileContent('agents.json');
+    let decoder: util.TextDecoder = util.TextDecoder.create('utf-8', { ignoreBOM: true });
+    let text: string = decoder.decodeToString(raw, { stream: false });
+    let json: Object = JSON.parse(text);
+    if (typeof json !== 'object' || json === null) {
+      return [];
+    }
+    let agentsField: Object = (json as Record<string, Object>)['agents'];
+    if (!(agentsField instanceof Array)) {
+      return [];
+    }
+    let arr: Object[] = agentsField as Object[];
+    let result: AgentConfigEntry[] = [];
+    for (let i: number = 0; i < arr.length; i++) {
+      let item: Object = arr[i];
+      if (typeof item !== 'object' || item === null) {
+        continue;
+      }
+      let rec: Record<string, Object> = item as Record<string, Object>;
+      let id: string = (rec['id'] as string) ?? '';
+      let name: string = (rec['name'] as string) ?? '';
+      let desc: string = (rec['description'] as string) ?? '';
+      let cat: string = (rec['category'] as string) ?? '';
+      let pf: string = (rec['promptFile'] as string) ?? '';
+      if (id === '') {
+        continue;
+      }
+      result.push({ id: id, name: name, description: desc, category: cat, promptFile: pf });
+    }
+    return result;
+  }
+
+  static async loadPromptContent(context: Context, fileName: string): Promise<string> {
+    if (fileName === '') {
+      return '';
+    }
+    let raw: Uint8Array = await context.resourceManager.getRawFileContent(fileName);
+    let decoder: util.TextDecoder = util.TextDecoder.create('utf-8', { ignoreBOM: true });
+    return decoder.decodeToString(raw, { stream: false });
+  }
+}

@@ -1,0 +1,60 @@
+{
+  "agents": [
+    {
+      "id": "guncat-2.0-flash",
+      "name": "Guncat 2.0-Flash",
+      "description": "Guncat 2.0 通用智能体中的旗舰版本，在速度和质量之间取得平衡",
+      "category": "通用智能体",
+      "promptFile": "Guncat 2.0-flash-main_agent_prompt.md"
+    },
+    {
+      "id": "guncat-2.0-pro",
+      "name": "Guncat 2.0-Pro",
+      "description": "Guncat 2.0 通用智能体中最强大的版本，依赖重复推理获得高质量结果",
+      "category": "通用智能体",
+      "promptFile": "Guncat 2.0-pro-main_agent_prompt .md"
+    },
+    {
+      "id": "guncat-2.5-lite",
+      "name": "Guncat 2.5-Lite",
+      "description": "Guncat 2.5 通用智能体中的旗舰版本，结构化思维链&两档推理模式",
+      "category": "通用智能体",
+      "promptFile": "Guncat 2.5-lite _prompt.md"
+    },
+    {
+      "id": "guncat-2.5-max",
+      "name": "Guncat 2.5-Max",
+      "description": "Guncat 2.5 通用智能体中最强大的版本，结构化思维链&三档推理模式",
+      "category": "通用智能体",
+      "promptFile": "Guncat 2.5-max _prompt.md"
+    },
+    {
+      "id": "guncat-cnvt-paper",
+      "name": "Guncat Cnvt-Paper",
+      "description": "Guncat Cnvt 转换智能体中的论文转换专家，将非论文文体转化为符合学术规范的论文",
+      "category": "改写智能体",
+      "promptFile": "Guncat Cnvt-Paper_prompt.md"
+    },
+    {
+      "id": "guncat-srch-law",
+      "name": "Guncat Srch-Law",
+      "description": "Guncat Srch 检索智能体中的国企法律分析专家，强制多轮检索与结构化法律意见",
+      "category": "检索智能体",
+      "promptFile": "Guncat Srch-Law V1.0-prompt.md"
+    },
+    {
+      "id": "guncat-srch-research",
+      "name": "Guncat Srch-Research",
+      "description": "Guncat Srch 检索智能体中的多轮验证研究专家，跨领域信息检索与多源交叉验证",
+      "category": "检索智能体",
+      "promptFile": "Guncat Srch-Research-prompt.md"
+    },
+    {
+      "id": "guncat-srch-sift",
+      "name": "Guncat Srch-Sift",
+      "description": "Guncat Srch 检索智能体中的AI信息筛选检索专家，官方溯源与 AI 内容过滤",
+      "category": "检索智能体",
+      "promptFile": "Guncat Srch-Sift-prompt.md"
+    }
+  ]
+}

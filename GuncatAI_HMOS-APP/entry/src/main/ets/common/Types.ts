@@ -1,0 +1,99 @@
+// 共享类型定义
+
+// 文件队列项(对齐 web 版本的 pendingFiles)
+export class FileItem {
+  id: string = '';
+  name: string = '';
+  uri: string = '';
+  type: string = '';
+  parsedText: string = '';
+  dataUrl: string = '';
+  thumbnail: string = '';
+  isParsing: boolean = false;
+  error: boolean = false;
+
+  static create(id: string, name: string, uri: string, type: string): FileItem {
+    let item: FileItem = new FileItem();
+    item.id = id;
+    item.name = name;
+    item.uri = uri;
+    item.type = type;
+    item.isParsing = true;
+    item.error = false;
+    return item;
+  }
+
+  // 从已有 item + 解析结果创建新实例
+  static withParsed(source: FileItem, parsedText: string, dataUrl: string): FileItem {
+    let item: FileItem = new FileItem();
+    item.id = source.id;
+    item.name = source.name;
+    item.uri = source.uri;
+    item.type = source.type;
+    item.parsedText = parsedText;
+    item.dataUrl = dataUrl;
+    if (source.type.startsWith('image/')) {
+      item.thumbnail = dataUrl;
+    }
+    item.isParsing = false;
+    item.error = false;
+    return item;
+  }
+
+  // 从已有 item 创建失败状态的新实例
+  static withError(source: FileItem): FileItem {
+    let item: FileItem = new FileItem();
+    item.id = source.id;
+    item.name = source.name;
+    item.uri = source.uri;
+    item.type = source.type;
+    item.isParsing = false;
+    item.error = true;
+    return item;
+  }
+}
+
+// 文件预览数据平面结构(纯字段, 无 @Observed, ChatPage 通过 @State 管理)
+export class PreviewData {
+  // fileId 用于匹配 FileItem, renderKey 用于在状态变化时强制 ForEach 重新创建项
+  fileId: string = '';
+  renderKey: string = '';
+  name: string = '';
+  status: string = 'parsing'; // 'parsing' | 'ready' | 'error'
+  thumbnail: string = '';
+  type: string = '';
+
+  static fromFileItem(f: FileItem): PreviewData {
+    let p: PreviewData = new PreviewData();
+    p.fileId = f.id;
+    p.name = f.name;
+    p.thumbnail = f.thumbnail;
+    p.type = f.type;
+    if (f.isParsing) { p.status = 'parsing'; }
+    else if (f.error) { p.status = 'error'; }
+    else { p.status = 'ready'; }
+    p.renderKey = f.id + '|' + p.status;
+    return p;
+  }
+}
+
+// 流式回调
+export class StreamCallbacks {
+  onToken: (text: string) => void = (_text: string): void => {};
+  onError: (error: string) => void = (_error: string): void => {};
+  onDone: (fullContent: string) => void = (_fullContent: string): void => {};
+}
+
+// 流式取消信号
+export class AbortSignal {
+  aborted: boolean = false;
+}
+
+// 智能体注册表项(来自 agents.json)
+export interface AgentConfigEntry {
+  id: string;
+  name: string;
+  description: string;
+  category: string;
+  promptFile: string;
+}

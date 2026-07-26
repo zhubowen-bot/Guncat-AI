@@ -1,0 +1,20 @@
+{
+  "string": [
+    {
+      "name": "module_desc",
+      "value": "module description"
+    },
+    {
+      "name": "EntryAbility_desc",
+      "value": "description"
+    },
+    {
+      "name": "EntryAbility_label",
+      "value": "GuncatAI"
+    },
+    {
+      "name": "perm_internet_reason",
+      "value": "用于连接 AI 模型与多模态解析服务"
+    }
+  ]
+}

@@ -1,0 +1,510 @@
+import { ChatViewModel } from '../viewmodel/ChatViewModel';
+import { ChatBubbleView } from '../views/ChatBubbleView';
+import { MessageInputView } from '../views/MessageInputView';
+import { ToggleSwitch } from '../components/ToggleSwitch';
+import { AgentDrawerView } from '../views/AgentDrawerView';
+import { ToastView } from '../views/ToastView';
+import { ImageLightbox } from '../views/ImageLightbox';
+import { SettingsPanel } from '../views/SettingsPanel';
+import { AboutPanel } from '../views/AboutPanel';
+import { Message } from '../model/Message';
+import { Agent } from '../model/Agent';
+import { Conversation } from '../model/Conversation';
+import { ApiConfig } from '../model/ApiConfig';
+import { MultimodalConfig } from '../model/MultimodalConfig';
+import { FileItem, PreviewData } from '../common/Types';
+import { generateMessageId } from '../common/Utils';
+import { common } from '@kit.AbilityKit';
+
+@Entry
+@Component
+struct ChatPage {
+  @State private vm: ChatViewModel = new ChatViewModel();
+  @State private inputText: string = '';
+  @State private drawerOpen: boolean = false;
+  @State private settingsOpen: boolean = false;
+  @State private aboutOpen: boolean = false;
+  @State private lightboxVisible: boolean = false;
+  @State private lightboxUrl: string = '';
+  @State private toastMessage: string = '';
+  @State private toastVisible: boolean = false;
+  @State private refreshTick: number = 0;
+  @State private previewItems: PreviewData[] = [];
+  // 消息列表滚动控制器 + 自动置底
+  private messageScroller: Scroller = new Scroller();
+
+  aboutToAppear(): void {
+    let context: common.UIAbilityContext = getContext(this) as common.UIAbilityContext;
+    this.vm.setContext(context);
+    this.vm.setStateChangeListener(() => {
+      this.rebuildPreviewItems();
+      this.refreshTick++;
+      // 每次 VM 状态变化触发置底 (对齐 web 版本自动滚动)
+      setTimeout(() => {
+        this.messageScroller.scrollTo({ xOffset: 0, yOffset: 999999, animation: { duration: 0 } });
+      }, 0);
+    });
+    this.vm.init().then(() => {
+      this.refreshTick++;
+      setTimeout(() => {
+        this.messageScroller.scrollTo({ xOffset: 0, yOffset: 999999, animation: { duration: 0 } });
+      }, 100);
+    });
+    // 流式期间每 100ms 置底一次 (revealedCount 在 ChatBubbleView 内部定时推进,
+    // ChatPage 需要通过此 timer 确保 Scroll 跟随新字符出现)
+    setInterval(() => {
+      if (this.vm.isStreaming) {
+        this.messageScroller.scrollTo({ xOffset: 0, yOffset: 999999, animation: { duration: 0 } });
+      }
+    }, 100);
+  }
+
+  private showToast(msg: string): void {
+    this.toastMessage = msg;
+    this.toastVisible = true;
+    setTimeout(() => {
+      this.toastVisible = false;
+    }, 2200);
+  }
+
+  build() {
+    Stack() {
+      // 主聊天布局
+      Column() {
+        // 顶部 Header
+        this.buildHeader()
+
+        // 消息区
+        if (this.vm.currentMessages.length === 0) {
+          this.buildEmptyState();
+        } else {
+          this.buildMessageList();
+        }
+
+        // 输入区(工具开关行 + 文件预览 + 输入行, 由 ChatPage 直接组合避免 @Prop 深拷)
+        Column() {
+          // 工具开关行
+          Row() {
+            ToggleSwitch({
+              isOn: this.vm.thinkingEnabled,
+              label: '深度思考',
+              onChange: (v: boolean) => {
+                this.vm.setThinkingEnabled(v);
+                this.refreshTick++;
+              }
+            })
+            ToggleSwitch({
+              isOn: this.vm.webSearchEnabled,
+              label: '联网搜索',
+              onChange: (v: boolean) => {
+                this.vm.setWebSearchEnabled(v);
+                this.refreshTick++;
+              }
+            })
+              // 联网搜索胶囊左侧加 8vp 间距, 避免两个胶囊贴在一起
+              .margin({ left: 8 })
+          }
+          .width('100%')
+          .padding({ left: 12, right: 12, top: 6, bottom: 4 })
+          // 文件预览条
+          if (this.vm.pendingFiles.length > 0) {
+            this.buildFilePreview();
+          }
+          // 输入行 + 按钮
+          MessageInputView({
+            inputText: $inputText,
+            isStreaming: this.vm.isStreaming,
+            isParsing: this.vm.isParsing,
+            onSend: (text: string) => {
+              this.handleSend(text);
+            },
+            onStop: () => {
+              this.handleStop();
+            },
+            onFileUpload: () => {
+              this.handleFileUpload();
+            }
+          })
+        }
+        .width('100%')
+        .backgroundColor($r('app.color.surface'))
+        .border({ width: { top: 1 }, color: $r('app.color.border') })
+        // 底部 surface 色延伸到导航条安全区
+        .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM])
+      }
+      .width('100%')
+      .height('100%')
+      .backgroundColor($r('app.color.background'))
+
+      // 抽屉 - 从左侧滑入/滑出
+      if (this.drawerOpen) {
+        AgentDrawerView({
+          agents: this.vm.agents,
+          conversations: this.vm.conversations,
+          currentAgentId: this.vm.currentAgent !== null ? this.vm.currentAgent.id : '',
+          currentConversationId: this.vm.currentConversationId,
+          onSelectAgent: (id: string) => {
+            this.vm.selectAgent(id).then(() => {
+              this.drawerOpen = false;
+              this.refreshTick++;
+            });
+          },
+          onSelectConversation: (id: string) => {
+            this.vm.openConversation(id).then(() => {
+              this.drawerOpen = false;
+              this.refreshTick++;
+            });
+          },
+          onDeleteConversation: (id: string) => {
+            this.vm.deleteConversation(id).then(() => {
+              this.refreshTick++;
+            });
+          },
+          onNewConversation: () => {
+            this.vm.startNewConversation().then(() => {
+              this.drawerOpen = false;
+              this.refreshTick++;
+            });
+          },
+          onAbout: () => {
+            this.aboutOpen = true;
+          },
+          onClose: () => {
+            this.drawerOpen = false;
+          }
+        })
+          .transition(
+            TransitionEffect.asymmetric(
+              TransitionEffect.translate({ x: '-100%' }).animation({ duration: 300, curve: Curve.FastOutSlowIn }),
+              TransitionEffect.translate({ x: '-100%' }).animation({ duration: 250, curve: Curve.FastOutSlowIn })
+            )
+          )
+      }
+
+      // 设置
+      SettingsPanel({
+        visible: this.settingsOpen,
+        initProvider: this.vm.apiConfig.provider,
+        initBaseUrl: this.vm.apiConfig.baseUrl,
+        initApiKey: this.vm.apiConfig.apiKey,
+        initModel: this.vm.apiConfig.model,
+        initTemperature: this.vm.apiConfig.temperature !== null ? this.vm.apiConfig.temperature.toString() : '',
+        initTopP: this.vm.apiConfig.topP !== null ? this.vm.apiConfig.topP.toString() : '',
+        initMaxTokens: this.vm.apiConfig.maxTokens !== null ? this.vm.apiConfig.maxTokens.toString() : '',
+        initExtraBody: this.vm.apiConfig.extraBody,
+        initMmBaseUrl: this.vm.multimodalConfig.baseUrl,
+        initMmApiKey: this.vm.multimodalConfig.apiKey,
+        initMmModel: this.vm.multimodalConfig.model,
+        onClose: () => {
+          this.settingsOpen = false;
+        },
+        onSave: (api: ApiConfig, mm: MultimodalConfig) => {
+          this.vm.saveApiConfig(api);
+          this.vm.saveMultimodalConfig(mm);
+          this.settingsOpen = false;
+          this.showToast('配置已保存');
+          this.refreshTick++;
+        },
+      })
+
+      // 关于
+      AboutPanel({
+        visible: this.aboutOpen,
+        onClose: () => {
+          this.aboutOpen = false;
+        }
+      })
+
+      // 灯箱
+      ImageLightbox({
+        visible: this.lightboxVisible,
+        imageUrl: this.lightboxUrl,
+        onClose: () => {
+          this.lightboxVisible = false;
+          this.lightboxUrl = '';
+        }
+      })
+
+      // Toast
+      if (this.toastVisible) {
+        Stack() {
+          ToastView({ message: this.toastMessage })
+        }
+        .width('100%')
+        .height('100%')
+        .alignContent(Alignment.Top)
+        .padding({ top: 76 })
+      }
+    }
+    .width('100%')
+    .height('100%')
+    .backgroundColor($r('app.color.background'))
+  }
+
+  // 文件预览条(由 ChatPage 直接渲染, 避免子组件 @Prop 深拷不更新)
+  @Builder
+  buildFilePreview() {
+    Column() {
+      Scroll() {
+        Row() {
+          ForEach(this.previewItems, (item: PreviewData) => {
+            this.buildPreviewItem(item)
+          }, (item: PreviewData) => item.renderKey)
+        }
+        .padding({ left: 12, right: 12 })
+      }
+      .width('100%')
+      .scrollable(ScrollDirection.Horizontal)
+      .scrollBar(BarState.Off)
+    }
+    .width('100%')
+    .padding({ top: 4, bottom: 2 })
+  }
+
+  @Builder
+  buildPreviewItem(item: PreviewData) {
+    Row() {
+      if (item.type.startsWith('image/') && item.thumbnail !== '') {
+        Image(item.thumbnail)
+          .width(40)
+          .height(40)
+          .borderRadius(6)
+          .objectFit(ImageFit.Cover)
+          .backgroundColor(Color.White)
+      } else {
+        Text('📄')
+          .fontSize(20)
+          .fontColor($r('app.color.brand'))
+          .width(40)
+          .height(40)
+          .textAlign(TextAlign.Center)
+      }
+      Column() {
+        Text(item.name)
+          .fontSize(12)
+          .fontColor($r('app.color.text_primary'))
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .width('100%')
+        if (item.status === 'parsing') {
+          Text('解析中...')
+            .fontSize(11)
+            .fontColor($r('app.color.text_secondary'))
+            .margin({ top: 2 })
+        } else if (item.status === 'error') {
+          Text('解析失败')
+            .fontSize(11)
+            .fontColor('#DC2626')
+            .margin({ top: 2 })
+        } else {
+          Text('已就绪')
+            .fontSize(11)
+            .fontColor('#16A34A')
+            .margin({ top: 2 })
+        }
+      }
+      .layoutWeight(1)
+      .margin({ left: 8 })
+      .alignItems(HorizontalAlign.Start)
+      if (item.status !== 'parsing') {
+        Text('✕')
+          .fontSize(14)
+          .fontColor($r('app.color.text_secondary'))
+          .padding({ left: 6, right: 2, top: 2, bottom: 2 })
+          .onClick(() => {
+            this.vm.removePendingFile(item.fileId);
+            // rebuildPreviewItems 已由 VM 的 onStateChange 自动调用
+          })
+      }
+    }
+    .padding({ left: 8, right: 6, top: 6, bottom: 6 })
+    .backgroundColor(item.status === 'error' ? '#FEE2E2' : $r('app.color.brand_light'))
+    .borderRadius(12)
+    .margin({ right: 8 })
+    .constraintSize({ maxWidth: 240 })
+  }
+
+  @Builder
+  buildHeader() {
+    Row() {
+      // 菜单
+      Button() {
+        Text('☰')
+          .fontSize(22)
+          .fontColor($r('app.color.text_secondary'))
+      }
+      .width(40)
+      .height(40)
+      .borderRadius(10)
+      .backgroundColor(Color.Transparent)
+      .onClick(() => {
+        this.drawerOpen = true;
+      })
+
+      // 标题 (头像 + 智能体名, 居中显示)
+      Row() {
+        Image($r('app.media.cat_avatar'))
+          .width(28)
+          .height(28)
+          .borderRadius(14)
+          .objectFit(ImageFit.Cover)
+          .backgroundColor($r('app.color.brand_light'))
+        if (this.vm.currentAgent !== null) {
+          Text(this.vm.currentAgent.name)
+            .fontSize(16)
+            .fontWeight(FontWeight.Bold)
+            .fontColor($r('app.color.text_primary'))
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+            .margin({ left: 8 })
+            .constraintSize({ maxWidth: 200 })
+        }
+      }
+      .layoutWeight(1)
+      .justifyContent(FlexAlign.Center)
+      .alignItems(VerticalAlign.Center)
+
+      // 设置
+      Button() {
+        SymbolGlyph($r('sys.symbol.dot_grid_2x2'))
+          .fontSize(20)
+          .fontColor([$r('app.color.text_secondary')])
+      }
+      .width(40)
+      .height(40)
+      .borderRadius(10)
+      .backgroundColor(Color.Transparent)
+      .onClick(() => {
+        this.settingsOpen = true;
+      })
+    }
+    .width('100%')
+    .height(56)
+    .padding({ left: 4, right: 4 })
+    .backgroundColor($r('app.color.surface'))
+    .border({ width: { bottom: 1 }, color: $r('app.color.border') })
+    .alignItems(VerticalAlign.Center)
+  }
+
+  @Builder
+  buildEmptyState() {
+    Column() {
+      Blank()
+      Image($r('app.media.cat_avatar'))
+        .width(80)
+        .height(80)
+        .borderRadius(40)
+        .objectFit(ImageFit.Cover)
+        .backgroundColor($r('app.color.brand_light'))
+        .opacity(0.9)
+        .margin({ bottom: 16 })
+      Text(this.vm.currentAgent !== null ? this.vm.currentAgent.name : 'Guncat AI')
+        .fontSize(20)
+        .fontWeight(FontWeight.Bold)
+        .fontColor($r('app.color.text_primary'))
+        .margin({ bottom: 8 })
+      Text(this.vm.currentAgent !== null ? this.vm.currentAgent.description : '选择一个智能体开始对话')
+        .fontSize(14)
+        .fontColor($r('app.color.text_secondary'))
+        .textAlign(TextAlign.Center)
+        .lineHeight(22)
+        .padding({ left: 24, right: 24 })
+      Blank()
+    }
+    .layoutWeight(1)
+    .width('100%')
+    .justifyContent(FlexAlign.Center)
+  }
+
+  @Builder
+  buildMessageList() {
+    Scroll(this.messageScroller) {
+      Column() {
+        ForEach(this.vm.currentMessages, (msg: Message) => {
+          ChatBubbleView({
+            message: msg,
+            isStreaming: this.vm.isStreaming &&
+              msg === this.vm.currentMessages[this.vm.currentMessages.length - 1] &&
+              msg.role === 'assistant',
+            onCopyPlain: (id: string) => {
+              this.vm.copyMessagePlain(id);
+              this.showToast('已复制');
+            },
+            onCopyMarkdown: (id: string) => {
+              this.vm.copyMessageMarkdown(id);
+              this.showToast('已复制 Markdown');
+            },
+            onRegenerate: (id: string) => {
+              this.vm.regenerateMessage(id);
+              this.refreshTick++;
+            },
+            onImageTap: (url: string) => {
+              this.lightboxUrl = url;
+              this.lightboxVisible = true;
+            }
+          })
+        }, (msg: Message) => msg.id)
+        Blank().height(8)
+      }
+      .width('100%')
+      .padding({ top: 8, bottom: 8 })
+    }
+    .layoutWeight(1)
+    .width('100%')
+    .edgeEffect(EdgeEffect.Spring)
+    .scrollBar(BarState.Off)
+  }
+
+  private handleSend(text: string): void {
+    if (text.trim() === '') {
+      return;
+    }
+    if (this.vm.isStreaming) {
+      return;
+    }
+    if (this.vm.apiConfig.apiKey === '') {
+      this.showToast('请先配置 API Key');
+      this.settingsOpen = true;
+      return;
+    }
+    if (this.vm.currentAgent === null) {
+      this.showToast('请先选择一个智能体');
+      return;
+    }
+    // 注意: inputText 的清空由 MessageInputView 内部 onClick 在确认真正发送后才执行
+    this.vm.sendMessage(text);
+    this.refreshTick++;
+  }
+
+  private handleStop(): void {
+    this.vm.stopStreaming();
+    this.refreshTick++;
+  }
+
+  private async handleFileUpload(): Promise<void> {
+    await this.vm.pickAndParseFiles();
+    this.rebuildPreviewItems();
+    this.refreshTick++;
+  }
+
+  // 从 VM.pendingFiles 重建预览数据(每次状态变更时调用)
+  private rebuildPreviewItems(): void {
+    let items: PreviewData[] = [];
+    let files: FileItem[] = this.vm.pendingFiles;
+    for (let i: number = 0; i < files.length; i++) {
+      items.push(PreviewData.fromFileItem(files[i]));
+    }
+    this.previewItems = items;
+  }
+
+  // 从预览数组中移除已删除的项
+  private removePreviewItem(id: string): void {
+    let remaining: PreviewData[] = [];
+    for (let i: number = 0; i < this.previewItems.length; i++) {
+      if (this.previewItems[i].fileId !== id) {
+        remaining.push(this.previewItems[i]);
+      }
+    }
+    this.previewItems = remaining;
+  }
+}
