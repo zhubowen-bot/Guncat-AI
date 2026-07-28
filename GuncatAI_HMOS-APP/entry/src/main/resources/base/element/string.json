@@ -10,11 +10,15 @@
     },
     {
       "name": "EntryAbility_label",
-      "value": "GuncatAI"
+      "value": "Guncat AI"
     },
     {
       "name": "perm_internet_reason",
       "value": "用于连接 AI 模型与多模态解析服务"
+    },
+    {
+      "name": "perm_microphone_reason",
+      "value": "用于将您的语音转换为聊天输入文字"
     }
   ]
 }

@@ -6,11 +6,13 @@ import { Message } from '../model/Message';
 import { Attachment } from '../model/Attachment';
 import { ApiConfig } from '../model/ApiConfig';
 import { MultimodalConfig } from '../model/MultimodalConfig';
+import { ApiProfile } from '../model/ApiProfile';
 import { FileItem, StreamCallbacks, AbortSignal } from '../common/Types';
 import { AgentLoader } from '../service/AgentLoader';
 import { ChatService } from '../service/ChatService';
 import { FileService, PickedFile } from '../service/FileService';
 import { MultimodalService } from '../service/MultimodalService';
+import { TextReaderService } from '../service/TextReaderService';
 import { StorageManager } from '../data/StorageManager';
 import { Constants } from '../common/Constants';
 import { generateMessageId } from '../common/Utils';
@@ -28,10 +30,13 @@ export class ChatViewModel {
   isStreaming: boolean = false;
   thinkingEnabled: boolean = false;
   webSearchEnabled: boolean = false;
+  autoReadEnabled: boolean = false;
   pendingFiles: FileItem[] = [];
   drawerOpen: boolean = false;
   apiConfig: ApiConfig = ApiConfig.default();
   multimodalConfig: MultimodalConfig = MultimodalConfig.default();
+  apiProfiles: ApiProfile[] = [];
+  currentApiProfileId: string = '';
 
   // 文件解析内部状态
   private fileBuffers: Map<string, ArrayBuffer> = new Map();
@@ -100,14 +105,29 @@ export class ChatViewModel {
     if (this.context === null) {
       return;
     }
-    // 加载设置
-    let cfg: ApiConfig | null = await StorageManager.loadApiConfig(this.context);
-    if (cfg !== null) {
-      this.apiConfig = cfg;
+    // 加载多套 API 配置；旧版单配置会自动迁移为第一套配置。
+    this.apiProfiles = await StorageManager.loadApiProfiles(this.context);
+    if (this.apiProfiles.length === 0) {
+      let cfg: ApiConfig | null = await StorageManager.loadApiConfig(this.context);
+      let legacyApi: ApiConfig = cfg !== null ? cfg : ApiConfig.default();
+      let legacyMm: MultimodalConfig = await StorageManager.loadMultimodalConfig(this.context);
+      this.apiProfiles.push(ApiProfile.fromLegacy('默认配置', legacyApi, legacyMm));
+      await StorageManager.saveApiProfiles(this.context, this.apiProfiles);
     }
-    this.multimodalConfig = await StorageManager.loadMultimodalConfig(this.context);
+    let savedProfileId: string = await StorageManager.loadString(
+      this.context, Constants.LS_KEY_CURRENT_API_PROFILE_ID, '');
+    let selectedProfile: ApiProfile = this.apiProfiles[0];
+    for (let i: number = 0; i < this.apiProfiles.length; i++) {
+      if (this.apiProfiles[i].id === savedProfileId) {
+        selectedProfile = this.apiProfiles[i];
+        break;
+      }
+    }
+    this.applyApiProfile(selectedProfile);
     this.thinkingEnabled = await StorageManager.loadBoolean(this.context, Constants.LS_KEY_THINKING_ENABLED, false);
     this.webSearchEnabled = await StorageManager.loadBoolean(this.context, Constants.LS_KEY_WEB_SEARCH_ENABLED, false);
+    this.autoReadEnabled = await StorageManager.loadBoolean(
+      this.context, Constants.LS_KEY_AUTO_READ_ENABLED, false);
 
     // 加载智能体
     this.agents = await AgentLoader.loadAllAgents(this.context);
@@ -310,18 +330,93 @@ export class ChatViewModel {
     }
   }
 
-  // 设置保存
-  async saveApiConfig(cfg: ApiConfig): Promise<void> {
-    this.apiConfig = cfg;
+  async setAutoReadEnabled(enabled: boolean): Promise<void> {
+    this.autoReadEnabled = enabled;
     if (this.context !== null) {
-      await StorageManager.saveApiConfig(this.context, cfg);
+      await StorageManager.saveBoolean(this.context, Constants.LS_KEY_AUTO_READ_ENABLED, enabled);
+    }
+    if (!enabled) {
+      await TextReaderService.stop();
+    }
+    this.notifyUIChange();
+  }
+
+  get currentApiProfile(): ApiProfile | null {
+    for (let i: number = 0; i < this.apiProfiles.length; i++) {
+      if (this.apiProfiles[i].id === this.currentApiProfileId) {
+        return this.apiProfiles[i];
+      }
+    }
+    return null;
+  }
+
+  get currentApiProfileIndex(): number {
+    for (let i: number = 0; i < this.apiProfiles.length; i++) {
+      if (this.apiProfiles[i].id === this.currentApiProfileId) {
+        return i;
+      }
+    }
+    return 0;
+  }
+
+  async selectApiProfile(profileId: string): Promise<void> {
+    if (this.isStreaming) {
+      return;
+    }
+    for (let i: number = 0; i < this.apiProfiles.length; i++) {
+      if (this.apiProfiles[i].id === profileId) {
+        this.applyApiProfile(this.apiProfiles[i]);
+        if (this.context !== null) {
+          await StorageManager.saveString(
+            this.context, Constants.LS_KEY_CURRENT_API_PROFILE_ID, profileId);
+        }
+        this.notifyUIChange();
+        return;
+      }
     }
   }
 
-  async saveMultimodalConfig(cfg: MultimodalConfig): Promise<void> {
-    this.multimodalConfig = cfg;
+  async addApiProfile(): Promise<void> {
+    let profile: ApiProfile = ApiProfile.create(`新配置 ${this.apiProfiles.length + 1}`);
+    this.apiProfiles.push(profile);
+    this.applyApiProfile(profile);
+    await this.persistApiProfiles();
+    this.notifyUIChange();
+  }
+
+  async saveCurrentApiProfile(
+    name: string,
+    apiConfig: ApiConfig,
+    multimodalConfig: MultimodalConfig
+  ): Promise<void> {
+    let profile: ApiProfile | null = this.currentApiProfile;
+    if (profile === null) {
+      return;
+    }
+    profile.name = name.trim() !== '' ? name.trim() : '未命名配置';
+    profile.apiConfig = apiConfig;
+    profile.multimodalConfig = multimodalConfig;
+    this.applyApiProfile(profile);
+    await this.persistApiProfiles();
+    // 同时保留旧键，便于降级到旧版本应用。
     if (this.context !== null) {
-      await StorageManager.saveMultimodalConfig(this.context, cfg);
+      await StorageManager.saveApiConfig(this.context, apiConfig);
+      await StorageManager.saveMultimodalConfig(this.context, multimodalConfig);
+    }
+    this.notifyUIChange();
+  }
+
+  private applyApiProfile(profile: ApiProfile): void {
+    this.currentApiProfileId = profile.id;
+    this.apiConfig = profile.apiConfig;
+    this.multimodalConfig = profile.multimodalConfig;
+  }
+
+  private async persistApiProfiles(): Promise<void> {
+    if (this.context !== null) {
+      await StorageManager.saveApiProfiles(this.context, this.apiProfiles);
+      await StorageManager.saveString(
+        this.context, Constants.LS_KEY_CURRENT_API_PROFILE_ID, this.currentApiProfileId);
     }
   }
 
@@ -340,8 +435,12 @@ export class ChatViewModel {
     if (this.context === null) {
       return;
     }
-    if (this.multimodalConfig.apiKey === '') {
+    if (this.multimodalConfig.preparseEnabled && this.multimodalConfig.apiKey === '') {
       promptAction.showToast({ message: '请先配置多模态解析 API 密钥', duration: 2000 });
+      return;
+    }
+    if (!this.multimodalConfig.preparseEnabled && this.apiConfig.provider !== 'volcano') {
+      promptAction.showToast({ message: '附件直传目前仅支持火山方舟引擎', duration: 2000 });
       return;
     }
     // 提前 toast, 避免 picker 返回后到文件读取之间的空白期页面无反馈
@@ -398,6 +497,14 @@ export class ChatViewModel {
     }
     let attempts: number = 0;
     let lastErr: Error | null = null;
+    if (!this.multimodalConfig.preparseEnabled) {
+      let dataUrl: string = 'data:' + item.type + ';base64,' + arrayBufferToBase64(buf);
+      let directItems: FileItem[] = [...this.pendingFiles];
+      directItems[index] = FileItem.withParsed(item, '', dataUrl);
+      this.pendingFiles = directItems;
+      this.notifyUIChange();
+      return;
+    }
     while (attempts < Constants.MAX_FILE_PARSE_RETRY) {
       try {
         let result: { content: string; dataUrl: string } = await MultimodalService.parseFile(
@@ -475,13 +582,15 @@ export class ChatViewModel {
       return;
     }
 
-    // 拼接附件文本
-    let ready: FileItem[] = this.pendingFiles.filter((f: FileItem): boolean => f.parsedText !== '' && !f.error);
+    // 可发送附件包含先行解析结果与直传附件；只有前者需要拼接解析文本。
+    let ready: FileItem[] = this.pendingFiles.filter((f: FileItem): boolean =>
+      !f.isParsing && !f.error && (f.parsedText !== '' || f.dataUrl !== ''));
+    let parsedReady: FileItem[] = ready.filter((f: FileItem): boolean => f.parsedText !== '');
     let fullText: string = userText;
-    if (ready.length > 0) {
+    if (parsedReady.length > 0) {
       let parts: string[] = [];
-      for (let i: number = 0; i < ready.length; i++) {
-        parts.push('【文件解析：' + ready[i].name + '】\n' + ready[i].parsedText);
+      for (let i: number = 0; i < parsedReady.length; i++) {
+        parts.push('【文件解析：' + parsedReady[i].name + '】\n' + parsedReady[i].parsedText);
       }
       fullText = parts.join('\n\n') + '\n\n' + userText;
     }
@@ -583,8 +692,46 @@ export class ChatViewModel {
       conv.messages = conv.messages.filter((m: Message): boolean => m !== msg);
     }
     this.persistConversations();
+    if (this.autoReadEnabled && !this.abortSignal.aborted && msg.content !== '') {
+      this.readText(msg.id, msg.content);
+    }
     // 通知 ChatPage isStreaming 等 VM 字段变化 (与流式内容无关, 走 refreshTick)
     this.notifyUIChange();
+  }
+
+  async readMessage(msgId: string): Promise<void> {
+    let conv: Conversation | null = this.currentConversation;
+    if (conv === null) {
+      return;
+    }
+    for (let i: number = 0; i < conv.messages.length; i++) {
+      let msg: Message = conv.messages[i];
+      if (msg.id === msgId && msg.role === 'assistant') {
+        await this.readText(msg.id, msg.content);
+        return;
+      }
+    }
+  }
+
+  async stopReading(): Promise<void> {
+    await TextReaderService.stop();
+  }
+
+  private async readText(id: string, markdown: string): Promise<void> {
+    if (this.context === null) {
+      return;
+    }
+    let plainText: string = stripMarkdown(markdown).trim();
+    if (plainText === '') {
+      return;
+    }
+    try {
+      await TextReaderService.read(this.context, id, plainText);
+    } catch (e) {
+      let err: Error = e as Error;
+      let message: string = err.message !== undefined ? err.message : '设备暂不支持朗读';
+      promptAction.showToast({ message: '朗读失败：' + message, duration: 2500 });
+    }
   }
 
   // 停止流式

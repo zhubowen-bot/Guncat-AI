@@ -12,9 +12,12 @@ import { Agent } from '../model/Agent';
 import { Conversation } from '../model/Conversation';
 import { ApiConfig } from '../model/ApiConfig';
 import { MultimodalConfig } from '../model/MultimodalConfig';
+import { ApiProfile } from '../model/ApiProfile';
 import { FileItem, PreviewData } from '../common/Types';
 import { generateMessageId } from '../common/Utils';
-import { common } from '@kit.AbilityKit';
+import { VoiceInputService } from '../service/VoiceInputService';
+import { abilityAccessCtrl, common, PermissionRequestResult } from '@kit.AbilityKit';
+import { BusinessError } from '@kit.BasicServicesKit';
 
 @Entry
 @Component
@@ -28,10 +31,13 @@ struct ChatPage {
   @State private lightboxUrl: string = '';
   @State private toastMessage: string = '';
   @State private toastVisible: boolean = false;
+  @State private isListening: boolean = false;
   @State private refreshTick: number = 0;
   @State private previewItems: PreviewData[] = [];
   // 消息列表滚动控制器 + 自动置底
   private messageScroller: Scroller = new Scroller();
+  private toastTimer: number = -1;
+  private voiceInputService: VoiceInputService = new VoiceInputService();
 
   aboutToAppear(): void {
     let context: common.UIAbilityContext = getContext(this) as common.UIAbilityContext;
@@ -59,12 +65,25 @@ struct ChatPage {
     }, 100);
   }
 
+  aboutToDisappear(): void {
+    this.vm.stopReading();
+    this.voiceInputService.cancel();
+    if (this.toastTimer !== -1) {
+      clearTimeout(this.toastTimer);
+      this.toastTimer = -1;
+    }
+  }
+
   private showToast(msg: string): void {
+    if (this.toastTimer !== -1) {
+      clearTimeout(this.toastTimer);
+    }
     this.toastMessage = msg;
     this.toastVisible = true;
-    setTimeout(() => {
+    this.toastTimer = setTimeout(() => {
       this.toastVisible = false;
-    }, 2200);
+      this.toastTimer = -1;
+    }, 1000);
   }
 
   build() {
@@ -85,6 +104,7 @@ struct ChatPage {
         Column() {
           // 工具开关行
           Row() {
+            this.buildModelSelector()
             ToggleSwitch({
               isOn: this.vm.thinkingEnabled,
               label: '深度思考',
@@ -115,6 +135,7 @@ struct ChatPage {
             inputText: $inputText,
             isStreaming: this.vm.isStreaming,
             isParsing: this.vm.isParsing,
+            isListening: this.isListening,
             onSend: (text: string) => {
               this.handleSend(text);
             },
@@ -123,6 +144,9 @@ struct ChatPage {
             },
             onFileUpload: () => {
               this.handleFileUpload();
+            },
+            onVoiceInput: () => {
+              this.handleVoiceInput();
             }
           })
         }
@@ -184,6 +208,10 @@ struct ChatPage {
       // 设置
       SettingsPanel({
         visible: this.settingsOpen,
+        initProfileId: this.vm.currentApiProfileId,
+        initProfileName: this.vm.currentApiProfile !== null ? this.vm.currentApiProfile.name : '默认配置',
+        profileNames: this.getApiProfileNames(),
+        selectedProfileIndex: this.vm.currentApiProfileIndex,
         initProvider: this.vm.apiConfig.provider,
         initBaseUrl: this.vm.apiConfig.baseUrl,
         initApiKey: this.vm.apiConfig.apiKey,
@@ -195,15 +223,27 @@ struct ChatPage {
         initMmBaseUrl: this.vm.multimodalConfig.baseUrl,
         initMmApiKey: this.vm.multimodalConfig.apiKey,
         initMmModel: this.vm.multimodalConfig.model,
+        initMmPreparseEnabled: this.vm.multimodalConfig.preparseEnabled,
         onClose: () => {
           this.settingsOpen = false;
         },
-        onSave: (api: ApiConfig, mm: MultimodalConfig) => {
-          this.vm.saveApiConfig(api);
-          this.vm.saveMultimodalConfig(mm);
-          this.settingsOpen = false;
-          this.showToast('配置已保存');
-          this.refreshTick++;
+        onAddProfile: () => {
+          this.vm.addApiProfile().then(() => {
+            this.refreshTick++;
+          });
+        },
+        onSelectProfile: (index: number) => {
+          if (index >= 0 && index < this.vm.apiProfiles.length) {
+            this.vm.selectApiProfile(this.vm.apiProfiles[index].id);
+            this.refreshTick++;
+          }
+        },
+        onSave: (name: string, api: ApiConfig, mm: MultimodalConfig) => {
+          this.vm.saveCurrentApiProfile(name, api, mm).then(() => {
+            this.settingsOpen = false;
+            this.showToast('配置已保存');
+            this.refreshTick++;
+          });
         },
       })
 
@@ -234,6 +274,7 @@ struct ChatPage {
         .height('100%')
         .alignContent(Alignment.Top)
         .padding({ top: 76 })
+        .hitTestBehavior(HitTestMode.None)
       }
     }
     .width('100%')
@@ -272,12 +313,16 @@ struct ChatPage {
           .objectFit(ImageFit.Cover)
           .backgroundColor(Color.White)
       } else {
-        Text('📄')
-          .fontSize(20)
+        Text('FILE')
+          .fontSize(10)
+          .fontWeight(FontWeight.Bold)
           .fontColor($r('app.color.brand'))
-          .width(40)
-          .height(40)
+          .width(36)
+          .height(32)
           .textAlign(TextAlign.Center)
+          .backgroundColor($r('app.color.surface'))
+          .border({ width: 1, color: $r('app.color.border') })
+          .borderRadius(6)
       }
       Column() {
         Text(item.name)
@@ -294,12 +339,12 @@ struct ChatPage {
         } else if (item.status === 'error') {
           Text('解析失败')
             .fontSize(11)
-            .fontColor('#DC2626')
+            .fontColor($r('app.color.danger'))
             .margin({ top: 2 })
         } else {
           Text('已就绪')
             .fontSize(11)
-            .fontColor('#16A34A')
+            .fontColor($r('app.color.success'))
             .margin({ top: 2 })
         }
       }
@@ -318,7 +363,11 @@ struct ChatPage {
       }
     }
     .padding({ left: 8, right: 6, top: 6, bottom: 6 })
-    .backgroundColor(item.status === 'error' ? '#FEE2E2' : $r('app.color.brand_light'))
+    .backgroundColor($r('app.color.surface_secondary'))
+    .border({
+      width: 1,
+      color: item.status === 'error' ? $r('app.color.danger') : $r('app.color.border')
+    })
     .borderRadius(12)
     .margin({ right: 8 })
     .constraintSize({ maxWidth: 240 })
@@ -340,6 +389,10 @@ struct ChatPage {
       .onClick(() => {
         this.drawerOpen = true;
       })
+
+      // 与右侧两个按钮保持等宽，让标题仍处于屏幕正中。
+      Blank()
+        .width(40)
 
       // 标题 (头像 + 智能体名, 居中显示)
       Row() {
@@ -363,6 +416,30 @@ struct ChatPage {
       .layoutWeight(1)
       .justifyContent(FlexAlign.Center)
       .alignItems(VerticalAlign.Center)
+
+      // 自动朗读
+      Button() {
+        if (this.vm.autoReadEnabled) {
+          SymbolGlyph($r('sys.symbol.speaker_wave_3'))
+            .fontSize(21)
+            .fontColor([$r('app.color.brand')])
+        } else {
+          SymbolGlyph($r('sys.symbol.speaker_wave_3_slash'))
+            .fontSize(21)
+            .fontColor([$r('app.color.text_secondary')])
+        }
+      }
+      .width(34)
+      .height(34)
+      .borderRadius(9)
+      .backgroundColor(this.vm.autoReadEnabled ? $r('app.color.brand_light') : Color.Transparent)
+      .margin({ right: 3 })
+      .onClick(() => {
+        let enabled: boolean = !this.vm.autoReadEnabled;
+        this.vm.setAutoReadEnabled(enabled);
+        this.showToast(enabled ? '已开启自动朗读' : '已关闭自动朗读');
+        this.refreshTick++;
+      })
 
       // 设置
       Button() {
@@ -438,6 +515,9 @@ struct ChatPage {
               this.vm.regenerateMessage(id);
               this.refreshTick++;
             },
+            onRead: (id: string) => {
+              this.vm.readMessage(id);
+            },
             onImageTap: (url: string) => {
               this.lightboxUrl = url;
               this.lightboxVisible = true;
@@ -476,9 +556,109 @@ struct ChatPage {
     this.refreshTick++;
   }
 
+  @Builder
+  private buildModelSelector() {
+    Row() {
+      Text(this.vm.currentApiProfile !== null ? this.vm.currentApiProfile.name : '模型')
+        .fontSize(13)
+        .maxFontSize(13)
+        .minFontSize(6)
+        .fontColor($r('app.color.text_secondary'))
+        .maxLines(1)
+        .width('100%')
+        .textAlign(TextAlign.Center)
+    }
+    .width(146)
+    .height(30)
+    .padding({ left: 8, right: 7 })
+    .borderRadius(16)
+    .border({ width: 1, color: $r('app.color.border') })
+    .backgroundColor($r('app.color.surface'))
+    .margin({ right: 8 })
+    .enabled(!this.vm.isStreaming && !this.vm.isParsing && !this.isListening)
+    .bindMenu(this.buildModelProfileMenu(), { placement: Placement.Top })
+  }
+
+  @Builder
+  private buildModelProfileMenu() {
+    Column() {
+      ForEach(this.vm.apiProfiles, (profile: ApiProfile) => {
+        MenuItem({ content: profile.name })
+          .selected(profile.id === this.vm.currentApiProfileId)
+          .onChange(() => {
+            this.vm.selectApiProfile(profile.id);
+            this.refreshTick++;
+          })
+      }, (profile: ApiProfile) => profile.id)
+    }
+  }
+
+  private getApiProfileOptions(): SelectOption[] {
+    let options: SelectOption[] = [];
+    for (let i: number = 0; i < this.vm.apiProfiles.length; i++) {
+      let profile: ApiProfile = this.vm.apiProfiles[i];
+      options.push({ value: profile.name });
+    }
+    return options;
+  }
+
+  private getApiProfileNames(): string[] {
+    let names: string[] = [];
+    for (let i: number = 0; i < this.vm.apiProfiles.length; i++) {
+      names.push(this.vm.apiProfiles[i].name);
+    }
+    return names;
+  }
+
   private handleStop(): void {
     this.vm.stopStreaming();
     this.refreshTick++;
+  }
+
+  private async handleVoiceInput(): Promise<void> {
+    if (this.voiceInputService.isListening()) {
+      await this.voiceInputService.stop();
+      return;
+    }
+    if (!canIUse('SystemCapability.AI.SpeechRecognizer')) {
+      this.showToast('当前设备不支持语音输入');
+      return;
+    }
+    let granted: boolean = await this.requestMicrophonePermission();
+    if (!granted) {
+      this.showToast('请允许麦克风权限后再使用语音输入');
+      return;
+    }
+    await this.voiceInputService.start(
+      this.inputText,
+      (text: string): void => {
+        this.inputText = text;
+      },
+      (listening: boolean): void => {
+        this.isListening = listening;
+      },
+      (message: string): void => {
+        this.isListening = false;
+        this.showToast(message);
+      }
+    );
+  }
+
+  private async requestMicrophonePermission(): Promise<boolean> {
+    try {
+      let context: common.UIAbilityContext = getContext(this) as common.UIAbilityContext;
+      let manager: abilityAccessCtrl.AtManager = abilityAccessCtrl.createAtManager();
+      let result: PermissionRequestResult =
+        await manager.requestPermissionsFromUser(context, ['ohos.permission.MICROPHONE']);
+      if (result.authResults.length === 0) {
+        return false;
+      }
+      return result.authResults[0] === abilityAccessCtrl.GrantStatus.PERMISSION_GRANTED;
+    } catch (error) {
+      let businessError: BusinessError = error as BusinessError;
+      console.error(`Request microphone permission failed: ${businessError.code}, ${businessError.message}`);
+      return false;
+    }
   }
 
   private async handleFileUpload(): Promise<void> {

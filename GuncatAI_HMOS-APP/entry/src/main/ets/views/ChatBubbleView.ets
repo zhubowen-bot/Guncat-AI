@@ -9,6 +9,7 @@ export struct ChatBubbleView {
   private onCopyPlain: (id: string) => void = (_id: string): void => {};
   private onCopyMarkdown: (id: string) => void = (_id: string): void => {};
   private onRegenerate: (id: string) => void = (_id: string): void => {};
+  private onRead: (id: string) => void = (_id: string): void => {};
   private onImageTap: (url: string) => void = (_url: string): void => {};
   // 流式也走 RichTextView (库内置流式增量渲染 + Worker 子线程解析)
   // visibleText 保留 33ms 节流, 作为 UI 缓冲, 避免每个 token 都触发整块重渲染
@@ -107,20 +108,22 @@ export struct ChatBubbleView {
               })
           } else {
             Row() {
-              Text('📎')
-                .fontSize(12)
-                .fontColor(Color.White)
+              Text('FILE')
+                .fontSize(9)
+                .fontWeight(FontWeight.Bold)
+                .fontColor($r('app.color.brand'))
               Text(att.name)
                 .fontSize(12)
-                .fontColor(Color.White)
+                .fontColor($r('app.color.text_primary'))
                 .maxLines(1)
                 .textOverflow({ overflow: TextOverflow.Ellipsis })
                 .layoutWeight(1)
                 .margin({ left: 4 })
             }
             .padding({ left: 10, right: 10, top: 5, bottom: 5 })
-            .backgroundColor('#FFFFFF22')
-            .borderRadius(12)
+            .backgroundColor($r('app.color.surface'))
+            .border({ width: 1, color: $r('app.color.border') })
+            .borderRadius(10)
             .margin({ top: 6, right: 4 })
             .constraintSize({ maxWidth: 200 })
           }
@@ -152,12 +155,20 @@ export struct ChatBubbleView {
         // visibleText 在 33ms 节流中持续更新, 同一组件实例贯穿整个生命周期,
         // Controller / 主题色 / 滚动位置都不会因为 isStreaming 切换而丢失
         if (this.isStreaming && this.message.content === '') {
-          // 初始空内容: 保留最小高度占位, 避免气泡塌陷
-          Text('')
-            .fontSize(15)
-            .fontColor($r('app.color.text_primary'))
-            .lineHeight(22)
-            .padding({ left: 14, right: 14, top: 10, bottom: 10 })
+          // 首个 token 到达前显示原生加载动画，避免只有静止光标。
+          Row() {
+            LoadingProgress()
+              .width(18)
+              .height(18)
+              .color($r('app.color.brand'))
+            Text('正在思考…')
+              .fontSize(13)
+              .fontColor($r('app.color.text_secondary'))
+              .margin({ left: 8 })
+          }
+          .height(42)
+          .padding({ left: 14, right: 14 })
+          .alignItems(VerticalAlign.Center)
         } else {
           RichTextView({
             content: this.isStreaming ? this.visibleText : this.message.content
@@ -165,7 +176,7 @@ export struct ChatBubbleView {
         }
 
         // 流式光标
-        if (this.isStreaming) {
+        if (this.isStreaming && this.message.content !== '') {
           Row() {
             Stack()
               .width(2)
@@ -198,9 +209,10 @@ export struct ChatBubbleView {
 
   @Builder
   buildAIActions() {
-    Row() {
+    Flex({ wrap: FlexWrap.Wrap, direction: FlexDirection.Row }) {
       this.buildActionChip('复制', false, () => this.onCopyPlain(this.message.id))
       this.buildActionChip('复制 MD', false, () => this.onCopyMarkdown(this.message.id))
+      this.buildActionChip('朗读', false, () => this.onRead(this.message.id))
       this.buildActionChip('重新回答', false, () => this.onRegenerate(this.message.id))
     }
     .width('100%')
@@ -216,7 +228,7 @@ export struct ChatBubbleView {
       .borderRadius(12)
       .border({ width: 1, color: copied ? $r('app.color.success') : $r('app.color.border') })
       .backgroundColor($r('app.color.surface'))
-      .margin({ right: 6 })
+      .margin({ right: 6, bottom: 4 })
       .onClick(() => {
         onTap();
       })

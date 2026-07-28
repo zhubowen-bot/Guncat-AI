@@ -5,9 +5,11 @@ export struct MessageInputView {
   @Link inputText: string;
   @Prop isStreaming: boolean = false;
   @Prop @Watch('onParsingChange') isParsing: boolean = false;
+  @Prop isListening: boolean = false;
   private onSend: (text: string) => void = (_t: string): void => {};
   private onStop: () => void = (): void => {};
   private onFileUpload: () => void = (): void => {};
+  private onVoiceInput: () => void = (): void => {};
 
   @State private parsingAngle: number = 0;
   private angleTimer: number = -1;
@@ -48,6 +50,7 @@ export struct MessageInputView {
 
   build() {
     Row() {
+      this.buildVoiceButton()
       this.buildInputWrap()
       this.buildUploadButton()
       this.buildSendButton()
@@ -55,6 +58,25 @@ export struct MessageInputView {
     .width('100%')
     .padding({ left: 14, right: 8, top: 4, bottom: 8 })
     .alignItems(VerticalAlign.Bottom)
+  }
+
+  @Builder
+  buildVoiceButton() {
+    Button() {
+      SymbolGlyph($r('sys.symbol.mic_fill'))
+        .fontSize(20)
+        .fontColor([this.isListening ? Color.White : $r('app.color.text_secondary')])
+    }
+    .width(40)
+    .height(40)
+    .borderRadius(20)
+    .backgroundColor(this.isListening ? $r('app.color.brand') : Color.Transparent)
+    .margin({ right: 4 })
+    .onClick(() => {
+      if (!this.isStreaming && !this.isParsing) {
+        this.onVoiceInput();
+      }
+    })
   }
 
   @Builder
@@ -102,7 +124,7 @@ export struct MessageInputView {
     .backgroundColor(this.isParsing ? $r('app.color.brand_light') : Color.Transparent)
     .margin({ left: 4 })
     .onClick(() => {
-      if (!this.isStreaming && !this.isParsing) {
+      if (!this.isStreaming && !this.isParsing && !this.isListening) {
         this.onFileUpload();
       }
     })
@@ -139,12 +161,12 @@ export struct MessageInputView {
       .width(40)
       .height(40)
       .borderRadius(20)
-      .backgroundColor((this.inputText.trim() !== '' && !this.isParsing) ?
+      .backgroundColor((this.inputText.trim() !== '' && !this.isParsing && !this.isListening) ?
         $r('app.color.brand') : $r('app.color.text_tertiary'))
       .margin({ left: 4 })
       .onClick(() => {
         // 只有在非解析中且有文本时,才真正发送并清空
-        if (this.isParsing) {
+        if (this.isParsing || this.isListening) {
           return;
         }
         if (this.inputText.trim() === '') {

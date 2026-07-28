@@ -1,5 +1,6 @@
 import { ApiConfig } from '../model/ApiConfig';
 import { MultimodalConfig } from '../model/MultimodalConfig';
+import { curves } from '@kit.ArkUI';
 
 // API 设置弹层 (对齐 web 版本 .modal / .settings)
 @Component
@@ -8,6 +9,10 @@ export struct SettingsPanel {
   // aboutToAppear 在组件首次创建就跑, 那时 vm.init() 还没结束, 读到的是默认空值
   // 后续 vm.apiConfig 加载完成不会再触发 aboutToAppear, 必须靠 visible 变化时再同步一次
   @Prop @Watch('onVisibleChange') visible: boolean = false;
+  @Prop @Watch('onProfileChange') initProfileId: string = '';
+  @Prop initProfileName: string = '默认配置';
+  @Prop profileNames: string[] = [];
+  @Prop selectedProfileIndex: number = 0;
   // 父组件传入的初始值 (只读). 父级用 @State vm 传过来,
   // 每次重新打开 SettingsPanel (条件渲染导致组件重建) 时 aboutToAppear 会重新同步
   @Prop initProvider: string = 'custom';
@@ -21,8 +26,10 @@ export struct SettingsPanel {
   @Prop initMmBaseUrl: string = '';
   @Prop initMmApiKey: string = '';
   @Prop initMmModel: string = '';
+  @Prop initMmPreparseEnabled: boolean = true;
   // 工作副本 (用户可编辑). 改回 @State, 不再被父级覆盖
   @State provider: string = 'custom';
+  @State profileName: string = '默认配置';
   @State baseUrl: string = '';
   @State apiKey: string = '';
   @State model: string = '';
@@ -33,11 +40,15 @@ export struct SettingsPanel {
   @State mmBaseUrl: string = '';
   @State mmApiKey: string = '';
   @State mmModel: string = '';
+  @State mmPreparseEnabled: boolean = true;
   @State advancedOpen: boolean = false;
   @State multimodalOpen: boolean = false;
 
   private onClose: () => void = (): void => {};
-  private onSave: (api: ApiConfig, mm: MultimodalConfig) => void = (_a: ApiConfig, _m: MultimodalConfig): void => {};
+  private onSave: (name: string, api: ApiConfig, mm: MultimodalConfig) => void =
+    (_name: string, _a: ApiConfig, _m: MultimodalConfig): void => {};
+  private onAddProfile: () => void = (): void => {};
+  private onSelectProfile: (index: number) => void = (_index: number): void => {};
 
   aboutToAppear(): void {
     this.syncFromInit();
@@ -51,7 +62,16 @@ export struct SettingsPanel {
     }
   }
 
+  onProfileChange(): void {
+    // @Watch 触发时，同一轮父组件刷新的其他 @Prop 可能尚未全部提交。
+    // 延迟到下一帧再读取，避免表单内容总是落后当前配置一次。
+    setTimeout(() => {
+      this.syncFromInit();
+    }, 0);
+  }
+
   private syncFromInit(): void {
+    this.profileName = this.initProfileName;
     this.provider = this.initProvider;
     this.baseUrl = this.initBaseUrl;
     this.apiKey = this.initApiKey;
@@ -63,22 +83,26 @@ export struct SettingsPanel {
     this.mmBaseUrl = this.initMmBaseUrl;
     this.mmApiKey = this.initMmApiKey;
     this.mmModel = this.initMmModel;
+    this.mmPreparseEnabled = this.initMmPreparseEnabled;
   }
 
   build() {
-    if (this.visible) {
-      Stack() {
-        // 遮罩
-        Column()
-          .width('100%')
-          .height('100%')
-          .backgroundColor($r('app.color.modal_backdrop'))
-          .onClick(() => {
+    Stack() {
+      // 遮罩常驻，只改变透明度，避免打开时与复杂表单同时创建。
+      Column()
+        .width('100%')
+        .height('100%')
+        .backgroundColor($r('app.color.modal_backdrop'))
+        .opacity(this.visible ? 1 : 0)
+        .animation({ duration: 180, curve: Curve.EaseOut })
+        .onClick(() => {
+          if (this.visible) {
             this.onClose();
-          })
+          }
+        })
 
-        // 弹层主体
-        Column() {
+      // 表单常驻在屏幕下方，打开时只做合成层平移。
+      Column() {
           // 标题
           Row() {
             Text('API 配置')
@@ -106,6 +130,54 @@ export struct SettingsPanel {
           // 主体 (可滚动)
           Scroll() {
             Column() {
+              this.buildSectionHeader('配置方案')
+              Row() {
+                Select(this.getProfileOptions())
+                  .selected(this.selectedProfileIndex)
+                  .value(this.initProfileName)
+                  .fontColor($r('app.color.text_primary'))
+                  .selectedOptionBgColor($r('app.color.brand_light'))
+                  .selectedOptionFontColor($r('app.color.brand'))
+                  .optionBgColor($r('app.color.surface'))
+                  .optionFontColor($r('app.color.text_primary'))
+                  .layoutWeight(1)
+                  .height(40)
+                  .borderRadius(10)
+                  .backgroundColor($r('app.color.surface_secondary'))
+                  .onSelect((index: number) => {
+                    this.onSelectProfile(index);
+                  })
+
+                Button() {
+                  SymbolGlyph($r('sys.symbol.plus'))
+                    .fontSize(18)
+                    .fontColor([$r('app.color.brand')])
+                }
+                .width(40)
+                .height(40)
+                .borderRadius(10)
+                .backgroundColor($r('app.color.brand_light'))
+                .margin({ left: 8 })
+                .onClick(() => {
+                  this.onAddProfile();
+                })
+              }
+              .width('100%')
+
+              this.buildSectionHeader('配置名称')
+              TextInput({ placeholder: '例如：火山豆包 Pro', text: this.profileName })
+                .width('100%')
+                .height(40)
+                .borderRadius(10)
+                .backgroundColor($r('app.color.surface_secondary'))
+                .padding({ left: 12, right: 12 })
+                .fontSize(14)
+                .fontColor($r('app.color.text_primary'))
+                .placeholderColor($r('app.color.text_secondary'))
+                .onChange((value: string) => {
+                  this.profileName = value;
+                })
+
               this.buildSectionHeader('快速选择预设')
 
               // 预设按钮
@@ -241,33 +313,27 @@ export struct SettingsPanel {
               .backgroundColor($r('app.color.brand'))
               .margin({ top: 12, bottom: 16 })
               .onClick(() => {
-                this.onSave(this.buildConfig(), this.buildMmConfig());
+                this.onSave(this.profileName, this.buildConfig(), this.buildMmConfig());
               })
             }
             .width('100%')
             .padding({ left: 16, right: 16, top: 4, bottom: 12 })
           }
           .layoutWeight(1)
-        }
-        .width('100%')
-        .height('90%')
-        .backgroundColor($r('app.color.surface'))
-        .borderRadius({ topLeft: 20, topRight: 20 })
-        .position({ x: 0, y: '100%' })
-        .translate({ y: '-100%' })
       }
       .width('100%')
-      .height('100%')
-      .position({ x: 0, y: 0 })
-      .transition(
-        TransitionEffect.asymmetric(
-          TransitionEffect.scale({ x: 0.95, y: 0.95 }).combine(TransitionEffect.opacity(0))
-            .animation({ duration: 250, curve: Curve.FastOutLinearIn }),
-          TransitionEffect.scale({ x: 0.95, y: 0.95 }).combine(TransitionEffect.opacity(0))
-            .animation({ duration: 200, curve: Curve.FastOutLinearIn })
-        )
-      )
+      .height('90%')
+      .backgroundColor($r('app.color.surface'))
+      .borderRadius({ topLeft: 20, topRight: 20 })
+      .position({ x: 0, y: '100%' })
+      .translate({ y: this.visible ? '-100%' : '0%' })
+      .animation({ curve: curves.responsiveSpringMotion(0.32, 0.92, 0.08) })
     }
+    .width('100%')
+    .height('100%')
+    .position({ x: 0, y: 0 })
+    .zIndex(this.visible ? 10 : -1)
+    .hitTestBehavior(this.visible ? HitTestMode.Default : HitTestMode.None)
   }
 
   @Builder
@@ -278,6 +344,14 @@ export struct SettingsPanel {
       .fontColor($r('app.color.text_secondary'))
       .width('100%')
       .margin({ top: 12, bottom: 6 })
+  }
+
+  private getProfileOptions(): SelectOption[] {
+    let options: SelectOption[] = [];
+    for (let i: number = 0; i < this.profileNames.length; i++) {
+      options.push({ value: this.profileNames[i] });
+    }
+    return options;
   }
 
   @Builder
@@ -402,55 +476,86 @@ export struct SettingsPanel {
 
       if (this.multimodalOpen) {
         Column() {
-          Text('上传图片或文件时, 先用该 API 解析内容。默认使用智谱 GLM-4.6V-Flash。')
+          Row() {
+            Column() {
+              Text('先行解析附件')
+                .fontSize(14)
+                .fontWeight(FontWeight.Medium)
+                .fontColor($r('app.color.text_primary'))
+                .width('100%')
+              Text(this.mmPreparseEnabled ?
+                '开启后先由下方独立 API 解析，再将文本交给主模型。' :
+                '关闭后图片和文档将直接传给火山主模型。')
+                .fontSize(11)
+                .fontColor($r('app.color.text_secondary'))
+                .width('100%')
+                .lineHeight(18)
+                .margin({ top: 2 })
+            }
+            .layoutWeight(1)
+            .alignItems(HorizontalAlign.Start)
+
+            Toggle({ type: ToggleType.Switch, isOn: this.mmPreparseEnabled })
+              .selectedColor($r('app.color.brand'))
+              .onChange((enabled: boolean) => {
+                this.mmPreparseEnabled = enabled;
+              })
+          }
+          .width('100%')
+          .alignItems(VerticalAlign.Center)
+          .margin({ bottom: 12, top: 4 })
+
+          Text('默认使用智谱 GLM-4.6V-Flash。直传模式仅适用于支持图片/文档输入的火山方舟 Responses API 主模型。')
             .fontSize(11)
             .fontColor($r('app.color.text_secondary'))
             .width('100%')
             .lineHeight(18)
-            .margin({ bottom: 12, top: 4 })
+            .margin({ bottom: 12 })
 
-          this.buildSectionHeader('Base URL')
-          TextInput({ placeholder: 'https://open.bigmodel.cn/api/paas/v4', text: this.mmBaseUrl })
-            .width('100%')
-            .height(40)
-            .borderRadius(10)
-            .backgroundColor($r('app.color.surface_secondary'))
-            .padding({ left: 12, right: 12 })
-            .fontSize(14)
-            .fontColor($r('app.color.text_primary'))
-            .placeholderColor($r('app.color.text_secondary'))
-            .onChange((v: string) => {
-              this.mmBaseUrl = v;
-            })
+          if (this.mmPreparseEnabled) {
+            this.buildSectionHeader('Base URL')
+            TextInput({ placeholder: 'https://open.bigmodel.cn/api/paas/v4', text: this.mmBaseUrl })
+              .width('100%')
+              .height(40)
+              .borderRadius(10)
+              .backgroundColor($r('app.color.surface_secondary'))
+              .padding({ left: 12, right: 12 })
+              .fontSize(14)
+              .fontColor($r('app.color.text_primary'))
+              .placeholderColor($r('app.color.text_secondary'))
+              .onChange((v: string) => {
+                this.mmBaseUrl = v;
+              })
 
-          this.buildSectionHeader('API Key')
-          TextInput({ placeholder: '...', text: this.mmApiKey })
-            .type(InputType.Password)
-            .width('100%')
-            .height(40)
-            .borderRadius(10)
-            .backgroundColor($r('app.color.surface_secondary'))
-            .padding({ left: 12, right: 12 })
-            .fontSize(14)
-            .fontColor($r('app.color.text_primary'))
-            .placeholderColor($r('app.color.text_secondary'))
-            .onChange((v: string) => {
-              this.mmApiKey = v;
-            })
+            this.buildSectionHeader('API Key')
+            TextInput({ placeholder: '...', text: this.mmApiKey })
+              .type(InputType.Password)
+              .width('100%')
+              .height(40)
+              .borderRadius(10)
+              .backgroundColor($r('app.color.surface_secondary'))
+              .padding({ left: 12, right: 12 })
+              .fontSize(14)
+              .fontColor($r('app.color.text_primary'))
+              .placeholderColor($r('app.color.text_secondary'))
+              .onChange((v: string) => {
+                this.mmApiKey = v;
+              })
 
-          this.buildSectionHeader('模型名称')
-          TextInput({ placeholder: 'glm-4.6v-flash', text: this.mmModel })
-            .width('100%')
-            .height(40)
-            .borderRadius(10)
-            .backgroundColor($r('app.color.surface_secondary'))
-            .padding({ left: 12, right: 12 })
-            .fontSize(14)
-            .fontColor($r('app.color.text_primary'))
-            .placeholderColor($r('app.color.text_secondary'))
-            .onChange((v: string) => {
-              this.mmModel = v;
-            })
+            this.buildSectionHeader('模型名称')
+            TextInput({ placeholder: 'glm-4.6v-flash', text: this.mmModel })
+              .width('100%')
+              .height(40)
+              .borderRadius(10)
+              .backgroundColor($r('app.color.surface_secondary'))
+              .padding({ left: 12, right: 12 })
+              .fontSize(14)
+              .fontColor($r('app.color.text_primary'))
+              .placeholderColor($r('app.color.text_secondary'))
+              .onChange((v: string) => {
+                this.mmModel = v;
+              })
+          }
         }
         .width('100%')
         .alignItems(HorizontalAlign.Start)
@@ -519,6 +624,7 @@ export struct SettingsPanel {
     if (this.mmModel.trim() !== '') {
       cfg.model = this.mmModel.trim();
     }
+    cfg.preparseEnabled = this.mmPreparseEnabled;
     return cfg;
   }
 }

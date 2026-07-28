@@ -119,8 +119,26 @@ export class FileService {
     if (lower.endsWith('.json')) {
       return 'application/json';
     }
-    if (lower.endsWith('.doc') || lower.endsWith('.docx')) {
+    if (lower.endsWith('.doc')) {
       return 'application/msword';
+    }
+    if (lower.endsWith('.docx')) {
+      return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+    }
+    if (lower.endsWith('.xls')) {
+      return 'application/vnd.ms-excel';
+    }
+    if (lower.endsWith('.xlsx')) {
+      return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+    }
+    if (lower.endsWith('.ppt')) {
+      return 'application/vnd.ms-powerpoint';
+    }
+    if (lower.endsWith('.pptx')) {
+      return 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
+    }
+    if (lower.endsWith('.csv')) {
+      return 'text/csv';
     }
     return 'application/octet-stream';
   }

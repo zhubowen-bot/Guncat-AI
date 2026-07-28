@@ -5,6 +5,7 @@ import { http } from '@kit.NetworkKit';
 import { ApiConfig } from '../model/ApiConfig';
 import { Agent } from '../model/Agent';
 import { Message } from '../model/Message';
+import { Attachment } from '../model/Attachment';
 import { StreamCallbacks, AbortSignal } from '../common/Types';
 import { Constants } from '../common/Constants';
 import { util } from '@kit.ArkTS';
@@ -79,7 +80,7 @@ function buildChatCompletionsBody(config: ApiConfig, agent: Agent | null,
 function buildResponsesBody(config: ApiConfig, agent: Agent | null,
   history: Message[], userText: string,
   thinkingEnabled: boolean, webSearchEnabled: boolean): Record<string, Object> {
-  let input: Record<string, string>[] = [];
+  let input: Record<string, Object>[] = [];
   for (let i: number = 0; i < history.length; i++) {
     let m: Message = history[i];
     if (m.content === '') {
@@ -88,9 +89,36 @@ function buildResponsesBody(config: ApiConfig, agent: Agent | null,
     if (m.role !== 'user' && m.role !== 'assistant') {
       continue;
     }
-    input.push({ role: m.role, content: m.content });
+    if (m.role === 'user' && m.attachments.length > 0) {
+      let contentParts: Record<string, Object>[] = [];
+      contentParts.push({ type: 'input_text', text: m.content });
+      for (let j: number = 0; j < m.attachments.length; j++) {
+        let attachment: Attachment = m.attachments[j];
+        if (attachment.parsedText !== '' || attachment.dataUrl === '') {
+          continue;
+        }
+        if (attachment.type === 'image') {
+          contentParts.push({
+            type: 'input_image',
+            image_url: attachment.dataUrl
+          });
+        } else {
+          contentParts.push({
+            type: 'input_file',
+            filename: attachment.name,
+            file_data: attachment.dataUrl
+          });
+        }
+      }
+      input.push({ role: m.role, content: contentParts });
+    } else {
+      input.push({ role: m.role, content: m.content });
+    }
   }
-  input.push({ role: 'user', content: userText });
+  let lastHistory: Message | null = history.length > 0 ? history[history.length - 1] : null;
+  if (lastHistory === null || lastHistory.role !== 'user' || lastHistory.content !== userText) {
+    input.push({ role: 'user', content: userText });
+  }
 
   let body: Record<string, Object> = {
     model: config.model,

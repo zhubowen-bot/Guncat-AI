@@ -5,12 +5,14 @@ export class MultimodalConfig {
   baseUrl: string = '';
   apiKey: string = '';
   model: string = '';
+  preparseEnabled: boolean = true;
 
   static default(): MultimodalConfig {
     let cfg: MultimodalConfig = new MultimodalConfig();
     cfg.baseUrl = Constants.DEFAULT_MM_BASE_URL;
     cfg.apiKey = '';
     cfg.model = Constants.DEFAULT_MM_MODEL;
+    cfg.preparseEnabled = true;
     return cfg;
   }
 
@@ -25,6 +27,9 @@ export class MultimodalConfig {
     if (json['model'] !== undefined) {
       cfg.model = json['model'] as string;
     }
+    if (json['preparseEnabled'] !== undefined) {
+      cfg.preparseEnabled = json['preparseEnabled'] as boolean;
+    }
     return cfg;
   }
 
@@ -32,7 +37,8 @@ export class MultimodalConfig {
     return {
       'baseUrl': this.baseUrl,
       'apiKey': this.apiKey,
-      'model': this.model
+      'model': this.model,
+      'preparseEnabled': this.preparseEnabled
     };
   }
 }

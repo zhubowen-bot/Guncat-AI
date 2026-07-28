@@ -3,6 +3,7 @@ import { preferences } from '@kit.ArkData';
 import { Conversation } from '../model/Conversation';
 import { ApiConfig } from '../model/ApiConfig';
 import { MultimodalConfig } from '../model/MultimodalConfig';
+import { ApiProfile } from '../model/ApiProfile';
 import { Constants } from '../common/Constants';
 
 let preferencesInstance: preferences.Preferences | undefined = undefined;
@@ -80,6 +81,34 @@ export class StorageManager {
       return MultimodalConfig.default();
     }
     return MultimodalConfig.fromJson(parsed as Record<string, Object>);
+  }
+
+  static async saveApiProfiles(context: Context, profiles: ApiProfile[]): Promise<void> {
+    let data: Object[] = [];
+    for (let i: number = 0; i < profiles.length; i++) {
+      data.push(profiles[i].toJson());
+    }
+    let prefs: preferences.Preferences = await getPreferences(context);
+    await prefs.put(Constants.LS_KEY_API_PROFILES, JSON.stringify(data));
+    await prefs.flush();
+  }
+
+  static async loadApiProfiles(context: Context): Promise<ApiProfile[]> {
+    let prefs: preferences.Preferences = await getPreferences(context);
+    let jsonStr: string = (await prefs.get(Constants.LS_KEY_API_PROFILES, '')) as string;
+    if (jsonStr === '') {
+      return [];
+    }
+    let parsed: Object = JSON.parse(jsonStr);
+    if (!(parsed instanceof Array)) {
+      return [];
+    }
+    let values: Object[] = parsed as Object[];
+    let result: ApiProfile[] = [];
+    for (let i: number = 0; i < values.length; i++) {
+      result.push(ApiProfile.fromJson(values[i] as Record<string, Object>));
+    }
+    return result;
   }
 
   static async saveBoolean(context: Context, key: string, val: boolean): Promise<void> {

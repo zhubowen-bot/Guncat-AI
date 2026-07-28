@@ -7,8 +7,11 @@ export class Constants {
   static readonly LS_KEY_CONVERSATIONS: string = 'guncat_conversations';
   static readonly LS_KEY_API_CONFIG: string = 'guncat_api_config';
   static readonly LS_KEY_MULTIMODAL_CONFIG: string = 'guncat_mm_config';
+  static readonly LS_KEY_API_PROFILES: string = 'guncat_api_profiles';
+  static readonly LS_KEY_CURRENT_API_PROFILE_ID: string = 'guncat_current_api_profile';
   static readonly LS_KEY_THINKING_ENABLED: string = 'guncat_thinking_enabled';
   static readonly LS_KEY_WEB_SEARCH_ENABLED: string = 'guncat_web_search_enabled';
+  static readonly LS_KEY_AUTO_READ_ENABLED: string = 'guncat_auto_read_enabled';
   static readonly LS_KEY_CURRENT_AGENT_ID: string = 'guncat_current_agent';
   static readonly LS_KEY_CURRENT_CONV_ID: string = 'guncat_current_conv';
 
