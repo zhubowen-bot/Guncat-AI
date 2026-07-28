@@ -81,40 +81,47 @@
 
 ```
 entry/src/main/ets/
+├── entryability/
+│   └── EntryAbility.ets           # 应用入口 Ability
+├── entrybackupability/
+│   └── EntryBackupAbility.ets     # 备份恢复 Ability
 ├── pages/
-│   └── ChatPage.ets           # 主页面：消息列表 + Header + 输入区 + 抽屉
+│   └── ChatPage.ets               # 主页面：消息列表 + Header + 输入区 + 抽屉
 ├── views/
-│   ├── ChatBubbleView.ets     # 聊天气泡（用户/助手）
-│   ├── RichTextView.ets       # 原生 Markdown 渲染封装
-│   ├── MessageInputView.ets   # 消息输入栏
-│   ├── AgentDrawerView.ets    # 智能体/对话侧边抽屉
-│   ├── SettingsPanel.ets      # API 配置弹层
-│   ├── ImageLightbox.ets      # 图片灯箱
-│   ├── FilePreviewBar.ets     # 文件预览条
-│   ├── ToastView.ets          # 轻提示
-│   └── AboutPanel.ets         # 关于弹层
+│   ├── ChatBubbleView.ets         # 聊天气泡（用户/助手）
+│   ├── RichTextView.ets           # 原生 Markdown 渲染封装
+│   ├── MessageInputView.ets       # 消息输入栏
+│   ├── AgentDrawerView.ets        # 智能体/对话侧边抽屉
+│   ├── SettingsPanel.ets          # API 配置弹层
+│   ├── ImageLightbox.ets          # 图片灯箱
+│   ├── FilePreviewBar.ets         # 文件预览条
+│   ├── ToastView.ets              # 轻提示
+│   └── AboutPanel.ets             # 关于弹层
 ├── viewmodel/
-│   └── ChatViewModel.ts       # 核心状态管理（MVVM 层）
+│   └── ChatViewModel.ts           # 核心状态管理（MVVM 层）
 ├── service/
-│   ├── ChatService.ts         # SSE 流式网络请求
-│   ├── MultimodalService.ts   # 多模态文件解析
-│   ├── FileService.ts         # 文件选择与读取
-│   └── AgentLoader.ts         # 智能体配置加载
+│   ├── ChatService.ts             # SSE 流式网络请求
+│   ├── MultimodalService.ts       # 多模态文件解析
+│   ├── FileService.ts             # 文件选择与读取
+│   ├── AgentLoader.ts             # 智能体配置加载
+│   ├── TextReaderService.ts       # 鸿蒙朗读服务（TTS）
+│   └── VoiceInputService.ets      # 鸿蒙语音识别服务（ASR）
 ├── model/
-│   ├── Message.ts             # 消息模型（@Observed）
-│   ├── Conversation.ts        # 对话模型
-│   ├── Agent.ts               # 智能体模型
-│   ├── ApiConfig.ts           # API 配置
-│   ├── MultimodalConfig.ts    # 多模态配置
-│   └── Attachment.ts          # 附件模型
+│   ├── Message.ts                 # 消息模型（@Observed）
+│   ├── Conversation.ts            # 对话模型
+│   ├── Agent.ts                   # 智能体模型
+│   ├── ApiConfig.ts               # API 配置
+│   ├── ApiProfile.ts              # API 配置档（多配置管理）
+│   ├── MultimodalConfig.ts        # 多模态配置
+│   └── Attachment.ts              # 附件模型
 ├── data/
-│   └── StorageManager.ts      # Preferences 持久化层
+│   └── StorageManager.ts          # Preferences 持久化层
 ├── common/
-│   ├── Types.ts               # 共享类型定义
-│   ├── Utils.ts               # 工具函数
-│   └── Constants.ts           # 全局常量
+│   ├── Types.ts                   # 共享类型定义
+│   ├── Utils.ts                   # 工具函数
+│   └── Constants.ts               # 全局常量
 └── components/
-    └── ToggleSwitch.ets       # 开关胶囊组件
+    └── ToggleSwitch.ets           # 开关胶囊组件
 ```
 
 ## 🏗️ 技术架构

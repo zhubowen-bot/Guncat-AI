@@ -81,40 +81,47 @@ Based on `@kit.ArkData` Preferences API (analogous to Web's localStorage):
 
 ```
 entry/src/main/ets/
+├── entryability/
+│   └── EntryAbility.ets           # App entry Ability
+├── entrybackupability/
+│   └── EntryBackupAbility.ets     # Backup & restore Ability
 ├── pages/
-│   └── ChatPage.ets           # Main page: message list + Header + input area + drawer
+│   └── ChatPage.ets               # Main page: message list + Header + input area + drawer
 ├── views/
-│   ├── ChatBubbleView.ets     # Chat bubble (user/assistant)
-│   ├── RichTextView.ets       # Native Markdown rendering wrapper
-│   ├── MessageInputView.ets   # Message input bar
-│   ├── AgentDrawerView.ets    # Agent/conversation sidebar drawer
-│   ├── SettingsPanel.ets      # API configuration panel
-│   ├── ImageLightbox.ets      # Image lightbox
-│   ├── FilePreviewBar.ets     # File preview bar
-│   ├── ToastView.ets          # Toast notification
-│   └── AboutPanel.ets         # About panel
+│   ├── ChatBubbleView.ets         # Chat bubble (user/assistant)
+│   ├── RichTextView.ets           # Native Markdown rendering wrapper
+│   ├── MessageInputView.ets       # Message input bar
+│   ├── AgentDrawerView.ets        # Agent/conversation sidebar drawer
+│   ├── SettingsPanel.ets          # API configuration panel
+│   ├── ImageLightbox.ets          # Image lightbox
+│   ├── FilePreviewBar.ets         # File preview bar
+│   ├── ToastView.ets              # Toast notification
+│   └── AboutPanel.ets             # About panel
 ├── viewmodel/
-│   └── ChatViewModel.ts       # Core state management (MVVM layer)
+│   └── ChatViewModel.ts           # Core state management (MVVM layer)
 ├── service/
-│   ├── ChatService.ts         # SSE streaming network requests
-│   ├── MultimodalService.ts   # Multimodal file parsing
-│   ├── FileService.ts         # File selection and reading
-│   └── AgentLoader.ts         # Agent configuration loading
+│   ├── ChatService.ts             # SSE streaming network requests
+│   ├── MultimodalService.ts       # Multimodal file parsing
+│   ├── FileService.ts             # File selection and reading
+│   ├── AgentLoader.ts             # Agent configuration loading
+│   ├── TextReaderService.ts       # HarmonyOS TTS service
+│   └── VoiceInputService.ets      # HarmonyOS ASR service
 ├── model/
-│   ├── Message.ts             # Message model (@Observed)
-│   ├── Conversation.ts        # Conversation model
-│   ├── Agent.ts               # Agent model
-│   ├── ApiConfig.ts           # API configuration
-│   ├── MultimodalConfig.ts    # Multimodal configuration
-│   └── Attachment.ts          # Attachment model
+│   ├── Message.ts                 # Message model (@Observed)
+│   ├── Conversation.ts            # Conversation model
+│   ├── Agent.ts                   # Agent model
+│   ├── ApiConfig.ts               # API configuration
+│   ├── ApiProfile.ts              # API profile (multi-config management)
+│   ├── MultimodalConfig.ts        # Multimodal configuration
+│   └── Attachment.ts              # Attachment model
 ├── data/
-│   └── StorageManager.ts      # Preferences persistence layer
+│   └── StorageManager.ts          # Preferences persistence layer
 ├── common/
-│   ├── Types.ts               # Shared type definitions
-│   ├── Utils.ts               # Utility functions
-│   └── Constants.ts           # Global constants
+│   ├── Types.ts                   # Shared type definitions
+│   ├── Utils.ts                   # Utility functions
+│   └── Constants.ts               # Global constants
 └── components/
-    └── ToggleSwitch.ets       # Toggle switch component
+    └── ToggleSwitch.ets           # Toggle switch component
 ```
 
 ## Technical Architecture
