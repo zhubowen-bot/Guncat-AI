@@ -1,5 +1,7 @@
 # Guncat AI Web for API_local-setup- 可配置 API 的对话客户端的windows本地启动版本
 
+> [English](README_EN.md) | 中文
+
 ---
 
 Web for API 版本：3.1.0

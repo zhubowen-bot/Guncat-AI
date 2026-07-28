@@ -1,5 +1,7 @@
 # Guncat Srch-Law V2
 
+> [English](README_EN.md) | 中文
+
 国企法律智能分析 Agent 系统
 
 ## 版本

@@ -1,5 +1,7 @@
 # Guncat AI Web for API 鸿蒙版
 
+> [English](README_EN.md) | 中文
+
 这是 Guncat AI Web for API 的H5应用鸿蒙适配版本。
 
 ---

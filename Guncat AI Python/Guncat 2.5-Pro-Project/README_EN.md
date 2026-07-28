@@ -1,5 +1,7 @@
 # Guncat 2.5-Pro - LangChain / LangGraph Agent
 
+> 中文 | [English](README_EN.md)
+
 Built on the **LangChain / LangGraph** ecosystem, driven by Python code, powered by **doubao-seed-2.0-Pro**, achieving international first-tier performance.
 
 ---

@@ -1,5 +1,7 @@
 # Guncat Srch-Law V2
 
+> 中文 | [English](README_EN.md)
+
 Intelligent Legal Analysis Agent System for State-Owned Enterprises
 
 ## Version

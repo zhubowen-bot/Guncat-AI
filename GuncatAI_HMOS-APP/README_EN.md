@@ -1,5 +1,7 @@
 # Guncat AI
 
+> 中文 | [English](README_EN.md)
+
 **Native HarmonyOS AI Chat Client** — Built entirely with ArkTS + ArkUI, not a WebView wrapper.
 
 Most AI clients on the market are essentially browser wrappers. Guncat AI is built from the ground up on HarmonyOS native capabilities — from UI framework to network communication to Markdown rendering — delivering fundamental differences in performance, interaction smoothness, and system integration depth.

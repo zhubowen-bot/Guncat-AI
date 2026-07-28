@@ -1,5 +1,7 @@
 # Guncat 2.5-Pro - LangChain / LangGraph 智能体
 
+> [English](README_EN.md) | 中文
+
 基于 **LangChain / LangGraph** 生态，Python 代码驱动，搭载 **doubao-seed-2.0-Pro**，国际第一梯队水平。
 
 ---

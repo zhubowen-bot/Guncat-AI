@@ -1,5 +1,7 @@
 # Guncat AI
 
+> [English](README_EN.md) | 中文
+
 **原生鸿蒙 AI 对话客户端** — 纯 ArkTS + ArkUI 实现，非 WebView 套壳。
 
 市面上大多数 AI 客户端本质是浏览器套壳，Guncat AI 从 UI 框架到网络通信到 Markdown 渲染全部基于 HarmonyOS 原生能力构建，在性能、交互流畅度和系统集成深度上具备本质差异。

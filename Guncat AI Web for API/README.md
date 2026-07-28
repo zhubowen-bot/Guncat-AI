@@ -1,5 +1,7 @@
 # Guncat AI Web for API - 可配置 API 的对话客户端
 
+> [English](README_EN.md) | 中文
+
 ---
 
 Web for API 版本：3.1.0

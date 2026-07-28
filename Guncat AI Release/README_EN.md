@@ -1,5 +1,7 @@
 # Guncat AI Release
 
+> 中文 | [English](README_EN.md)
+
 > Platform-Deployed Prompts & ZhipuAI Web Application
 
 This directory contains **platform-adapted prompts and deployment resources**, ready for direct use in creating and running agents on platforms such as Tencent Yuanqi and ZhipuAI ChatGLM.
