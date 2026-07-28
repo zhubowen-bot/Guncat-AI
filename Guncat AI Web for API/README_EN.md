@@ -1,6 +1,6 @@
 # Guncat AI Web for API - Configurable API Chat Client
 
-> 中文 | [English](README_EN.md)
+> [中文](README.md) | English
 
 ---
 

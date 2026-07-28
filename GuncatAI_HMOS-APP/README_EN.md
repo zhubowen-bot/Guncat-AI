@@ -1,6 +1,6 @@
 # Guncat AI
 
-> 中文 | [English](README_EN.md)
+> [中文](README.md) | English
 
 **Native HarmonyOS AI Chat Client** — Built entirely with ArkTS + ArkUI, not a WebView wrapper.
 

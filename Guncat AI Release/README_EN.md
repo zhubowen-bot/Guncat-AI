@@ -1,6 +1,6 @@
 # Guncat AI Release
 
-> 中文 | [English](README_EN.md)
+> [中文](README.md) | English
 
 > Platform-Deployed Prompts & ZhipuAI Web Application
 

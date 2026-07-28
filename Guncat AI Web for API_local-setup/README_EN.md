@@ -1,6 +1,6 @@
 # Guncat AI Web for API - Local Setup (Windows)
 
-> 中文 | [English](README_EN.md)
+> [中文](README.md) | English
 
 > Configurable API Chat Client - Windows Local Launch Version
 

@@ -1,6 +1,6 @@
 # Guncat AI Web for API - HarmonyOS Version
 
-> 中文 | [English](README_EN.md)
+> [中文](README.md) | English
 
 This is the HarmonyOS-adapted H5 application version of Guncat AI Web for API.
 
