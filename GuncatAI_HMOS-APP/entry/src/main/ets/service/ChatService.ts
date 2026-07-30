@@ -130,9 +130,6 @@ function buildResponsesBody(config: ApiConfig, agent: Agent | null,
   if (agent !== null && agent.systemPrompt !== '') {
     body['instructions'] = agent.systemPrompt;
   }
-  if (thinkingEnabled) {
-    body['thinking'] = { type: 'enabled' };
-  }
   if (webSearchEnabled) {
     let tool: Record<string, Object> = { type: 'web_search', max_keyword: 5 };
     body['tools'] = [tool];
@@ -159,6 +156,9 @@ function buildResponsesBody(config: ApiConfig, agent: Agent | null,
       // ignore
     }
   }
+  // 深度思考按钮必须显式控制方舟 Responses API，不能省略后交给模型默认决定。
+  // 放在 extraBody 合并之后，确保界面上的开关状态拥有最高优先级。
+  body['thinking'] = { type: thinkingEnabled ? 'enabled' : 'disabled' };
   return body;
 }
 

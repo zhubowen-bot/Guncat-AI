@@ -16,6 +16,12 @@ import { ApiProfile } from '../model/ApiProfile';
 import { FileItem, PreviewData } from '../common/Types';
 import { generateMessageId } from '../common/Utils';
 import { VoiceInputService } from '../service/VoiceInputService';
+import {
+  ReaderCallbacks,
+  ReaderProgress,
+  ReaderVoiceOption,
+  TextReaderService
+} from '../service/TextReaderService';
 import { abilityAccessCtrl, common, PermissionRequestResult } from '@kit.AbilityKit';
 import { BusinessError } from '@kit.BasicServicesKit';
 
@@ -23,6 +29,8 @@ import { BusinessError } from '@kit.BasicServicesKit';
 @Component
 struct ChatPage {
   @State private vm: ChatViewModel = new ChatViewModel();
+  @StorageLink('sharedFileUris') @Watch('onSharedFileUrisChanged')
+  private sharedFileUris: string = '';
   @State private inputText: string = '';
   @State private drawerOpen: boolean = false;
   @State private settingsOpen: boolean = false;
@@ -34,6 +42,17 @@ struct ChatPage {
   @State private isListening: boolean = false;
   @State private refreshTick: number = 0;
   @State private previewItems: PreviewData[] = [];
+  @State private readerVisible: boolean = false;
+  @State private readerPhase: string = '';
+  @State private readerProgress: number = 0;
+  @State private readerVoiceIndex: number = 0;
+  @State private readerVoices: ReaderVoiceOption[] = [];
+  @State private readerSpeed: number = 1;
+  @State private readerPaused: boolean = false;
+  @State private readerOffsetX: number = 0;
+  @State private readerOffsetY: number = 0;
+  private readerDragStartX: number = 0;
+  private readerDragStartY: number = 0;
   // 消息列表滚动控制器 + 自动置底
   private messageScroller: Scroller = new Scroller();
   private toastTimer: number = -1;
@@ -42,6 +61,23 @@ struct ChatPage {
   aboutToAppear(): void {
     let context: common.UIAbilityContext = getContext(this) as common.UIAbilityContext;
     this.vm.setContext(context);
+    let readerCallbacks: ReaderCallbacks = new ReaderCallbacks();
+    readerCallbacks.onChange = (state: ReaderProgress): void => {
+      this.readerVisible = state.visible;
+      this.readerPhase = state.phase;
+      this.readerProgress = state.progress;
+      this.readerVoiceIndex = state.voiceIndex;
+      this.readerVoices = state.voices;
+      this.readerSpeed = state.speed;
+      this.readerPaused = state.paused;
+    };
+    TextReaderService.setCallbacks(readerCallbacks);
+    this.vm.onReadText = async (id: string, text: string): Promise<void> => {
+      await TextReaderService.read(context, id, text);
+    };
+    this.vm.onStopReading = async (): Promise<void> => {
+      await TextReaderService.stop();
+    };
     this.vm.setStateChangeListener(() => {
       this.rebuildPreviewItems();
       this.refreshTick++;
@@ -52,6 +88,7 @@ struct ChatPage {
     });
     this.vm.init().then(() => {
       this.refreshTick++;
+      this.consumeSharedFiles();
       setTimeout(() => {
         this.messageScroller.scrollTo({ xOffset: 0, yOffset: 999999, animation: { duration: 0 } });
       }, 100);
@@ -65,9 +102,38 @@ struct ChatPage {
     }, 100);
   }
 
+  private onSharedFileUrisChanged(): void {
+    this.consumeSharedFiles();
+  }
+
+  private consumeSharedFiles(): void {
+    if (this.sharedFileUris === '') {
+      return;
+    }
+    let payload: string = this.sharedFileUris;
+    this.sharedFileUris = '';
+    try {
+      let parsed: Object = JSON.parse(payload);
+      if (!(parsed instanceof Array)) {
+        return;
+      }
+      let values: Object[] = parsed as Object[];
+      let uris: string[] = [];
+      for (let i: number = 0; i < values.length; i++) {
+        if (typeof values[i] === 'string') {
+          uris.push(values[i] as string);
+        }
+      }
+      this.vm.acceptSharedFiles(uris);
+    } catch (error) {
+      console.error('Failed to consume shared files');
+    }
+  }
+
   aboutToDisappear(): void {
-    this.vm.stopReading();
-    this.voiceInputService.cancel();
+    if (this.isListening) {
+      this.voiceInputService.cancel();
+    }
     if (this.toastTimer !== -1) {
       clearTimeout(this.toastTimer);
       this.toastTimer = -1;
@@ -159,6 +225,10 @@ struct ChatPage {
       .width('100%')
       .height('100%')
       .backgroundColor($r('app.color.background'))
+
+      if (this.readerVisible) {
+        this.buildReaderControl()
+      }
 
       // 抽屉 - 从左侧滑入/滑出
       if (this.drawerOpen) {
@@ -280,6 +350,165 @@ struct ChatPage {
     .width('100%')
     .height('100%')
     .backgroundColor($r('app.color.background'))
+  }
+
+  @Builder
+  buildReaderControl() {
+    Column({ space: 4 }) {
+      Row({ space: 6 }) {
+        SymbolGlyph($r('sys.symbol.waveform'))
+          .fontSize(16)
+          .fontColor([$r('app.color.brand')])
+        Text(this.readerPhase)
+          .fontSize(12)
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .fontColor($r('app.color.text_primary'))
+        .layoutWeight(1)
+        Button() {
+          Text('×')
+            .fontSize(16)
+            .fontColor($r('app.color.text_secondary'))
+        }
+        .width(24)
+        .height(24)
+        .padding(0)
+        .borderRadius(6)
+        .backgroundColor(Color.Transparent)
+        .onClick(() => {
+          this.vm.stopReading();
+        })
+      }
+      .gesture(
+        PanGesture({ fingers: 1, direction: PanDirection.All, distance: 4 })
+          .onActionStart((_event: GestureEvent): void => {
+            this.readerDragStartX = this.readerOffsetX;
+            this.readerDragStartY = this.readerOffsetY;
+          })
+          .onActionUpdate((event: GestureEvent): void => {
+            this.readerOffsetX = Math.max(-34,
+              Math.min(34, this.readerDragStartX + event.offsetX));
+            this.readerOffsetY = Math.max(-55,
+              Math.min(620, this.readerDragStartY + event.offsetY));
+          })
+      )
+
+      Row({ space: 6 }) {
+        Slider({
+          value: this.readerProgress * 100,
+          min: 0,
+          max: 100,
+          step: 1,
+          style: SliderStyle.OutSet
+        })
+          .layoutWeight(1)
+          .trackThickness(3)
+          .selectedColor($r('app.color.brand'))
+          .blockColor($r('app.color.brand'))
+          .onChange((value: number, mode: SliderChangeMode): void => {
+            this.readerProgress = value / 100;
+            if (mode === SliderChangeMode.End) {
+              TextReaderService.seek(this.readerProgress);
+            }
+          })
+        Text(Math.round(this.readerProgress * 100).toString() + '%')
+          .fontSize(10)
+          .fontColor($r('app.color.text_secondary'))
+          .width(30)
+      }
+      .height(20)
+
+      Row({ space: 5 }) {
+        Button(this.readerPaused ? '▶' : 'Ⅱ')
+          .fontSize(10)
+          .fontColor($r('app.color.text_primary'))
+          .height(24)
+          .width(30)
+          .padding(0)
+          .borderRadius(6)
+          .border({ width: 1, color: $r('app.color.border') })
+          .backgroundColor($r('app.color.surface_secondary'))
+          .onClick((): void => {
+            if (this.readerPaused) {
+              TextReaderService.resume();
+            } else {
+              TextReaderService.pause();
+            }
+          })
+
+        Button(this.getReaderSpeedLabel())
+          .fontSize(10)
+          .fontColor($r('app.color.text_primary'))
+          .height(24)
+          .width(43)
+          .padding(0)
+          .borderRadius(6)
+          .border({ width: 1, color: $r('app.color.border') })
+          .backgroundColor($r('app.color.surface_secondary'))
+          .onClick((): void => {
+            let nextSpeed: number = this.readerSpeed >= 1.75 ? 0.75 : this.readerSpeed + 0.25;
+            TextReaderService.setSpeed(nextSpeed);
+          })
+
+        Button(this.getReaderVoiceLabel())
+          .fontSize(10)
+          .fontColor($r('app.color.text_primary'))
+          .width(118)
+          .height(24)
+          .padding({ left: 6, right: 6 })
+          .borderRadius(6)
+          .border({ width: 1, color: $r('app.color.border') })
+          .backgroundColor($r('app.color.surface_secondary'))
+          .bindMenu(this.buildReaderVoiceMenu(), { placement: Placement.Bottom })
+      }
+      .width('100%')
+    }
+    .width('80%')
+    .padding({ left: 9, right: 7, top: 6, bottom: 7 })
+    .backgroundColor($r('app.color.surface'))
+    .borderRadius(13)
+    .shadow({ radius: 12, color: '#26000000', offsetX: 0, offsetY: 4 })
+    .position({ x: '10%', y: 68 })
+    .translate({ x: this.readerOffsetX, y: this.readerOffsetY })
+    .zIndex(20)
+  }
+
+  private getReaderVoiceOptions(): SelectOption[] {
+    let options: SelectOption[] = [];
+    for (let index: number = 0; index < this.readerVoices.length; index++) {
+      options.push({ value: this.readerVoices[index].label });
+    }
+    if (options.length === 0) {
+      options.push({ value: '正在查询音色…' });
+    }
+    return options;
+  }
+
+  @Builder
+  private buildReaderVoiceMenu() {
+    Column() {
+      ForEach(this.readerVoices, (voice: ReaderVoiceOption, index: number) => {
+        MenuItem({ content: voice.label })
+          .selected(index === this.readerVoiceIndex)
+          .onChange((): void => {
+            TextReaderService.selectVoice(index).catch((error: Error): void => {
+              this.readerPhase = '切换音色失败：' + error.message;
+            });
+          })
+      }, (voice: ReaderVoiceOption) =>
+        voice.language + voice.person.toString() + voice.style)
+    }
+  }
+
+  private getReaderVoiceLabel(): string {
+    if (this.readerVoiceIndex >= 0 && this.readerVoiceIndex < this.readerVoices.length) {
+      return this.readerVoices[this.readerVoiceIndex].label;
+    }
+    return '正在查询音色…';
+  }
+
+  private getReaderSpeedLabel(): string {
+    return this.readerSpeed.toFixed(1) + '×';
   }
 
   // 文件预览条(由 ChatPage 直接渲染, 避免子组件 @Prop 深拷不更新)

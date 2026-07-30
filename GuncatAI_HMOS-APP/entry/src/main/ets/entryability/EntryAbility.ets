@@ -15,6 +15,7 @@
 
 import { AbilityConstant, ConfigurationConstant, UIAbility, Want, Configuration } from '@kit.AbilityKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
+import { systemShare } from '@kit.ShareKit';
 import { window } from '@kit.ArkUI';
 
 const DOMAIN = 0x0000;
@@ -31,7 +32,13 @@ export default class EntryAbility extends UIAbility {
     // 初始化时同步当前系统主题到 AppStorage, 供 RichTextView 等组件读取
     // 优先用 onConfigurationUpdate 写入, 启动时也兜底读取一次
     AppStorage.setOrCreate<boolean>('systemColorMode', false);
+    AppStorage.setOrCreate<string>('sharedFileUris', '');
+    this.publishSharedFiles(want);
     hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onCreate');
+  }
+
+  onNewWant(want: Want, _launchParam: AbilityConstant.LaunchParam): void {
+    this.publishSharedFiles(want);
   }
 
   onDestroy(): void {
@@ -79,6 +86,41 @@ export default class EntryAbility extends UIAbility {
   onBackground(): void {
     // Ability has back to background
     hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onBackground');
+  }
+
+  private async publishSharedFiles(want: Want): Promise<void> {
+    let uris: string[] = [];
+    try {
+      const sharedData: systemShare.SharedData = await systemShare.getSharedData(want);
+      const records: systemShare.SharedRecord[] = sharedData.getRecords();
+      for (let i: number = 0; i < records.length; i++) {
+        const uri: string | undefined = records[i].uri;
+        if (uri !== undefined && uri !== '') {
+          uris.push(uri);
+        }
+      }
+    } catch (err) {
+      hilog.info(DOMAIN, 'testTag', 'Want does not contain Share Kit data: %{public}s', JSON.stringify(err));
+    }
+    if (uris.length === 0 && want.parameters !== undefined) {
+      let streamValue: Object | undefined = want.parameters['ability.params.stream'];
+      if (streamValue instanceof Array) {
+        let values: Object[] = streamValue as Object[];
+        for (let i: number = 0; i < values.length; i++) {
+          if (typeof values[i] === 'string') {
+            uris.push(values[i] as string);
+          }
+        }
+      } else if (typeof streamValue === 'string') {
+        uris.push(streamValue as string);
+      }
+    }
+    if (uris.length === 0 && want.uri !== undefined && want.uri !== '') {
+      uris.push(want.uri);
+    }
+    if (uris.length > 0) {
+      AppStorage.set<string>('sharedFileUris', JSON.stringify(uris));
+    }
   }
 
   // 系统配置变化回调 (深浅色模式切换)

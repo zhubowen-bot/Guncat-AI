@@ -2,356 +2,335 @@
 
 > [中文](README.md) | English
 
-**Native HarmonyOS AI Chat Client** — Built entirely with ArkTS + ArkUI, not a WebView wrapper.
+Guncat AI is a native HarmonyOS AI chat client built with ArkTS and ArkUI. Its primary interface is not hosted in a WebView.
 
-Most AI clients on the market are essentially browser wrappers. Guncat AI is built from the ground up on HarmonyOS native capabilities — from UI framework to network communication to Markdown rendering — delivering fundamental differences in performance, interaction smoothness, and system integration depth.
+Current app version: `4.1.0`
 
-## Key Highlights
+## Features
 
-### Native ArkTS Streaming Chat Interaction
+### Native streaming chat
 
-- **SSE Streaming Communication**: Native SSE parsing based on `@kit.NetworkKit`'s `http.requestInStream`, with token-by-token incremental updates — not WebSocket or polling
-- **Dual Protocol Compatibility**: Supports both OpenAI Chat Completions (`/chat/completions`) and Anthropic/Volcengine Responses API (`/responses`), compatible with Deepseek, Volcengine Ark, and other providers
-- **50ms Throttled Refresh**: 50ms throttle strategy + 33ms UI visible text buffer alignment during streaming, avoiding full-block rendering on every token
-- **100ms Auto-Scroll**: Timer ensures message list stays at bottom during streaming output, matching WebChat experience
+- Processes SSE streams with `@kit.NetworkKit` and `http.requestInStream`.
+- Supports OpenAI Chat Completions (`/chat/completions`) and the Volcengine Ark Responses API (`/responses`).
+- Works with DeepSeek, Volcengine Ark, and compatible custom endpoints.
+- Supports stopping generation, regenerating responses, conversation history, and multiple API profiles.
+- Uses throttled UI updates and automatic scrolling during streaming.
 
-### Advanced Native Markdown Rendering
+### Deep thinking and web search
 
-Using `@luvi/lv-markdown-in` native component (not WebView-embedded HTML), supporting:
+- The deep-thinking toggle explicitly controls Volcengine Ark requests:
+  - Off: `thinking.type = disabled`
+  - On: `thinking.type = enabled`
+- The visible toggle takes precedence over extra request-body fields, preventing UI/request mismatches.
+- Volcengine Ark profiles can use the Web Search tool.
+- Deep-thinking and web-search preferences persist across app restarts.
 
-- **Full CommonMark + GFM Standard**: Complete Markdown syntax including headings, lists, blockquotes, code blocks, tables, etc.
-- **LaTeX Math Formulas**: Supports `$...$` / `$$...$$`, automatic text color switching for dark/light modes
-- **Code Syntax Highlighting**: 19 token types with fine-grained coloring, independent warm/high-saturation schemes for dark/light modes
-- **Mermaid Diagrams**: Supports flowcharts, sequence diagrams, Gantt charts, and other visualizations
-- **Streaming Incremental Rendering**: Version 3.3+ optimization for table/code block/plugin flickering during streaming
-- **Tables**: Header coloring, alternating row colors, rounded borders
-- **Task Lists**: Todo List support
-- **Full UI Style Programmable Control**: Heading colors, blockquote colors and rounded corners, hyperlink underlines, list bullet colors, inline code colors, etc.
+### Native Markdown
 
-### Multi-Agent System
+Rendered with the native `@luvi/lv-markdown-in` component, with support for:
 
-8 built-in specialized agents, managed via `resources/rawfile/agents.json` + independent Markdown prompt files:
+- CommonMark and commonly used GFM syntax
+- Code blocks and syntax highlighting
+- Tables, task lists, blockquotes, and links
+- Inline and block LaTeX
+- Mermaid flowcharts, sequence diagrams, and other diagrams
+- Automatic light/dark theme adaptation
 
-| Agent | Category | Description |
-|-------|----------|-------------|
-| Guncat 2.0-Flash | General | Flagship version balancing speed and quality |
-| Guncat 2.0-Pro | General | High-quality results through iterative reasoning |
-| Guncat 2.5-Lite | General | Structured thinking chain & two-tier reasoning modes |
-| Guncat 2.5-Max | General | Structured thinking chain & three-tier reasoning modes |
-| Guncat Cnvt-Paper | Paper Rewriting | Transforms non-academic text into academically compliant papers |
-| Guncat Srch-Law | Legal Search | SOE legal analysis expert with mandatory multi-turn search & structured legal opinions |
-| Guncat Srch-Research | Academic Search | Cross-domain information retrieval with multi-source cross-validation |
-| Guncat Srch-Sift | AI Information Filtering | Official source tracing & AI content filtering |
+### Image and file attachments
 
-### Multimodal File Parsing
+- Adds attachments through the system photo picker or document picker.
+- Supports image previews, text extraction, Office documents, and PDFs.
+- Attachments can be pre-parsed or sent directly as multimodal Responses API input.
+- Parsing includes status feedback, retries, and concurrency throttling.
 
-After uploading images or documents, parsed via GLM-4.6V-Flash (ZhipuAI API) multimodal API, supporting:
+### Receiving system shares
 
-- **Images**: PNG/JPEG/WebP/GIF
-- **Text Documents**: TXT/MD/JSON/TS/JSX/TSX/HTML/CSS/CSV/LOG/YAML and various programming languages
-- **Office Documents**: PDF/DOC/DOCX/XLS/XLSX/PPT/PPTX
+The app is registered as a HarmonyOS system share target:
 
-**Smart Parsing Features**:
+- Receives images, text, and general files, up to five items at a time.
+- Guncat AI can be selected from the Gallery or file manager share sheet.
+- Shared items are added to the current chat's pending attachment area and are never sent automatically.
+- Uses Share Kit UTD matching and `systemShare.getSharedData()` for reception.
 
-- Auto-retry on parsing failure (up to 4 times, 800ms interval)
-- 200ms staggered parsing between files to avoid concurrent rate limiting
-- Image preview and document content extraction support
-- Real-time parsing status display (parsing/ready/failed)
+### CoreSpeechKit read-aloud
 
-### Native Theme System
+The final read-aloud implementation uses HarmonyOS CoreSpeechKit `textToSpeech`. Experimental local VITS, MeloTTS, and sherpa-onnx implementations are not included.
 
-Complete Light/Dark theme based on HarmonyOS resource framework, not CSS variable simulation:
+- Queries the voices actually supported by the device and exposes them in the reader controls.
+- Prefers a female voice by default and uses a default speed of `1.5×`.
+- Persists the selected voice and speed with Preferences.
+- Provides pause/resume, close, speed selection, and draggable progress.
+- The floating reader control can be repositioned within the page.
+- Uses AVSession, an audio playback continuous task, and background TTS parameters for background and screen-off playback.
+- After completion, the reader remains available for seeking and replay.
 
-- Uses `dark/element/color.json` + `base/element/color.json` resource qualifiers
-- `EntryAbility` listens for system theme switches via `onConfigurationUpdate` callback
-- Propagates `systemColorMode` state to all components via `AppStorage`
-- Status bar/navigation bar colors auto-adapt to theme
-- Markdown code theme and math formula colors sync with theme switching
+> Voice availability and download requirements depend on the device and system version.
 
-### Smart Persistence System
+### Voice input
 
-Based on `@kit.ArkData` Preferences API (analogous to Web's localStorage):
+- Uses the native HarmonyOS speech recognition capability.
+- Supports starting, stopping, and cancelling voice input.
+- Recognition results are placed in the message editor for confirmation before sending.
 
-- Conversation history and configuration serialized as JSON for storage
-- Auto-saves current conversation state and agent selection
-- Supports multi-conversation management and switching
-- Configuration persisted locally, auto-restored on app restart
+### Agents and persistence
 
-## Project Structure
+- Includes general-purpose, paper-writing, legal-search, and academic-research agents.
+- Conversations, selected agent, API profiles, feature toggles, and reader preferences are stored locally.
+- Supports creating, switching, and deleting conversations.
+- Follows the system light/dark theme, including system bars and Markdown styles.
 
-```
+## Built-in agents
+
+Agents are managed through `resources/rawfile/agents.json` and separate Markdown prompt files:
+
+| Agent | Category | Purpose |
+| --- | --- | --- |
+| Guncat 2.0-Flash | General | General-purpose agent balancing speed and quality |
+| Guncat 2.0-Pro | General | High-quality analysis and complex tasks |
+| Guncat 2.5-Lite | General | Structured thinking with lightweight reasoning |
+| Guncat 2.5-Max | General | More complete structured, multi-stage reasoning |
+| Guncat Cnvt-Paper | Paper rewriting | Converts ordinary text into academic prose |
+| Guncat Srch-Law | Legal search | Multi-step legal research and structured opinions |
+| Guncat Srch-Research | Academic search | Cross-domain research with source cross-validation |
+| Guncat Srch-Sift | AI information filtering | Official-source tracing and AI information filtering |
+
+## Persistence and themes
+
+The app uses `@kit.ArkData` Preferences:
+
+- Conversation history and settings are serialized as JSON.
+- The current conversation, selected agent, and multiple API profiles are saved automatically.
+- Deep thinking, web search, reader voice, and reader speed are persisted.
+- Local state is restored when the app restarts.
+
+The theme system uses HarmonyOS resource qualifiers:
+
+- `base/element/color.json` provides light resources.
+- `dark/element/color.json` provides dark resources.
+- `EntryAbility.onConfigurationUpdate()` observes system theme changes.
+- System bars, Markdown, syntax highlighting, and formula colors update together.
+
+## Project structure
+
+```text
 entry/src/main/ets/
 ├── entryability/
-│   └── EntryAbility.ets           # App entry Ability
-├── entrybackupability/
-│   └── EntryBackupAbility.ets     # Backup & restore Ability
+│   └── EntryAbility.ets
 ├── pages/
-│   └── ChatPage.ets               # Main page: message list + Header + input area + drawer
+│   └── ChatPage.ets
 ├── views/
-│   ├── ChatBubbleView.ets         # Chat bubble (user/assistant)
-│   ├── RichTextView.ets           # Native Markdown rendering wrapper
-│   ├── MessageInputView.ets       # Message input bar
-│   ├── AgentDrawerView.ets        # Agent/conversation sidebar drawer
-│   ├── SettingsPanel.ets          # API configuration panel
-│   ├── ImageLightbox.ets          # Image lightbox
-│   ├── FilePreviewBar.ets         # File preview bar
-│   ├── ToastView.ets              # Toast notification
-│   └── AboutPanel.ets             # About panel
+│   ├── ChatBubbleView.ets
+│   ├── RichTextView.ets
+│   ├── MessageInputView.ets
+│   ├── AgentDrawerView.ets
+│   ├── SettingsPanel.ets
+│   ├── FilePreviewBar.ets
+│   └── ImageLightbox.ets
 ├── viewmodel/
-│   └── ChatViewModel.ts           # Core state management (MVVM layer)
+│   └── ChatViewModel.ts
 ├── service/
-│   ├── ChatService.ts             # SSE streaming network requests
-│   ├── MultimodalService.ts       # Multimodal file parsing
-│   ├── FileService.ts             # File selection and reading
-│   ├── AgentLoader.ts             # Agent configuration loading
-│   ├── TextReaderService.ts       # HarmonyOS TTS service
-│   └── VoiceInputService.ets      # HarmonyOS ASR service
-├── model/
-│   ├── Message.ts                 # Message model (@Observed)
-│   ├── Conversation.ts            # Conversation model
-│   ├── Agent.ts                   # Agent model
-│   ├── ApiConfig.ts               # API configuration
-│   ├── ApiProfile.ts              # API profile (multi-config management)
-│   ├── MultimodalConfig.ts        # Multimodal configuration
-│   └── Attachment.ts              # Attachment model
+│   ├── ChatService.ts
+│   ├── MultimodalService.ts
+│   ├── FileService.ts
+│   ├── TextReaderService.ets
+│   ├── BackgroundReaderService.ets
+│   └── VoiceInputService.ets
 ├── data/
-│   └── StorageManager.ts          # Preferences persistence layer
-├── common/
-│   ├── Types.ts                   # Shared type definitions
-│   ├── Utils.ts                   # Utility functions
-│   └── Constants.ts               # Global constants
-└── components/
-    └── ToggleSwitch.ets           # Toggle switch component
+│   └── StorageManager.ts
+├── model/
+└── common/
 ```
 
-## Technical Architecture
+The project follows an MVVM-like separation:
 
-MVVM-like architecture:
+- View: ArkUI pages and components.
+- ViewModel: chat, attachment, configuration, and persistence state.
+- Service: SSE, file parsing, system sharing, TTS, and ASR.
+- Model: messages, conversations, attachments, agents, and API profiles.
 
-### Architecture Layers
+### Data flow
 
-- **Model** (`model/`): Pure data classes, `@Observed` decorator makes property changes trackable
-- **ViewModel** (`viewmodel/ChatViewModel.ts`): Centralized state and business logic management, maintains an internal `version` counter to drive UI refresh
-- **View** (`views/` + `pages/`): Stateless UI components, bound to VM data via `@Prop` / `@ObjectLink` / `@Link`
-
-### Data Flow
-
+```text
+ChatService (SSE)
+  → ChatViewModel
+  → @Observed Message
+  → @ObjectLink ChatBubbleView
+  → RichTextView
 ```
-ChatService (SSE) → ChatViewModel → @Observed Message.content → @ObjectLink ChatBubbleView → RichTextView (Native Markdown Rendering)
-```
 
-### Core Component Description
+### Core components
 
-1. **ChatViewModel** - Core State Manager
-   
-   - Manages conversation list, agent selection, API configuration
-   - Handles message sending, streaming responses, file parsing
-   - Implements persistent storage and state restoration
+1. **ChatViewModel**
+   - Manages conversations, agent selection, API profiles, and editor state.
+   - Handles sending, streaming responses, attachment parsing, and regeneration.
+   - Coordinates persistence and state restoration.
 
-2. **ChatService** - Network Communication Layer
-   
-   - Implements SSE streaming communication protocol
-   - Supports Chat Completions and Responses API dual protocols
-   - Handles connection management, error handling, interruption support
+2. **ChatService**
+   - Implements SSE streaming and request cancellation.
+   - Supports Chat Completions and Responses API.
+   - Parses response deltas and handles network/server errors.
 
-3. **MultimodalService** - Multimodal Parsing Service
-   
-   - Calls ZhipuAI GLM-4.6V-Flash API
-   - Supports image, text, and Office document parsing
-   - Implements retry mechanism and concurrency control
+3. **MultimodalService**
+   - Processes images, text, PDFs, and Office documents.
+   - Supports pre-parsing, retries, and concurrency control.
+   - Supports direct Responses API image/file input.
 
-4. **StorageManager** - Persistence Layer
-   
-   - Implements local storage based on Preferences API
-   - Manages conversation history, configuration information, agent state
+4. **StorageManager**
+   - Wraps Preferences storage.
+   - Persists conversations, profiles, toggles, and reader preferences.
 
-## Build & Run
+5. **TextReaderService / BackgroundReaderService**
+   - Discovers and manages CoreSpeechKit voices.
+   - Controls reading, pause, seeking, and speed.
+   - Uses AVSession and a continuous task for background audio.
 
-### Requirements
+## Build requirements
 
-- **IDE**: DevEco Studio 5.0+
-- **HarmonyOS SDK**: API 12+
-- **System Version**: HarmonyOS 5.0+
-- **Device**: Physical device or emulator
+- DevEco Studio 6.0.1 or a compatible version
+- HarmonyOS SDK API 24 (`6.1.1`)
+- A HarmonyOS phone
 
-### Build Steps
+Open the project in DevEco Studio, configure signing, and run the `entry` module. Example command-line build:
 
 ```bash
-# 1. Clone the project
-git clone <repository-url>
-
-# 2. Open the project root directory in DevEco Studio
-
-# 3. Ensure HarmonyOS SDK API 12+ is installed
-
-# 4. Connect a physical device or start an emulator
-
-# 5. Click Run or use command line:
-hvigorw assembleHap
-
-# 6. Install to device
-hvigorw installHap
+hvigorw --mode module -p product=default -p module=entry@default -p buildMode=debug assembleHap
 ```
 
-### Configuration
+### Build steps
 
-#### API Configuration
+1. Clone or download the project.
+2. Open the `GuncatAI` directory in DevEco Studio.
+3. Install and select HarmonyOS SDK API 24.
+4. Configure debug or release signing.
+5. Connect a HarmonyOS device.
+6. Run the `entry` module or build the HAP with the command above.
 
-Configure the following parameters in the app settings:
+## Configuration
 
-1. **Provider**: Select `deepseek`, `volcano`, or `custom`
-2. **Base URL**: API endpoint address
-3. **API Key**: Valid API key
-4. **Model**: Model name to use
+Multiple API profiles can be saved and switched in the app:
 
-#### Preset Configurations
+1. Provider
+2. Base URL
+3. API Key
+4. Model
+5. Optional temperature, Top P, and maximum output tokens
+6. Extra request-body fields
 
-- **Deepseek Preset**:
-  
-  - Base URL: `https://api.deepseek.com`
-  - Model: `deepseek-chat`
+Default Volcengine Ark endpoint:
 
-- **Volcengine Ark Preset**:
-  
-  - Base URL: `https://ark.cn-beijing.volces.com/api/v3`
-  - Model: Fill in based on actual usage
+```text
+https://ark.cn-beijing.volces.com/api/v3
+```
 
-#### Multimodal Configuration
+Multimodal pre-parsing has a separate model, endpoint, and API key configuration.
 
-- **Base URL**: `https://open.bigmodel.cn/api/paas/v4` (default)
-- **Model**: `glm-4.6v-flash` (default)
-- **API Key**: ZhipuAI API key
+## Usage guide
 
-## Dependencies
+### Basic chat
 
-### Core Dependencies
+1. Open Settings after the first launch.
+2. Create or select an API profile and enter the provider, Base URL, API key, and model.
+3. Select an agent from the drawer.
+4. Enter and send a message.
 
-- `@luvi/lv-markdown-in: ^3.4.5` — Native Markdown rendering component
-- HarmonyOS API 12+ (`@kit.NetworkKit`, `@kit.ArkData`, `@kit.BasicServicesKit`, `@kit.CoreFileKit`)
+### Adding images or files
 
-### System Capabilities
+1. Tap the attachment button beside the editor.
+2. Select content from the photo or document picker.
+3. Wait for pre-parsing; when pre-parsing is disabled, attachments are passed directly to a compatible multimodal endpoint.
+4. Review pending attachments and explicitly tap Send.
 
-- **Network Communication**: HTTP/HTTPS requests, SSE streaming
-- **Data Storage**: Preferences API local persistence
-- **File Management**: File selection, reading, Base64 encoding
-- **UI Components**: ArkUI declarative UI, animations, theme adaptation
+You can also select content in Gallery or a file manager and choose Guncat AI from the system share sheet. The app only stages the items as attachments and does not submit a request automatically.
 
-## Usage Guide
+### Deep thinking
 
-### Basic Usage Flow
+- Off explicitly sends `thinking: { "type": "disabled" }`.
+- On explicitly sends `thinking: { "type": "enabled" }`.
+- This applies to compatible Volcengine Ark Responses API models.
 
-1. **Launch App**: Default agent is automatically loaded on first launch
-2. **Configure API**: Click the settings button in the top-right corner to configure API key
-3. **Select Agent**: Click the menu button in the top-left corner to select an appropriate agent
-4. **Start Chatting**: Enter your question in the input box and click send
+### Read-aloud
 
-### Advanced Features
+1. Tap the read-aloud action on an assistant message.
+2. Pause/resume, change speed, or select a voice from the floating control.
+3. Drag the progress control to continue from the corresponding text position.
+4. Drag an empty area of the control to reposition it.
+5. Tap Close to end reading and dismiss the control.
 
-#### 1. File Upload & Parsing
+### Conversation and message actions
 
-- Click the attachment button on the left side of the input box
-- Select image or document files
-- Wait for parsing to complete (status shows "ready")
-- File content is automatically attached to the message
+- Create, switch, and delete conversations from the drawer.
+- Copy assistant message content.
+- Regenerate an assistant response.
+- Tap images for full-screen preview.
+- Stop the active request while it is generating.
 
-#### 2. Deep Thinking Mode
+## Permissions and system capabilities
 
-- When enabled, AI performs deeper reasoning
-- Suitable for complex problem analysis and academic research
+- `ohos.permission.INTERNET`: model API access.
+- `ohos.permission.MICROPHONE`: voice input.
+- `ohos.permission.KEEP_BACKGROUND_RUNNING`: continuous background audio for read-aloud.
+- Share Kit: receiving images and files from other apps.
+- CoreSpeechKit: text-to-speech and speech recognition.
+- AVSession Kit: background media session.
+- ArkData Preferences: local configuration and conversation persistence.
 
-#### 3. Web Search
+## Privacy
 
-- Only supported by Volcengine Ark Provider
-- When enabled, AI can search for the latest information
+- API keys and app settings are stored in the app's local sandbox.
+- Chats and attachments are sent only to model services configured by the user.
+- Items received from the system share sheet are never sent automatically; the user must tap Send.
+- Original attachments are not copied into permanent app storage.
+- Requests use HTTPS. Data-processing policies still depend on the configured model provider.
 
-#### 4. Conversation Management
+## Version 4.1.0
 
-- **New Conversation**: Click "New Conversation" in the drawer
-- **Switch Conversation**: Select historical conversations in the drawer
-- **Delete Conversation**: Long press or right-click to delete
-
-#### 5. Message Actions
-
-- **Copy Text**: Long press message to copy
-- **Regenerate**: Click the regenerate button on assistant messages
-- **Image Preview**: Click image messages for full-screen preview
-
-### Quick Actions
-
-- **Auto-Scroll**: Automatically scrolls to bottom during streaming
-- **Theme Switching**: Follows system dark/light mode
-- **Config Persistence**: All settings are auto-saved
+- Expanded CoreSpeechKit read-aloud with voice discovery and selection, a preferred female voice, `1.5×` default speed, and persistent preferences.
+- Added a movable reader control with pause/resume, close, speed controls, and seeking.
+- Added AVSession and an audio playback continuous task for background and screen-off reading.
+- Added HarmonyOS system share reception so images and files can be placed directly in pending attachments.
+- Corrected Volcengine Ark deep-thinking semantics: Off sends `disabled`; On sends `enabled`.
+- Retained native voice input, multiple API profiles, and Responses API multimodal passthrough.
 
 ## FAQ
 
-### 1. Invalid API Key?
+### Invalid API key
 
-- Check if the API key is correctly copied, watching for leading/trailing spaces
-- Confirm if the API key has expired or credits are exhausted
-- Check if the network connection is stable
+- Check for leading or trailing whitespace.
+- Confirm that model, provider, and Base URL match.
+- Check account balance, API access, and network connectivity.
 
-### 2. File Parsing Failure?
+### File parsing failed
 
-- Check if file size exceeds the 20MB limit
-- Confirm if the file format is supported
-- Check if multimodal API configuration is correct
-- The app auto-retries; wait and try again
+- Confirm that the format and size are supported by the model endpoint.
+- Verify the multimodal configuration.
+- Disable pre-parsing and use a Responses API model that accepts attachments directly.
 
-### 3. Streaming Output Stuttering?
+### Streaming response stopped
 
-- Check network connection stability
-- Try switching to different API Providers
-- Disable deep thinking mode to reduce computation load
+- Check network stability and server rate-limit messages.
+- Try another API profile.
+- Disable deep thinking for simple tasks to reduce response latency.
 
-### 4. How to Update?
+### Guncat AI is missing from the Gallery share sheet
 
-- Rebuild and install the HAP package
-- Conversation history and configuration are automatically preserved
+- Confirm that the latest HAP with Share Kit UTD declarations is installed.
+- Reopen the Gallery share sheet after updating so the system refreshes share targets.
 
-### 5. Supported Devices?
+### Background reading stops
 
-- Supports HarmonyOS 5.0+ phones and tablets
-- Requires sufficient storage (recommended 100MB+)
-
-## Security & Privacy
-
-- **Local Storage**: All data stored locally on device
-- **API Keys**: Only used for AI service calls, never uploaded to other servers
-- **File Processing**: Files processed locally on device, original files not persistently stored
-- **Network Communication**: Uses HTTPS encrypted transmission
-
-## Version History
-
-### Version 4 (Current)
-
-- Brand new native ArkTS architecture
-- Multi-agent system support
-- Multimodal file parsing
-- Native Markdown rendering
-- HarmonyOS TTS control support, auto-read aloud (v 4.1.0)
-- HarmonyOS speech recognition control support, voice input (v 4.1.0)
-- Multi-config save and free config switching (v 4.1.0)
-- Multimodal model Response API image/file direct upload (v 4.1.0)
+- Ensure notifications and background activity are not restricted for the app.
+- Background policy and available system voices vary by device.
 
 ## Contributing
 
-Issues and Pull Requests are welcome!
+Issues and Pull Requests are welcome.
 
-### Development Setup
+1. Fork the repository.
+2. Create a feature branch.
+3. Follow ArkTS coding conventions.
+4. Ensure the project passes type checks and HAP compilation.
+5. Open a Pull Request describing the change and verification performed.
 
-1. Fork this repository
-2. Create a feature branch: `git checkout -b feature/amazing-feature`
-3. Commit changes: `git commit -m 'Add some amazing feature'`
-4. Push to branch: `git push origin feature/amazing-feature`
-5. Create a Pull Request
+## Note
 
-### Code Standards
-
-- Follow ArkTS coding conventions
-- Use meaningful variable and function names
-- Add necessary comments
-- Ensure code passes type checking
-
----
-
-**Guncat AI** — Making AI conversations more native, smoother, and smarter!
+This release does not include local TTS model approaches that were evaluated or prototyped and later reverted. The README describes only functionality present in the current codebase.

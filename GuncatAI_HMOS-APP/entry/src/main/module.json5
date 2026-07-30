@@ -30,6 +30,9 @@
           ],
           "when": "inuse"
         }
+      },
+      {
+        "name": "ohos.permission.KEEP_BACKGROUND_RUNNING"
       }
     ],
     "abilities": [
@@ -39,6 +42,9 @@
         "description": "$string:EntryAbility_desc",
         "icon": "$media:layered_image",
         "label": "$string:EntryAbility_label",
+        "backgroundModes": [
+          "audioPlayback"
+        ],
         "startWindowIcon": "$media:startIcon",
         "startWindowBackground": "$color:start_window_background",
         "exported": true,
@@ -49,6 +55,28 @@
             ],
             "actions": [
               "ohos.want.action.home"
+            ]
+          },
+          {
+            "actions": [
+              "ohos.want.action.sendData"
+            ],
+            "uris": [
+              {
+                "scheme": "file",
+                "utd": "general.image",
+                "maxFileSupported": 5
+              },
+              {
+                "scheme": "file",
+                "utd": "general.file",
+                "maxFileSupported": 5
+              },
+              {
+                "scheme": "file",
+                "utd": "general.text",
+                "maxFileSupported": 5
+              }
             ]
           }
         ]

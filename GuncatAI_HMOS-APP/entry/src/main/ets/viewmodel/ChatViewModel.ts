@@ -12,7 +12,6 @@ import { AgentLoader } from '../service/AgentLoader';
 import { ChatService } from '../service/ChatService';
 import { FileService, PickedFile } from '../service/FileService';
 import { MultimodalService } from '../service/MultimodalService';
-import { TextReaderService } from '../service/TextReaderService';
 import { StorageManager } from '../data/StorageManager';
 import { Constants } from '../common/Constants';
 import { generateMessageId } from '../common/Utils';
@@ -57,6 +56,9 @@ export class ChatViewModel {
   }
   // UI 状态变化回调(用于在 VM 内部状态变化时通知 ChatPage 触发 refreshTick)
   onStateChange: () => void = (): void => {};
+  onReadText: (id: string, text: string) => Promise<void> =
+    async (_id: string, _text: string): Promise<void> => {};
+  onStopReading: () => Promise<void> = async (): Promise<void> => {};
 
   setStateChangeListener(cb: () => void): void {
     this.onStateChange = cb;
@@ -336,7 +338,7 @@ export class ChatViewModel {
       await StorageManager.saveBoolean(this.context, Constants.LS_KEY_AUTO_READ_ENABLED, enabled);
     }
     if (!enabled) {
-      await TextReaderService.stop();
+      await this.onStopReading();
     }
     this.notifyUIChange();
   }
@@ -479,6 +481,39 @@ export class ChatViewModel {
     // 所有文件解析完毕
     this._isParsing = false;
     this.notifyUIChange();
+  }
+
+  async acceptSharedFiles(uris: string[]): Promise<void> {
+    if (uris.length === 0) {
+      return;
+    }
+    let files: PickedFile[] = await FileService.readSharedFiles(uris);
+    if (files.length === 0) {
+      promptAction.showToast({ message: '无法读取分享的文件', duration: 2000 });
+      return;
+    }
+    this._isParsing = true;
+    let firstNewIndex: number = this.pendingFiles.length;
+    let newPending: FileItem[] = [];
+    for (let i: number = 0; i < files.length; i++) {
+      let item: FileItem = FileService.createFileItem(files[i]);
+      this.fileBuffers.set(item.id, files[i].buffer);
+      newPending.push(item);
+    }
+    this.pendingFiles = [...this.pendingFiles, ...newPending];
+    this.notifyUIChange();
+    for (let index: number = firstNewIndex; index < this.pendingFiles.length; index++) {
+      if (index > firstNewIndex) {
+        await this.sleep(Constants.FILE_PARSE_INTERLEAVE_MS);
+      }
+      await this.parseOneFile(index);
+    }
+    this._isParsing = false;
+    this.notifyUIChange();
+    promptAction.showToast({
+      message: files.length.toString() + ' 个分享文件已加入附件',
+      duration: 2000
+    });
   }
 
   private async parseOneFile(index: number): Promise<void> {
@@ -714,7 +749,7 @@ export class ChatViewModel {
   }
 
   async stopReading(): Promise<void> {
-    await TextReaderService.stop();
+    await this.onStopReading();
   }
 
   private async readText(id: string, markdown: string): Promise<void> {
@@ -726,7 +761,7 @@ export class ChatViewModel {
       return;
     }
     try {
-      await TextReaderService.read(this.context, id, plainText);
+      await this.onReadText(id, plainText);
     } catch (e) {
       let err: Error = e as Error;
       let message: string = err.message !== undefined ? err.message : '设备暂不支持朗读';

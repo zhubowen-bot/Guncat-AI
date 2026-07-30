@@ -1,357 +1,336 @@
 # Guncat AI
 
-> [English](README_EN.md) | 中文
+> 中文 | [English](README_EN.md)
 
-**原生鸿蒙 AI 对话客户端** — 纯 ArkTS + ArkUI 实现，非 WebView 套壳。
+Guncat AI 是使用 ArkTS 与 ArkUI 开发的原生 HarmonyOS AI 对话客户端，不使用 WebView 承载主界面。
 
-市面上大多数 AI 客户端本质是浏览器套壳，Guncat AI 从 UI 框架到网络通信到 Markdown 渲染全部基于 HarmonyOS 原生能力构建，在性能、交互流畅度和系统集成深度上具备本质差异。
+当前应用版本：`4.1.0`
 
-## 🎯 核心亮点
+## 主要功能
 
-### 🚀 原生 ArkTS 流式对话交互
+### 原生流式对话
 
-- **SSE 流式实时通信**：基于 `@kit.NetworkKit` 的 `http.requestInStream` 实现原生 SSE 解析，逐 token 增量更新，非 WebSocket 或轮询方案
-- **双协议兼容**：同时支持 OpenAI Chat Completions (`/chat/completions`) 和 Anthropic/火山 Responses API (`/responses`)，适配 Deepseek、火山方舟等多家供应商
-- **50ms 节流失效刷新**：流式过程采用 50ms 节流策略 + 33ms UI 可见文本缓冲对齐，避免每 token 触发整块渲染
-- **100ms 自动滚动**：流式输出时定时器确保消息列表持续置底，体验对齐 WebChat
+- 基于 `@kit.NetworkKit` 和 `http.requestInStream` 处理 SSE 流式响应。
+- 支持 OpenAI Chat Completions（`/chat/completions`）和火山方舟 Responses API（`/responses`）。
+- 支持 DeepSeek、火山方舟及兼容接口的自定义服务。
+- 支持停止生成、重新生成、对话历史管理和多套 API 配置。
+- 流式输出采用节流刷新与自动滚动，减少频繁重绘。
 
-### 📝 高级原生 Markdown 渲染
+### 深度思考与联网搜索
 
-使用 `@luvi/lv-markdown-in` 原生组件（非 WebView 内嵌 HTML），支持：
+- 深度思考按钮会显式控制火山方舟请求：
+  - 关闭：`thinking.type = disabled`
+  - 开启：`thinking.type = enabled`
+- 按钮状态优先于额外请求参数，避免界面状态与实际请求不一致。
+- 火山方舟配置支持 Web Search 工具。
+- 深度思考和联网搜索状态会持久化保存。
 
-- **完整 CommonMark + GFM 标准**：标题、列表、引用、代码块、表格等完整 Markdown 语法
-- **LaTeX 数学公式**：支持 `$...$` / `$$...$$`，深色/浅色模式自动切换文字色
-- **代码语法高亮**：19 种 token 类型的细粒度配色，深/浅模式各有独立的暖色/高饱和配色方案
-- **Mermaid 图表**：支持流程图、时序图、甘特图等可视化图表
-- **流式增量渲染**：3.3+ 版本优化表格/代码块/插件在流式过程中的闪烁问题
-- **表格**：带表头着色、行交错色、边框圆角
-- **任务列表**：Todo List 支持
-- **全套 UI 样式可编程控制**：标题色、引用块颜色与圆角、超链接下划线、列表点色、行内代码色等
+### 原生 Markdown
 
-### 🤖 多智能体系统
+基于 `@luvi/lv-markdown-in` 原生组件渲染，支持：
 
-内置 8 个专业智能体，通过 `resources/rawfile/agents.json` + 独立 Markdown 提示词文件管理：
+- CommonMark 与 GFM 常用语法
+- 代码块及语法高亮
+- 表格、任务列表、引用和链接
+- LaTeX 行内与块级公式
+- Mermaid 流程图、时序图等图表
+- 深色与浅色主题自动适配
 
-| 智能体                  | 类别      | 功能描述                    |
-| -------------------- | ------- | ----------------------- |
-| Guncat 2.0-Flash     | 通用智能体   | 速度与质量平衡的旗舰版本            |
-| Guncat 2.0-Pro       | 通用智能体   | 依赖重复推理获得高质量结果           |
-| Guncat 2.5-Lite      | 通用智能体   | 结构化思维链&两档推理模式           |
-| Guncat 2.5-Max       | 通用智能体   | 结构化思维链&三档推理模式           |
-| Guncat Cnvt-Paper    | 论文改写    | 将非论文文体转化为符合学术规范的论文      |
-| Guncat Srch-Law      | 法律检索    | 国企法律分析专家，强制多轮检索与结构化法律意见 |
-| Guncat Srch-Research | 学术检索    | 跨领域信息检索与多源交叉验证          |
-| Guncat Srch-Sift     | AI 信息筛选 | 官方溯源与 AI 内容过滤           |
+### 图片与文件附件
 
-### 📁 多模态文件解析
+- 支持从系统图片选择器或文件选择器添加附件。
+- 支持图片预览、文本提取、Office 文档与 PDF 解析。
+- 可选择预解析附件，或通过 Responses API 直接传递多模态内容。
+- 文件解析带状态提示、失败重试和并发节流。
 
-上传图片或文档后，通过 GLM-4.6V-Flash（智谱 API）多模态解析，支持：
+### 接收系统分享
 
-- **图片**：PNG/JPEG/WebP/GIF
-- **文本文档**：TXT/MD/JSON/TS/JSX/TSX/HTML/CSS/CSV/LOG/YAML/ 及多种编程语言
-- **Office 文档**：PDF/DOC/DOCX/XLS/XLSX/PPT/PPTX
+应用已注册为 HarmonyOS 系统分享目标：
 
-**智能解析特性**：
+- 支持接收图片、文本和通用文件，单次最多 5 个。
+- 从图库或文件管理器选择“分享”后，可以选择 Guncat AI。
+- 分享内容只会加入当前聊天的待发送附件区，不会自动发送消息。
+- 基于 HarmonyOS Share Kit 的 UTD 类型匹配和 `systemShare.getSharedData()` 解析。
 
-- 解析失败自动重试（最多 4 次，800ms 间隔）
-- 文件间 200ms 交错解析避免并发限流
-- 支持图片预览和文档内容提取
-- 实时解析状态显示（解析中/已就绪/失败）
+### CoreSpeechKit 朗读
 
-### 🎨 原生主题系统
+最终朗读方案采用 HarmonyOS CoreSpeechKit 的 `textToSpeech` 能力，不包含本地 VITS、MeloTTS、sherpa-onnx 等已撤回方案。
 
-基于 HarmonyOS 资源框架实现完整 Light/Dark 主题，非 CSS 变量模拟：
+- 查询设备实际支持的系统音色，并允许在朗读控制条中切换。
+- 默认优先选择女声，默认语速为 `1.5×`。
+- 音色和语速使用 Preferences 持久化，重启应用后自动恢复。
+- 提供暂停/继续、关闭、倍速切换和可拖动进度。
+- 朗读控制条可在页面内拖动位置。
+- 使用 AVSession、音频播放长时任务和后台语音参数支持锁屏及退到后台继续播放。
+- 朗读完成后控制条仍可用于拖动进度并重新播放。
 
-- 使用 `dark/element/color.json` + `base/element/color.json` 资源限定符
-- `EntryAbility` 通过 `onConfigurationUpdate` 回调监听系统主题切换
-- 通过 `AppStorage` 传播 `systemColorMode` 状态到所有组件
-- 状态栏/导航栏颜色随主题自动适配
-- Markdown 代码主题、数学公式颜色同步切换
+> 可用音色及某些音色是否需要下载由设备和系统版本决定。
 
-### 💾 智能持久化系统
+### 语音输入
 
-基于 `@kit.ArkData` Preferences API（对标 Web 的 localStorage）：
+- 使用 HarmonyOS 原生语音识别能力。
+- 支持开始、停止和取消语音输入。
+- 识别结果直接进入消息输入框，由用户确认后发送。
 
-- 对话历史与配置均以 JSON 序列化存储
-- 自动保存当前对话状态和智能体选择
-- 支持多对话管理和切换
-- 配置信息本地持久化，重启应用自动恢复
+### 智能体与持久化
 
-## 📁 项目结构
+- 内置多个通用、论文、法律检索和学术检索智能体。
+- 对话、当前智能体、API 配置、功能开关及朗读配置均保存在本地。
+- 支持新建、切换和删除对话。
+- 跟随系统切换深色/浅色主题，并同步状态栏、导航栏和 Markdown 样式。
 
-```
+## 内置智能体
+
+智能体通过 `resources/rawfile/agents.json` 和独立 Markdown 提示词文件管理：
+
+| 智能体 | 类别 | 功能 |
+| --- | --- | --- |
+| Guncat 2.0-Flash | 通用 | 兼顾速度与质量的通用智能体 |
+| Guncat 2.0-Pro | 通用 | 面向高质量分析与复杂任务 |
+| Guncat 2.5-Lite | 通用 | 结构化思考与轻量推理 |
+| Guncat 2.5-Max | 通用 | 更完整的结构化多阶段推理 |
+| Guncat Cnvt-Paper | 论文改写 | 将普通文本转换为符合学术规范的论文文体 |
+| Guncat Srch-Law | 法律检索 | 多轮法律检索与结构化法律意见 |
+| Guncat Srch-Research | 学术检索 | 跨领域检索及多来源交叉验证 |
+| Guncat Srch-Sift | AI 信息筛选 | 官方来源追踪与 AI 信息过滤 |
+
+## 持久化与主题系统
+
+应用基于 `@kit.ArkData` Preferences 保存数据：
+
+- 对话历史与配置使用 JSON 序列化。
+- 自动保存当前对话、智能体选择和多套 API 配置。
+- 自动保存深度思考、联网搜索、朗读音色和朗读倍速。
+- 应用重启后恢复本地状态。
+
+主题使用 HarmonyOS 资源限定符实现：
+
+- `base/element/color.json` 提供浅色资源。
+- `dark/element/color.json` 提供深色资源。
+- `EntryAbility.onConfigurationUpdate()` 监听系统主题变化。
+- 状态栏、导航栏、Markdown、代码高亮及公式颜色同步切换。
+
+## 项目结构
+
+```text
 entry/src/main/ets/
 ├── entryability/
-│   └── EntryAbility.ets           # 应用入口 Ability
-├── entrybackupability/
-│   └── EntryBackupAbility.ets     # 备份恢复 Ability
+│   └── EntryAbility.ets
 ├── pages/
-│   └── ChatPage.ets               # 主页面：消息列表 + Header + 输入区 + 抽屉
+│   └── ChatPage.ets
 ├── views/
-│   ├── ChatBubbleView.ets         # 聊天气泡（用户/助手）
-│   ├── RichTextView.ets           # 原生 Markdown 渲染封装
-│   ├── MessageInputView.ets       # 消息输入栏
-│   ├── AgentDrawerView.ets        # 智能体/对话侧边抽屉
-│   ├── SettingsPanel.ets          # API 配置弹层
-│   ├── ImageLightbox.ets          # 图片灯箱
-│   ├── FilePreviewBar.ets         # 文件预览条
-│   ├── ToastView.ets              # 轻提示
-│   └── AboutPanel.ets             # 关于弹层
+│   ├── ChatBubbleView.ets
+│   ├── RichTextView.ets
+│   ├── MessageInputView.ets
+│   ├── AgentDrawerView.ets
+│   ├── SettingsPanel.ets
+│   ├── FilePreviewBar.ets
+│   └── ImageLightbox.ets
 ├── viewmodel/
-│   └── ChatViewModel.ts           # 核心状态管理（MVVM 层）
+│   └── ChatViewModel.ts
 ├── service/
-│   ├── ChatService.ts             # SSE 流式网络请求
-│   ├── MultimodalService.ts       # 多模态文件解析
-│   ├── FileService.ts             # 文件选择与读取
-│   ├── AgentLoader.ts             # 智能体配置加载
-│   ├── TextReaderService.ts       # 鸿蒙朗读服务（TTS）
-│   └── VoiceInputService.ets      # 鸿蒙语音识别服务（ASR）
-├── model/
-│   ├── Message.ts                 # 消息模型（@Observed）
-│   ├── Conversation.ts            # 对话模型
-│   ├── Agent.ts                   # 智能体模型
-│   ├── ApiConfig.ts               # API 配置
-│   ├── ApiProfile.ts              # API 配置档（多配置管理）
-│   ├── MultimodalConfig.ts        # 多模态配置
-│   └── Attachment.ts              # 附件模型
+│   ├── ChatService.ts
+│   ├── MultimodalService.ts
+│   ├── FileService.ts
+│   ├── TextReaderService.ets
+│   ├── BackgroundReaderService.ets
+│   └── VoiceInputService.ets
 ├── data/
-│   └── StorageManager.ts          # Preferences 持久化层
-├── common/
-│   ├── Types.ts                   # 共享类型定义
-│   ├── Utils.ts                   # 工具函数
-│   └── Constants.ts               # 全局常量
-└── components/
-    └── ToggleSwitch.ets           # 开关胶囊组件
+│   └── StorageManager.ts
+├── model/
+└── common/
 ```
 
-## 🏗️ 技术架构
+项目采用类似 MVVM 的分层方式：
 
-采用类 **MVVM 架构**：
-
-### 架构层次
-
-- **Model** (`model/`)：纯数据类，`@Observed` 装饰器让属性变更可追踪
-- **ViewModel** (`viewmodel/ChatViewModel.ts`)：集中管理所有状态与业务逻辑，内部维护 `version` 计数器驱动 UI 刷新
-- **View** (`views/` + `pages/`)：无状态 UI 组件，通过 `@Prop` / `@ObjectLink` / `@Link` 绑定 VM 数据
+- View：ArkUI 页面与组件。
+- ViewModel：集中管理聊天、附件、配置和持久化状态。
+- Service：负责 SSE、文件解析、系统分享、TTS 和 ASR 等能力。
+- Model：消息、对话、附件、智能体及 API 配置模型。
 
 ### 数据流
 
+```text
+ChatService (SSE)
+  → ChatViewModel
+  → @Observed Message
+  → @ObjectLink ChatBubbleView
+  → RichTextView
 ```
-ChatService (SSE) → ChatViewModel → @Observed Message.content → @ObjectLink ChatBubbleView → RichTextView（原生 Markdown 渲染）
+
+### 核心组件
+
+1. **ChatViewModel**
+   - 管理对话列表、智能体选择、API 配置和输入状态。
+   - 处理消息发送、流式响应、附件解析与重新生成。
+   - 负责持久化存储和状态恢复。
+
+2. **ChatService**
+   - 实现 SSE 流式通信和请求中断。
+   - 支持 Chat Completions 与 Responses API。
+   - 解析增量回答并处理网络及服务端错误。
+
+3. **MultimodalService**
+   - 处理图片、文本、PDF 和 Office 文档。
+   - 支持预解析、重试与并发控制。
+   - 支持 Responses API 图片和文件直传。
+
+4. **StorageManager**
+   - 封装 Preferences 本地存储。
+   - 管理对话、配置、开关和朗读偏好。
+
+5. **TextReaderService / BackgroundReaderService**
+   - 查询和管理 CoreSpeechKit 音色。
+   - 管理朗读、暂停、进度跳转与语速。
+   - 通过 AVSession 和长时任务维持后台音频会话。
+
+## 构建要求
+
+- DevEco Studio 6.0.1 或兼容版本
+- HarmonyOS SDK API 24（`6.1.1`）
+- HarmonyOS 手机真机
+
+使用 DevEco Studio 打开项目后，配置签名并运行 `entry` 模块即可。命令行构建示例：
+
+```bash
+hvigorw --mode module -p product=default -p module=entry@default -p buildMode=debug assembleHap
 ```
-
-### 核心组件说明
-
-1. **ChatViewModel** - 核心状态管理器
-   
-   - 管理对话列表、智能体选择、API配置
-   - 处理消息发送、流式响应、文件解析
-   - 实现持久化存储和状态恢复
-
-2. **ChatService** - 网络通信层
-   
-   - 实现SSE流式通信协议
-   - 支持Chat Completions和Responses API双协议
-   - 处理连接管理、错误处理、中断支持
-
-3. **MultimodalService** - 多模态解析服务
-   
-   - 调用智谱GLM-4.6V-Flash API
-   - 支持图片、文本、Office文档解析
-   - 实现重试机制和并发控制
-
-4. **StorageManager** - 持久化层
-   
-   - 基于Preferences API实现本地存储
-   - 管理对话历史、配置信息、智能体状态
-
-## 🛠️ 构建与运行
-
-### 环境要求
-
-- **开发工具**：DevEco Studio 5.0+ 
-- **HarmonyOS SDK**：API 12+
-- **系统版本**：HarmonyOS 5.0+
-- **设备**：真机或模拟器
 
 ### 构建步骤
 
-```bash
-# 1. 克隆项目
-git clone <repository-url>
+1. 克隆或下载项目。
+2. 使用 DevEco Studio 打开 `GuncatAI` 目录。
+3. 安装并选择 HarmonyOS SDK API 24。
+4. 配置调试或发布签名。
+5. 连接 HarmonyOS 真机。
+6. 运行 `entry` 模块，或使用上述命令构建 HAP。
 
-# 2. 使用 DevEco Studio 打开项目根目录
+## 配置
 
-# 3. 确保已安装 HarmonyOS SDK API 12+
+应用设置中可保存并切换多套 API 配置：
 
-# 4. 连接真机或启动模拟器
+1. Provider
+2. Base URL
+3. API Key
+4. Model
+5. Temperature、Top P、最大输出 Token 等可选参数
+6. 额外请求参数
 
-# 5. 点击 Run 或使用命令行：
-hvigorw assembleHap
+火山方舟默认地址：
 
-# 6. 安装到设备
-hvigorw installHap
+```text
+https://ark.cn-beijing.volces.com/api/v3
 ```
 
-### 配置说明
+多模态预解析可单独配置模型、地址和 API Key。
 
-#### API 配置
+## 使用指南
 
-在应用设置中配置以下参数：
+### 基本对话
 
-1. **Provider**：选择 `deepseek`、`volcano` 或 `custom`
-2. **Base URL**：API 端点地址
-3. **API Key**：有效的 API 密钥
-4. **Model**：使用的模型名称
+1. 首次启动后打开设置。
+2. 新建或选择 API 配置，填写 Provider、Base URL、API Key 和模型名称。
+3. 从侧边栏选择智能体。
+4. 输入消息并发送。
 
-#### 预设配置
+### 添加图片或文件
 
-- **Deepseek 预设**：
-  
-  - Base URL: `https://api.deepseek.com`
-  - Model: `deepseek-chat`
+1. 点击输入框旁的附件按钮。
+2. 从图片选择器或文件选择器选择内容。
+3. 等待预解析完成；关闭预解析时，附件会在发送时直接传给支持多模态的接口。
+4. 检查待发送附件后，由用户主动发送。
 
-- **火山方舟预设**：
-  
-  - Base URL: `https://ark.cn-beijing.volces.com/api/v3`
-  - Model: 根据实际使用填写
+也可以在图库或文件管理器中选择内容，通过系统“分享”选择 Guncat AI。应用只会把内容放入待发送附件，不会自动提交请求。
 
-#### 多模态配置
+### 深度思考
 
-- **Base URL**：`https://open.bigmodel.cn/api/paas/v4`（默认）
-- **Model**：`glm-4.6v-flash`（默认）
-- **API Key**：智谱 API 密钥
+- 关闭按钮会显式发送 `thinking: { "type": "disabled" }`。
+- 打开按钮会显式发送 `thinking: { "type": "enabled" }`。
+- 适用于支持该参数的火山方舟 Responses API 模型。
 
-## 📦 依赖
+### 朗读
 
-### 核心依赖
+1. 点击助手消息的朗读操作。
+2. 在悬浮控制条中暂停/继续、切换语速或音色。
+3. 拖动进度条可从相应文本位置继续朗读。
+4. 拖动控制条空白区域可调整位置。
+5. 点击关闭按钮结束朗读并收起控制条。
 
-- `@luvi/lv-markdown-in: ^3.4.5` — 原生 Markdown 渲染组件
-- HarmonyOS API 12+ (`@kit.NetworkKit`, `@kit.ArkData`, `@kit.BasicServicesKit`, `@kit.CoreFileKit`)
+### 对话与消息操作
 
-### 系统能力
+- 在侧边栏中新建、切换或删除对话。
+- 复制助手消息内容。
+- 对助手消息执行重新生成。
+- 点击图片进入大图预览。
+- 生成过程中可停止当前请求。
 
-- **网络通信**：HTTP/HTTPS 请求、SSE 流式传输
-- **数据存储**：Preferences API 本地持久化
-- **文件管理**：文件选择、读取、Base64 编码
-- **UI 组件**：ArkUI 声明式 UI、动画、主题适配
+## 权限与系统能力
 
-## 🎮 使用指南
+- `ohos.permission.INTERNET`：访问模型 API。
+- `ohos.permission.MICROPHONE`：语音输入。
+- `ohos.permission.KEEP_BACKGROUND_RUNNING`：朗读后台音频长时任务。
+- Share Kit：接收其他应用分享的图片和文件。
+- CoreSpeechKit：文本朗读与语音识别。
+- AVSession Kit：后台媒体会话。
+- ArkData Preferences：本地配置与对话持久化。
 
-### 基本使用流程
+## 隐私说明
 
-1. **启动应用**：首次启动会自动加载默认智能体
-2. **配置 API**：点击右上角设置按钮，配置 API 密钥
-3. **选择智能体**：点击左上角菜单按钮，选择适合的智能体
-4. **开始对话**：在输入框输入问题，点击发送
+- API Key 和应用配置保存在应用本地沙箱。
+- 聊天请求和附件只会发送到用户配置的模型服务。
+- 从系统分享接收的内容不会自动发送，必须由用户主动点击发送。
+- 原始附件不会作为永久文件复制到应用数据中。
+- 网络请求使用 HTTPS，实际数据处理政策以所配置的模型服务商为准。
 
-### 高级功能
+## 4.1.0 更新
 
-#### 1. 文件上传与解析
+- 完善 CoreSpeechKit 朗读：系统音色查询与切换、默认女声与 `1.5×` 语速、配置持久化。
+- 新增可拖动朗读控制条、暂停/继续、关闭、倍速控制和进度跳转。
+- 增加 AVSession 与音频播放长时任务，支持后台和锁屏朗读。
+- 新增 HarmonyOS 系统分享接收，图片和文件可直接加入待发送附件。
+- 修正火山方舟深度思考开关：关闭显式发送 `disabled`，开启显式发送 `enabled`。
+- 保留原生语音输入、多 API 配置及 Responses API 多模态直传。
 
-- 点击输入框左侧的附件按钮
-- 选择图片或文档文件
-- 等待解析完成（状态显示"已就绪"）
-- 文件内容会自动附加到消息中
+## 常见问题
 
-#### 2. 深度思考模式
+### API Key 无效
 
-- 开启后，AI 会进行更深入的推理
-- 适合复杂问题分析和学术研究
+- 检查是否带有多余空格。
+- 确认模型、Provider 与 Base URL 匹配。
+- 检查账户额度、接口权限和网络连接。
 
-#### 3. 联网搜索
+### 文件解析失败
 
-- 仅火山方舟 Provider 支持
-- 开启后，AI 可以搜索最新信息
+- 确认格式和文件大小受模型接口支持。
+- 检查多模态配置是否正确。
+- 可以关闭预解析，改用支持附件直传的 Responses API 模型。
 
-#### 4. 对话管理
+### 流式输出中断
 
-- **新建对话**：在抽屉中点击"新建对话"
-- **切换对话**：在抽屉中选择历史对话
-- **删除对话**：长按或右键删除对话
+- 检查网络稳定性及服务端限流信息。
+- 尝试切换 API 配置。
+- 对简单问题关闭深度思考可减少响应等待。
 
-#### 5. 消息操作
+### 图库分享列表中没有 Guncat AI
 
-- **复制文本**：长按消息选择复制
-- **重新生成**：点击助手消息的重新生成按钮
-- **图片预览**：点击图片消息进行全屏预览
+- 确认安装的是包含 Share Kit UTD 声明的最新 HAP。
+- 更新安装后重新打开图库分享面板，让系统刷新分享目标。
 
-### 快捷操作
+### 后台朗读停止
 
-- **自动滚动**：流式输出时自动置底
-- **主题切换**：跟随系统深色/浅色模式
-- **配置持久化**：所有设置自动保存
+- 确认应用通知和后台运行权限未被系统限制。
+- 不同机型的后台策略和可用系统音色可能不同。
 
-## 🔧 常见问题解答
+## 贡献
 
-### 1. API Key 无效怎么办？
+欢迎提交 Issue 和 Pull Request。
 
-- 检查 API Key 是否正确复制，注意前后空格
-- 确认 API Key 是否过期或额度用尽
-- 检查网络连接是否正常
+1. Fork 仓库。
+2. 创建功能分支。
+3. 遵循 ArkTS 编码规范完成修改。
+4. 确保项目通过类型检查和 HAP 构建。
+5. 提交 Pull Request，并说明修改内容及验证方式。
 
-### 2. 文件解析失败如何处理？
+## 说明
 
-- 检查文件大小是否超过 20MB 限制
-- 确认文件格式是否受支持
-- 检查多模态 API 配置是否正确
-- 应用会自动重试，等待片刻后重试
-
-### 3. 流式输出卡顿怎么办？
-
-- 检查网络连接稳定性
-- 尝试切换不同的 API Provider
-- 关闭深度思考模式减少计算量
-
-### 4. 如何更新应用？
-
-- 重新构建并安装 HAP 包
-- 对话历史和配置会自动保留
-
-### 5. 支持哪些设备？
-
-- 支持 HarmonyOS 5.0+ 的手机、平板设备
-- 需要足够的存储空间（建议 100MB+）
-
-## 🛡️ 安全与隐私
-
-- **本地存储**：所有数据存储在设备本地
-- **API 密钥**：仅用于调用 AI 服务，不会上传到其他服务器
-- **文件处理**：文件在设备本地处理，不会持久化存储原始文件
-- **网络通信**：使用 HTTPS 加密传输
-
-## 🔄 版本历史
-
-### version 4 (当前版本)
-
-- 全新原生 ArkTS 架构
-- 支持多智能体系统
-- 多模态文件解析
-- 原生 Markdown 渲染
-- 适配鸿蒙朗读控件，新增自动朗读 (v 4.1.0)
-- 适配鸿蒙语音识别控件，新增语音输入 (v 4.1.0)
-- 新增多配置保存、自由切换模型配置 (v 4.1.0)
-- 新增多模态模型 Response API 图片/文件直传功能 (v 4.1.0)
-
-## 🤝 贡献
-
-欢迎提交 Issue 和 Pull Request！
-
-### 开发环境搭建
-
-1. Fork 本仓库
-2. 创建特性分支：`git checkout -b feature/amazing-feature`
-3. 提交更改：`git commit -m 'Add some amazing feature'`
-4. 推送到分支：`git push origin feature/amazing-feature`
-5. 创建 Pull Request
-
-### 代码规范
-
-- 遵循 ArkTS 编码规范
-- 使用有意义的变量和函数名
-- 添加必要的注释说明
-- 确保代码通过类型检查
-
----
-
-**Guncat AI** — 让 AI 对话更原生、更流畅、更智能！
+本次版本不包含曾经评估或试验过、但最终撤回的本地 TTS 模型方案；README 仅描述当前代码中实际保留的功能。

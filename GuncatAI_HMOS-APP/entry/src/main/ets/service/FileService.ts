@@ -17,6 +17,36 @@ export interface PickedFile {
 }
 
 export class FileService {
+  static async readSharedFiles(uris: string[]): Promise<PickedFile[]> {
+    let files: PickedFile[] = [];
+    let count: number = Math.min(5, uris.length);
+    for (let i: number = 0; i < count; i++) {
+      try {
+        let uri: string = uris[i];
+        let stat: fileIo.Stat = fileIo.statSync(uri);
+        let file: fileIo.File = fileIo.openSync(uri, fileIo.OpenMode.READ_ONLY);
+        let buffer: ArrayBuffer = new ArrayBuffer(stat.size);
+        fileIo.readSync(file.fd, buffer, { offset: 0 });
+        fileIo.closeSync(file.fd);
+        let cleanUri: string = uri.split('?')[0];
+        let name: string = cleanUri.substring(cleanUri.lastIndexOf('/') + 1);
+        if (name === '') {
+          name = 'shared-file-' + (i + 1).toString();
+        }
+        files.push({
+          name: decodeURIComponent(name),
+          uri: uri,
+          fileType: FileService.guessTypeByName(name),
+          size: stat.size,
+          buffer: buffer
+        });
+      } catch (error) {
+        hilog.error(DOMAIN, TAG, 'read shared file failed: %{public}s', JSON.stringify(error));
+      }
+    }
+    return files;
+  }
+
   static async pickFiles(): Promise<PickedFile[]> {
     let options: picker.DocumentSelectOptions = new picker.DocumentSelectOptions();
     options.maxSelectNumber = 5;
