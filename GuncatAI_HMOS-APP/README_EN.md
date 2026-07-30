@@ -4,7 +4,7 @@
 
 Guncat AI is a native HarmonyOS AI chat client built with ArkTS and ArkUI. Its primary interface is not hosted in a WebView.
 
-Current app version: `4.1.0`
+Current app version: `4.2.0`
 
 ## Features
 
@@ -282,7 +282,7 @@ You can also select content in Gallery or a file manager and choose Guncat AI fr
 - Original attachments are not copied into permanent app storage.
 - Requests use HTTPS. Data-processing policies still depend on the configured model provider.
 
-## Version 4.1.0
+## Version 4.2.0
 
 - Expanded CoreSpeechKit read-aloud with voice discovery and selection, a preferred female voice, `1.5×` default speed, and persistent preferences.
 - Added a movable reader control with pause/resume, close, speed controls, and seeking.

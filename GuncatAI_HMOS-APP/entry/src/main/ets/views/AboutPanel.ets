@@ -57,7 +57,7 @@ export struct AboutPanel {
               .fontWeight(FontWeight.Bold)
               .fontColor($r('app.color.text_primary'))
               .margin({ bottom: 4 })
-            Text('version 4.1.0')
+            Text('version 4.2.0')
               .fontSize(14)
               .fontColor($r('app.color.text_secondary'))
               .margin({ bottom: 20 })
