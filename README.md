@@ -215,13 +215,12 @@ Built on the **LangChain / LangGraph** ecosystem, Python code-driven, equipped w
 
 ## Deployment Solutions
 
-The same set of agents can be carried by different clients or platforms. Guncat offers 7 deployment forms.
+The same set of agents can be carried by different clients or platforms. Guncat offers 6 deployment forms.
 
 | Deployment Solution     | Applicable Agents                     | Form                    | Description                                                                                                      |
 | ----------------------- | ------------------------------------- | ----------------------- | ---------------------------------------------------------------------------------------------------------------- |
 | **Tencent Yuanqi**      | Guncat 2.0 / 2.5 Series               | Platform-hosted         | Platform-adapted prompts; agents can be created directly on Tencent Yuanqi                                       |
 | **Zhipu Qingyan**       | Guncat Srch / Cnvt Series             | Platform-hosted         | Platform-adapted prompts, deployed on the Zhipu Qingyan platform                                                 |
-| **Guncat AI-zhipu Web** | Zhipu Qingyan chat client             | Browser H5              | Official chat webpage based on Zhipu's free GLM API, ready out of the box                                        |
 | **Guncat Web for API**  | Universal prompts (platform-agnostic) | Web / Windows / Android | "Configuration-as-Agent" architecture; users select their own OpenAI-compatible API                              |
 | **Coze Service**        | Guncat 2.5-Pro                        | Cloud API               | Python agent deployed as a Coze API service for external capability provision                                    |
 | **HarmonyOS H5 App**    | Web for API universal prompts         | HarmonyOS H5 wrapper    | Secondary packaging based on Web for API, with HarmonyOS rawfile preloading + resource interception optimization |
@@ -235,14 +234,7 @@ The same set of agents can be carried by different clients or platforms. Guncat 
 
 * Search for "Guncat" directly in the Zhipu Qingyan official website/app agent center to start using it.
 
-### 3. Guncat AI-zhipu Web (Zhipu Qingyan Chat Client)
-
-* Located at [Guncat AI Release/Guncat AI-zhipu_glm_version](./Guncat%20AI%20Release/).
-* Pure frontend HTML; open `guncat-app.html` directly in a browser.
-* Connects to the Zhipu Qingyan free GLM API (API Key entered in page settings).
-* Suitable for: Zero-dependency trial for Zhipu Qingyan users.
-
-### 4. Guncat Web for API
+### 3. Guncat Web for API
 
 * "Configuration-as-Agent" architecture: The agent list is defined by `agents.json`, with prompts stored as external `.md` files.
 * Users select their own OpenAI-compatible API (OpenAI, Azure, Zhipu, Tongyi Qianwen, DeepSeek, etc.).
@@ -259,13 +251,13 @@ A pre-built `.bat` file is included; simply click to launch the local HTTP servi
 * Optimizations: DNS/TCP preconnect, local resource interception and replacement, async rendering, caching strategy.
 * Suitable for: Native app experience on HarmonyOS devices.
 
-### 5. Coze Service (Guncat 2.5-Pro)
+### 4. Coze Service (Guncat 2.5-Pro)
 
 * Deploy the Guncat 2.5-Pro Python project to the Coze platform, providing a Coze API externally.
 * Supports the OpenAI-compatible `/v1/chat/completions` interface.
 * Suitable for: Integrating 2.5-Pro as a backend service into other applications.
 
-### 6. HarmonyOS Native App (ArkTS)
+### 5. HarmonyOS Native App (ArkTS)
 
 * A **pure ArkTS + ArkUI** native HarmonyOS application, **not a WebView wrapper**.
 * Native SSE streaming communication via `@kit.NetworkKit`'s `http.requestInStream`.
@@ -284,7 +276,7 @@ This project has been fully restructured, with **agent series** and **deployment
 
 | Module                                                                            | Category           | Description                                                                                  |
 | --------------------------------------------------------------------------------- | ------------------ | -------------------------------------------------------------------------------------------- |
-| [Guncat AI Release](./Guncat%20AI%20Release/)                                     | Agent + Deployment | Tencent Yuanqi, Zhipu Qingyan, and other platform-adapted prompts + Zhipu Qingyan web client |
+| [Guncat AI Release](./Guncat%20AI%20Release/)                                     | Agent + Deployment | Tencent Yuanqi, Zhipu Qingyan, and other platform-adapted prompts               |
 | [Guncat AI Python](./Guncat%20AI%20Python/)                                       | Agent              | Two Python code-driven projects: Guncat 2.5-Pro and Srch-Law V2                              |
 | [Guncat AI Web for API](./Guncat%20AI%20Web%20for%20API/)                         | Deployment         | Universal prompt web client, self-configured API                                             |
 | [Guncat AI Web for API_local-setup](./Guncat%20AI%20Web%20for%20API_local-setup/) | Deployment         | Windows one-click local launch version of the web client                                     |
@@ -523,13 +515,12 @@ Prompt 驱动，创新搭载 **Sequential Thinking** 结构化思维链与多 Ag
 
 ## 搭载 / 部署方案
 
-同一套智能体可以由不同的客户端或平台承载，Guncat 提供 7 种部署形态。
+同一套智能体可以由不同的客户端或平台承载，Guncat 提供 6 种部署形态。
 
 | 部署方案                   | 适用智能体                 | 形态                      | 说明                                           |
 | ---------------------- | --------------------- | ----------------------- | -------------------------------------------- |
 | **腾讯元器**               | Guncat 2.0 / 2.5 系列   | 平台托管                    | 平台适配提示词，可直接在腾讯元器创建智能体                        |
 | **智谱清言**               | Guncat Srch / Cnvt 系列 | 平台托管                    | 平台适配提示词，部署于智谱清言平台                            |
-| **Guncat AI-zhipu 网页** | 智谱清言对话客户端             | 浏览器 H5                  | 基于智谱免费 GLM API 的官方对话网页，开箱即用                  |
 | **Guncat Web for API** | 通用提示词（不绑定平台）          | Web / Windows / Android | 「配置即智能体」架构，用户自选 OpenAI 兼容 API                |
 | **Coze 服务**            | Guncat 2.5-Pro        | 云端 API                  | Python 智能体部署为 Coze API 服务对外提供能力              |
 | **鸿蒙 H5 应用**           | Web for API 通用提示词     | 鸿蒙 H5 套壳 App            | 基于 Web for API 二次包装，鸿蒙端 rawfile 预加载 + 资源拦截优化 |
@@ -543,14 +534,7 @@ Prompt 驱动，创新搭载 **Sequential Thinking** 结构化思维链与多 Ag
 
 - 在智谱清言官方网站/APP智能体中心直接搜索Guncat即可体验
 
-### 3. Guncat AI-zhipu 网页（智谱清言对话客户端）
-
-- 位于 [Guncat AI Release/Guncat AI-zhipu_glm_version](./Guncat%20AI%20Release/)。
-- 纯前端 HTML，直接浏览器打开 `guncat-app.html`。
-- 接入智谱清言免费 GLM API（API Key 在页面设置中填写）。
-- 适合：智谱清言用户的零依赖试用。
-
-### 4. Guncat Web for API
+### 3. Guncat Web for API
 
 - 「配置即智能体」架构：智能体列表由 `agents.json` 定义，提示词以外部 `.md` 文件存储。
 - 用户自选 OpenAI 兼容 API（OpenAI、Azure、智谱、通义千问、DeepSeek 等）。
@@ -567,13 +551,13 @@ Prompt 驱动，创新搭载 **Sequential Thinking** 结构化思维链与多 Ag
 * 优化项：预连接 DNS/TCP、本地资源拦截替换、异步渲染、缓存策略。
 * 适合：鸿蒙设备的原生 App 体验。
 
-### 5. Coze 服务（Guncat 2.5-Pro）
+### 4. Coze 服务（Guncat 2.5-Pro）
 
 - 将 Guncat 2.5-Pro Python 项目部署到 Coze 平台，对外提供 Coze API。
 - 支持 OpenAI 兼容的 `/v1/chat/completions` 接口。
 - 适合：将 2.5-Pro 作为后端服务集成到其他应用。
 
-### 6. 鸿蒙原生应用（ArkTS）
+### 5. 鸿蒙原生应用（ArkTS）
 
 - **纯 ArkTS + ArkUI** 鸿蒙原生应用，**非 WebView 套壳**。
 - 基于 `@kit.NetworkKit` 的 `http.requestInStream` 实现原生 SSE 流式通信。
@@ -592,7 +576,7 @@ Prompt 驱动，创新搭载 **Sequential Thinking** 结构化思维链与多 Ag
 
 | 模块                                                                                | 类别       | 说明                                            |
 | --------------------------------------------------------------------------------- | -------- | --------------------------------------------- |
-| [Guncat AI Release](./Guncat%20AI%20Release/)                                     | 智能体 + 部署 | 腾讯元器、智谱清言等平台适配提示词 + 智谱清言网页客户端                 |
+| [Guncat AI Release](./Guncat%20AI%20Release/)                                     | 智能体 + 部署 | 腾讯元器、智谱清言等平台适配提示词                             |
 | [Guncat AI Python](./Guncat%20AI%20Python/)                                       | 智能体      | Guncat 2.5-Pro 与 Srch-Law V2 两个 Python 代码驱动项目 |
 | [Guncat AI Web for API](./Guncat%20AI%20Web%20for%20API/)                         | 部署       | 通用提示词 Web 客户端，自主配置 API                        |
 | [Guncat AI Web for API_local-setup](./Guncat%20AI%20Web%20for%20API_local-setup/) | 部署       | Web 客户端的 Windows 一键本地启动版                      |

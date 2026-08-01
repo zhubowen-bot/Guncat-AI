@@ -2,7 +2,7 @@
 
 > [中文](README.md) | English
 
-> Platform-Deployed Prompts & ZhipuAI Web Application
+> Platform-Deployed Prompts
 
 This directory contains **platform-adapted prompts and deployment resources**, ready for direct use in creating and running agents on platforms such as Tencent Yuanqi and ZhipuAI ChatGLM.
 
@@ -28,9 +28,6 @@ Guncat AI Release/
 │   └── Guncat Srch-Research-prompt.md
 ├── Guncat Srch-Sift/                    # AI information filtering agent prompts
 │   └── Guncat Srch-Sift-prompt.md
-├── Guncat AI-zhipu_glm_version/         # ZhipuAI free API web app
-│   ├── guncat-app.html
-│   └── cat-avatar(1).png
 └── LICENSE
 ```
 
@@ -50,25 +47,6 @@ Guncat AI Release/
 1. Go to [ZhipuAI ChatGLM](https://chatglm.cn/) and create an agent.
 2. Copy the corresponding `.md` prompt content into the agent configuration.
 3. If external search or tools are needed, enable the corresponding capabilities as specified in the prompt.
-
----
-
-## ZhipuAI Web Application
-
-The `Guncat AI-zhipu_glm_version/` directory provides a browser-runnable chat web page `guncat-app.html`.
-
-### Features
-
-- Built on ZhipuAI's **free GLM API**.
-- Pure frontend HTML, no backend service required.
-- Simply open the page, enter your ZhipuAI API Key, and start chatting.
-
-### How to Use
-
-1. Get a ZhipuAI API Key from [ZhipuAI Open Platform](https://open.bigmodel.cn/).
-2. Open `guncat-app.html` directly in your browser.
-3. Enter your API Key and select a model (e.g., `glm-4-flash`) in the page settings.
-4. Start chatting.
 
 ---
 
