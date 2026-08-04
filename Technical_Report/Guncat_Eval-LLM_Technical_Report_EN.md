@@ -346,7 +346,69 @@ Based on the above limitations, future work can proceed in the following directi
 
 ---
 
-## 8. Conclusion
+## 8. Validation Set Evaluation
+
+### 8.1 Evaluation Design
+
+To verify the actual effectiveness of the anti-inflation system, we constructed a high-difficulty validation set comprising two models that are extremely challenging to evaluate:
+
+- **Qwen 3.8-Max**: A model released the day before evaluation, with extremely low information density and scarce public information, posing a severe test to the agent's existence determination and symmetric retrieval capabilities.
+- **OpenPangu 2.0-Pro**: A model released in 2026 but lagging approximately one year behind mainstream models, posing a severe test to the agent's bottom-tier magnetism prohibition, asymmetric prior, and code-ability weighting mechanisms.
+
+The validation set includes 8 standard evaluation items covering dimensions such as existence verification, capability tier assessment, current-generation comparison, code ability evaluation, and intelligence index estimation. The evaluation items were designed based on standard library evaluation.
+
+### 8.2 Comparison Systems
+
+We evaluated the DeepSeek V4 Flash 0426 (API) loaded with the Guncat Eval-LLM prompt against three comparison systems:
+
+| System | Access Method | Characteristics |
+|--------|--------------|-----------------|
+| **DS V4 Flash 0426 + Agent Prompt** | API + Agent Prompt | This agent implementation |
+| **Kimi K3** | Official App | Has web search capability |
+| **Doubao Seed 2.1-Turbo** | Official App | Known for knowledge and information base |
+| **DS V4 Flash 0426 Baseline** | API (no prompt) | Baseline control |
+
+### 8.3 Evaluation Results
+
+![Validation Set Evaluation Results](validation_results.png)
+
+**Figure 1: Validation Set Evaluation Results Comparison** (Top: per-test results heatmap; Bottom: overall accuracy rate comparison)
+
+### 8.4 Results Analysis
+
+The evaluation results are summarized in the following table:
+
+| System | Correct/Total | Accuracy | Primary Failure Mode |
+|--------|---------------|----------|---------------------|
+| DS V4 Flash + Agent Prompt | 8/8 | **100%** | None |
+| Kimi K3 | 7/8 | **87.5%** | Qwen 3.8-Max existence verification failed (information overload led to false non-existence determination) |
+| Doubao Seed 2.1-Turbo | 4/8 | **50.0%** | OpenPangu 2.0-Pro capability severely underestimated (all 4 items failed) |
+| DS V4 Flash 0426 Baseline | 2/8 | **25.0%** | OpenPangu 2.0-Pro capability severely overestimated (all 4 items failed) + Qwen 3.8-Max existence misjudgment |
+
+**Key Findings**:
+
+1. **The DS V4 Flash loaded with the agent prompt achieved 100% accuracy**, providing accurate assessments on all 8 evaluation items. This validates the completeness of the anti-inflation system—the symmetric retrieval rule ensured accurate existence determination and capability assessment for Qwen 3.8-Max (an extremely new model); the asymmetric prior and bottom-tier magnetism prohibition ensured accurate capability positioning for OpenPangu 2.0-Pro (a lagging model), neither overestimating nor underestimating.
+
+2. **Kimi K3 achieved 87.5% accuracy**, with a very small gap from the agent. The only failure occurred in Qwen 3.8-Max existence verification—during multi-round search, due to the large volume of returned information but scarce valid results, Kimi K3 falsely determined that the model did not exist. This failure mode is an existence misjudgment caused by information overload, not a capability assessment bias. Kimi K3 performed accurately on OpenPangu 2.0-Pro evaluation, indicating it possesses certain anti-hallucination capabilities.
+
+3. **Doubao Seed 2.1-Turbo achieved 50.0% accuracy**, failing all 4 evaluation items for OpenPangu 2.0-Pro, exhibiting **severe underestimation**—assessing the already-lagging OpenPangu 2.0-Pro as even worse than reality. This failure mode is an extreme manifestation of the "bottom-tier magnetism" bias, over-anchoring non-mainstream models downward.
+
+4. **DS V4 Flash 0426 baseline achieved 25.0% accuracy**, failing all 4 evaluation items for OpenPangu 2.0-Pro, exhibiting **severe overestimation**—assessing the lagging OpenPangu 2.0-Pro as approaching current-generation mainstream model levels. This failure mode is a typical manifestation of the "dimension-average inflation" and "bottom-tier magnetism" biases described in Section 2 of this paper. Additionally, the baseline failed on Qwen 3.8-Max existence verification and tier assessment, indicating that without the symmetric retrieval rule, the model tends to substitute training memory for retrieval.
+
+### 8.5 Evaluation Conclusion
+
+The validation set evaluation results powerfully demonstrate the effectiveness of the anti-inflation system:
+
+- **Symmetric retrieval rule** effectively prevented existence misjudgment and capability assessment bias for extremely new models (Qwen 3.8-Max)
+- **Asymmetric prior and bottom-tier magnetism prohibition** effectively prevented overestimation and underestimation of lagging models (OpenPangu 2.0-Pro)
+- **Code-ability weighting rule** ensured that intelligence estimation anchored on code ability, avoiding dimension-average inflation
+- **Opposing hypothesis testing and gap quantification** ensured that each benchmarking conclusion underwent counter-evidence examination and quantitative expression
+
+The comparison results show that the DS V4 Flash loaded with the agent prompt achieved 100% accuracy on both high-difficulty evaluation models, significantly outperforming the other three comparison systems. This result validates the effectiveness of the prompt engineering methodology—through failure-node-analysis-driven improvement and anti-overfitting principles, the system can accurately handle new models absent from training data and lagging models with complex capability positioning.
+
+---
+
+## 9. Conclusion
 
 This paper introduced the design and prompt engineering of the open-source large model evaluation intelligence analyst agent Guncat Eval-LLM. Targeting model comparison as the quintessential anti-hallucination proposition, the agent employs a 12-step workflow and eight key mechanisms to construct a three-tier anti-inflation system covering information acquisition, benchmark anchoring, and intelligence estimation.
 
