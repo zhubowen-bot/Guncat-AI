@@ -4,7 +4,7 @@
 
 Guncat AI is a native HarmonyOS AI chat client built with ArkTS and ArkUI. Its primary interface is not hosted in a WebView.
 
-Current app version: `4.2.0`
+Current app version: `4.2.1`
 
 ## Features
 
@@ -282,6 +282,10 @@ You can also select content in Gallery or a file manager and choose Guncat AI fr
 - Items received from the system share sheet are never sent automatically; the user must tap Send.
 - Original attachments are not copied into permanent app storage.
 - Requests use HTTPS. Data-processing policies still depend on the configured model provider.
+
+## Version 4.2.1
+
+- Added the Guncat Eval-LLM evaluation agent: LLM evaluation intelligence analysis based on a 12-step workflow and eight anti-hallucination mechanisms.
 
 ## Version 4.2.0
 
