@@ -74,7 +74,7 @@ The final read-aloud implementation uses HarmonyOS CoreSpeechKit `textToSpeech`.
 
 ### Agents and persistence
 
-- Includes general-purpose, paper-writing, legal-search, and academic-research agents.
+- Includes general-purpose, paper-writing, legal-search, academic-research, and evaluation agents.
 - Conversations, selected agent, API profiles, feature toggles, and reader preferences are stored locally.
 - Supports creating, switching, and deleting conversations.
 - Follows the system light/dark theme, including system bars and Markdown styles.
@@ -93,6 +93,7 @@ Agents are managed through `resources/rawfile/agents.json` and separate Markdown
 | Guncat Srch-Law | Legal search | Multi-step legal research and structured opinions |
 | Guncat Srch-Research | Academic search | Cross-domain research with source cross-validation |
 | Guncat Srch-Sift | AI information filtering | Official-source tracing and AI information filtering |
+| Guncat Eval-LLM | Model evaluation | LLM evaluation intelligence analysis based on a 12-step workflow and eight anti-hallucination mechanisms |
 
 ## Persistence and themes
 

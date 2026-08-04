@@ -36,7 +36,8 @@ Due to cross-origin restrictions, the `file://` protocol cannot read external JS
     ├── Guncat Cnvt-Paper_prompt.md
     ├── Guncat Srch-Law V1.0-prompt.md
     ├── Guncat Srch-Research-prompt.md
-    └── Guncat Srch-Sift-prompt.md
+    ├── Guncat Srch-Sift-prompt.md
+    └── Guncat Eval-LLM_prompt.md
 
 ### agents.json Configuration Example
 
@@ -64,12 +65,12 @@ Each agent configuration includes:
 * `id`: Unique identifier
 * `name`: Display name
 * `description`: Functional description
-* `category`: Classification (General Agent / Search Agent / Rewriting Agent)
+* `category`: Classification (General Agent / Search Agent / Rewriting Agent / Evaluation Agent)
 * `promptFile`: Path to the corresponding prompt file
 
 ### Core Features
 
-* **Agent Switching**: Switch between different Guncat agents via the sidebar drawer (2.0/2.5 General Agents, Srch Search Agents, Cnvt Rewriting Agents)
+* **Agent Switching**: Switch between different Guncat agents via the sidebar drawer (2.0/2.5 General Agents, Srch Search Agents, Cnvt Rewriting Agents, Eval Evaluation Agents)
 * **Markdown Rendering**: Full Markdown syntax support including code highlighting, tables, lists, blockquotes, etc.
 * **Streaming Output**: Typewriter-effect streaming display for AI responses
 * **Deep Thinking / Web Search Toggles**: UI switches for manually enabling or disabling deep thinking, web search, and other features

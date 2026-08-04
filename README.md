@@ -20,7 +20,7 @@
 
 ## Introduction
 
-Guncat AI is a large model agent solution spanning **general-purpose agents, vertical retrieval, content rewriting, legal analysis**, and **cross-platform clients**. Rather than merely providing prompts, it delivers multiple practical technical pathways — from prompt-driven and Python code-driven approaches, to web clients and native HarmonyOS applications.
+Guncat AI is a large model agent solution spanning **general-purpose agents, vertical retrieval, content rewriting, legal analysis, model evaluation**, and **cross-platform clients**. Rather than merely providing prompts, it delivers multiple practical technical pathways — from prompt-driven and Python code-driven approaches, to web clients and native HarmonyOS applications.
 
 The core design goal of Guncat is to **ensure that complex tasks are completed in a stable, controllable, and traceable manner**. To this end, Guncat introduces mechanisms such as structured chain-of-thought, multi-agent collaboration, mandatory multi-round retrieval, RAG knowledge bases, and source grading across multiple product lines — systematically reducing large model hallucinations and improving the reliability of long-horizon tasks and complex reasoning.
 
@@ -28,7 +28,7 @@ The core design goal of Guncat is to **ensure that complex tasks are completed i
 
 ## Agent Series
 
-Guncat comprises **6 agent series**, each representing a core technical implementation of "how an agent is organized, driven, and produces content."
+Guncat comprises **7 agent series**, each representing a core technical implementation of "how an agent is organized, driven, and produces content."
 
 ### Guncat 2.0 Series — All-Purpose Agent Cluster
 
@@ -104,6 +104,22 @@ Distinct from general-purpose agents, the **Guncat Srch Series** is purpose-buil
 * **Time-Sensitivity Graded Assessment**: Determines the query's time-sensitivity before retrieval (🔴 very high / 🟡 moderate / 🟢 low); 🔴 very high sensitivity domains are flagged as potentially outdated after 3 months.
 * **"Trace First → Anchor → Then Investigate" Thinking Discipline**: No version number/state is confirmed until an official source is found; historical information is physically isolated from "current state" descriptions.
 * **AI Content Encirclement Breakthrough Strategy**: When AI-generated content exceeds 80% in a search round, automatically switches search terms to include first-party information qualifiers such as "official website," "official announcement," "Release," "whitepaper," etc.
+
+* * *
+
+### Guncat Eval Series — Evaluation Agent Series
+
+The **Guncat Eval Series** (Evaluate) is purpose-built for high-quality evaluation tasks. Its first agent, **Guncat Eval-LLM**, is an **LLM evaluation expert** (LLM Evaluation Intelligence Analyst) tackling one of the hardest anti-hallucination questions in the LLM space: **"What model is this equivalent to?"** It filters noise, identifies timeliness, and restores the true capability landscape of models, while explicitly declaring uncertainty when information is incomplete — never fabricating.
+
+**Core Anti-Hallucination Design**
+
+* **12-Step Workflow**: From date confirmation and requirement clarification to structured output, each step has explicit inputs, outputs, and checkpoints.
+* **Five Hallucination Modes Identified**: Training-data lag & version confusion, anchoring to outdated flagship models, asymmetric retrieval, bottom-tier magnetic attraction, and dimension-averaging overestimation.
+* **Eight Key Mechanisms**: Symmetric retrieval rules, mandatory pre-citation source check gate, asymmetric priors & bottom-tier magnetic attraction ban, code capability as core proxy indicator for intelligence, gap quantification & generational misalignment detection, opposing hypothesis testing, question-type classifier, and knowledge-base anchoring constraints.
+* **Three-Tier Anti-Overestimation System**: Information acquisition → benchmark positioning → intelligence estimation, forming cascading protection with redundancy.
+* **Iterative Prompt Engineering Methodology**: Failure-node-analysis-driven improvement and anti-overfitting principles (generic placeholders, failure-mode abstraction, generalizable rules).
+
+The design and prompt engineering of Guncat Eval-LLM are documented in the open-source technical report: [Technical Report (EN)](./Technical_Report/Guncat_Eval-LLM_Technical_Report_EN.md) | [技术报告 (中文)](./Technical_Report/Guncat_Eval-LLM_技术报告.md)
 
 * * *
 
@@ -262,7 +278,7 @@ A pre-built `.bat` file is included; simply click to launch the local HTTP servi
 * A **pure ArkTS + ArkUI** native HarmonyOS application, **not a WebView wrapper**.
 * Native SSE streaming communication via `@kit.NetworkKit`'s `http.requestInStream`.
 * High-level native Markdown rendering via `@luvi/lv-markdown-in` component (CommonMark + GFM, LaTeX math, code highlighting, Mermaid diagrams).
-* Built-in 8 professional agents managed via `agents.json` + independent Markdown prompt files.
+* Built-in 9 professional agents managed via `agents.json` + independent Markdown prompt files.
 * Multimodal file parsing via GLM-4.6V-Flash (image, text, Office documents).
 * Native Light/Dark theme system based on HarmonyOS resource framework.
 * MVVM architecture with Preferences API persistence.
@@ -282,6 +298,7 @@ This project has been fully restructured, with **agent series** and **deployment
 | [Guncat AI Web for API_local-setup](./Guncat%20AI%20Web%20for%20API_local-setup/) | Deployment         | Windows one-click local launch version of the web client                                     |
 | [GuncatAI-Web-for-API_HMOS-APP](./GuncatAI-Web-for-API_HMOS-APP/)                 | Deployment         | HarmonyOS H5 wrapper application (based on Web for API)                                      |
 | [GuncatAI_HMOS-APP](./GuncatAI_HMOS-APP/)                                         | Deployment         | HarmonyOS native application (pure ArkTS + ArkUI)                                            |
+| [Technical_Report](./Technical_Report/)                                           | Documentation      | Guncat Eval-LLM design & prompt engineering technical reports (CN/EN)                        |
 
 * * *
 
@@ -320,7 +337,7 @@ Copyright (c) 2026 Zhu Bowen
 
 ## 简介
 
-Guncat AI 是一套覆盖**通用智能体、垂直检索、内容改写、法律分析**到**跨平台客户端**的大模型智能体方案。它不只提供提示词，而是从 Prompt 驱动、Python 代码驱动、Web 客户端到鸿蒙原生应用，提供了多条可落地的技术路径。
+Guncat AI 是一套覆盖**通用智能体、垂直检索、内容改写、法律分析、模型评测**到**跨平台客户端**的大模型智能体方案。它不只提供提示词，而是从 Prompt 驱动、Python 代码驱动、Web 客户端到鸿蒙原生应用，提供了多条可落地的技术路径。
 
 Guncat 的核心设计目标是：**让复杂任务能被稳定、可控、可溯源地完成**。为此，Guncat 在多个产品线中引入了结构化思维链、多 Agent 协同、强制多轮检索、RAG 知识库、来源分级等机制，系统性地降低大模型幻觉，提升长程任务和复杂推理的可靠性。
 
@@ -328,7 +345,7 @@ Guncat 的核心设计目标是：**让复杂任务能被稳定、可控、可�
 
 ## 智能体系列
 
-Guncat 包含 **6 个智能体系列**，每条系列代表一种「智能体如何被组织、如何被驱动、如何产出内容」的核心技术实现。
+Guncat 包含 **7 个智能体系列**，每条系列代表一种「智能体如何被组织、如何被驱动、如何产出内容」的核心技术实现。
 
 ### Guncat 2.0 系列 — 全能 Agent 集群
 
@@ -404,6 +421,22 @@ Prompt 驱动，创新搭载 **Sequential Thinking** 结构化思维链与多 Ag
 - **时效敏感度分级评估**：检索前先判定问题时效敏感度（🔴极高 / 🟡中等 / 🟢较低），🔴极高敏感领域超过 3 个月即标记为可能过时。
 - **「先溯源→后锚定→再调研」思维纪律**：没找到官方渠道前绝不确认任何版本号/状态；历史信息物理隔离于「当前状态」描述。
 - **AI 内容包围突破策略**：当某轮搜索 AI 内容占比超 80% 时，自动切换搜索词加入「官网」「官方公告」「Release」「白皮书」等一手信息限定词。
+
+---
+
+### Guncat Eval 系列 — 评估智能体系列
+
+**Guncat Eval 系列**（Evaluate 评估）专为实现高质量评估任务而生，首款智能体 **Guncat Eval-LLM** 是系列中的 **LLM 评估专家**（大模型评测情报分析师），专攻大模型领域最困难的反幻觉命题之一——**「这个模型相当于什么模型」**——为用户过滤噪声、识别时效性、还原模型能力的真实图景，并在信息不完备时明确声明不确定性，绝不编造。
+
+**核心反幻觉设计**
+
+- **12 步工作流**：从当前日期确认与需求澄清到结构化输出，每一步都有明确的输入、输出与检查点。
+- **五类幻觉模式识别**：训练数据滞后与版本混淆、默认古早模型为最强的认知锚定、信息不对称检索、底部梯队磁吸偏差、维度平均拉高偏差。
+- **八项关键机制**：对称检索规则、信源引用前强制检查门、不对称先验与底部梯队磁吸禁令、代码能力作为综合智能核心代理指标、差距量化与代际错位检测、对立假设测试、问题类型分类器、知识库对标约束。
+- **三层协同防高估体系**：信息获取 → 对标定位 → 智能估算，级联防护、冗余兜底。
+- **迭代式提示词工程方法论**：失败节点分析驱动改进 + 防过拟合原则（通用占位符、失败模式抽象化、规则可泛化）。
+
+Guncat Eval-LLM 的设计与提示词工程已开源技术报告：[技术报告 (中文)](./Technical_Report/Guncat_Eval-LLM_技术报告.md) | [Technical Report (EN)](./Technical_Report/Guncat_Eval-LLM_Technical_Report_EN.md)
 
 ---
 
@@ -562,7 +595,7 @@ Prompt 驱动，创新搭载 **Sequential Thinking** 结构化思维链与多 Ag
 - **纯 ArkTS + ArkUI** 鸿蒙原生应用，**非 WebView 套壳**。
 - 基于 `@kit.NetworkKit` 的 `http.requestInStream` 实现原生 SSE 流式通信。
 - 使用 `@luvi/lv-markdown-in` 原生组件实现高级 Markdown 渲染（CommonMark + GFM、LaTeX 数学公式、代码高亮、Mermaid 图表）。
-- 内置 8 个专业智能体，通过 `agents.json` + 独立 Markdown 提示词文件管理。
+- 内置 9 个专业智能体，通过 `agents.json` + 独立 Markdown 提示词文件管理。
 - 多模态文件解析（图片、文本、Office 文档），基于 GLM-4.6V-Flash。
 - 基于 HarmonyOS 资源框架的原生 Light/Dark 主题系统。
 - MVVM 架构 + Preferences API 持久化。
@@ -582,6 +615,7 @@ Prompt 驱动，创新搭载 **Sequential Thinking** 结构化思维链与多 Ag
 | [Guncat AI Web for API_local-setup](./Guncat%20AI%20Web%20for%20API_local-setup/) | 部署       | Web 客户端的 Windows 一键本地启动版                      |
 | [GuncatAI-Web-for-API_HMOS-APP](./GuncatAI-Web-for-API_HMOS-APP/)                 | 部署       | 鸿蒙 H5 套壳应用（基于 Web for API）                       |
 | [GuncatAI_HMOS-APP](./GuncatAI_HMOS-APP/)                                         | 部署       | 鸿蒙原生应用（纯 ArkTS + ArkUI）                          |
+| [Technical_Report](./Technical_Report/)                                           | 技术文档     | Guncat Eval-LLM 设计与提示词工程技术报告（中/英）                 |
 
 ---
 

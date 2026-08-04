@@ -36,7 +36,8 @@ Guncat AI Web for API 是 Guncat 智能体框架的**自定义配置客户端方
     ├── Guncat Cnvt-Paper_prompt.md
     ├── Guncat Srch-Law V1.0-prompt.md
     ├── Guncat Srch-Research-prompt.md
-    └── Guncat Srch-Sift-prompt.md
+    ├── Guncat Srch-Sift-prompt.md
+    └── Guncat Eval-LLM_prompt.md
 
 ### agents.json 配置示例
 
@@ -64,12 +65,12 @@ Guncat AI Web for API 是 Guncat 智能体框架的**自定义配置客户端方
 * `id`：唯一标识
 * `name`：显示名称
 * `description`：功能描述
-* `category`：分类（通用智能体/检索智能体/改写智能体）
+* `category`：分类（通用智能体/检索智能体/改写智能体/评估智能体）
 * `promptFile`：对应的提示词文件路径
 
 ### 核心能力
 
-* **智能体切换**：通过侧边栏抽屉切换不同 Guncat 智能体（2.0/2.5 通用智能体、Srch 检索智能体、Cnvt 改写智能体）
+* **智能体切换**：通过侧边栏抽屉切换不同 Guncat 智能体（2.0/2.5 通用智能体、Srch 检索智能体、Cnvt 改写智能体、Eval 评估智能体）
 * **Markdown 渲染**：完整支持 Markdown 语法，包括代码高亮、表格、列表、引用等
 * **流式输出**：支持 AI 回复的打字机效果流式显示
 * **深度思考 / 联网搜索开关**：界面提供工具开关，用户可手动开启或关闭深度思考、联网搜索等功能

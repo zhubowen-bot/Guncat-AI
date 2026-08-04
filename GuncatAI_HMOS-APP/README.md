@@ -74,7 +74,7 @@ Guncat AI 是使用 ArkTS 与 ArkUI 开发的原生 HarmonyOS AI 对话客户端
 
 ### 智能体与持久化
 
-- 内置多个通用、论文、法律检索和学术检索智能体。
+- 内置多个通用、论文、法律检索、学术检索和模型评测智能体。
 - 对话、当前智能体、API 配置、功能开关及朗读配置均保存在本地。
 - 支持新建、切换和删除对话。
 - 跟随系统切换深色/浅色主题，并同步状态栏、导航栏和 Markdown 样式。
@@ -93,6 +93,7 @@ Guncat AI 是使用 ArkTS 与 ArkUI 开发的原生 HarmonyOS AI 对话客户端
 | Guncat Srch-Law | 法律检索 | 多轮法律检索与结构化法律意见 |
 | Guncat Srch-Research | 学术检索 | 跨领域检索及多来源交叉验证 |
 | Guncat Srch-Sift | AI 信息筛选 | 官方来源追踪与 AI 信息过滤 |
+| Guncat Eval-LLM | 模型评估 | 基于 12 步工作流与八项防幻觉机制的大模型评测情报分析 |
 
 ## 持久化与主题系统
 
