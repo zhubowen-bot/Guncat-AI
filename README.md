@@ -22,7 +22,35 @@
 
 Guncat AI is a large model agent solution spanning **general-purpose agents, vertical retrieval, content rewriting, legal analysis, model evaluation**, and **cross-platform clients**. Rather than merely providing prompts, it delivers multiple practical technical pathways — from prompt-driven and Python code-driven approaches, to web clients and native HarmonyOS applications.
 
-The core design goal of Guncat is to **ensure that complex tasks are completed in a stable, controllable, and traceable manner**. To this end, Guncat introduces mechanisms such as structured chain-of-thought, multi-agent collaboration, mandatory multi-round retrieval, RAG knowledge bases, and source grading across multiple product lines — systematically reducing large model hallucinations and improving the reliability of long-horizon tasks and complex reasoning.
+The core design goal of Guncat is to **ensure that complex tasks are completed in a stable, controllable, and traceable manner**. To this end, Guncat introduces mechanisms such as structured chain-of-thought, multi-agent collaboration, mandatory multi-round retrieval, Retrieval-Augmented Reasoning (RAR), and source grading across multiple product lines — systematically reducing large model hallucinations and improving the reliability of long-horizon tasks and complex reasoning.
+
+* * *
+
+## Core Technology — RAR (Retrieval-Augmented Reasoning)
+
+Guncat's agents do not rely on traditional **RAG** (Retrieval-Augmented Generation) — stuffing retrieved snippets into prompts to "generate" answers. Instead, they center on **RAR (Retrieval-Augmented Reasoning)**: retrieval serves the reasoning process, evidence precedes conclusions, and every step is verifiable and traceable. This is the shared anti-hallucination kernel across Guncat's Srch, Eval, and retrieval-related product lines.
+
+### RAG vs. RAR
+
+| Dimension | Traditional RAG | Guncat RAR |
+| --------- | --------------- | ---------- |
+| Core flow | Retrieve → Generate | Plan → Retrieve → Verify → Reason → Self-check → Output |
+| Role of retrieved content | Directly pasted into the answer | Treated as **evidence** entering reasoning chains, after cross-validation |
+| Source governance | Rarely graded | Mandatory source grading (P0–P5 / S–A–B–C–D) + pre-citation check gate |
+| Hallucination control | Depends on snippet quality | Full-chain defense: retrieval discipline + verification gates + self-check checklists |
+| Traceability | Weak | Every citation carries a source, timestamp, and verification status |
+
+### The RAR Pipeline
+
+1. **Retrieval planning** — clarify the question before searching; arrange prioritized retrieval sequences ("never answer without retrieval").
+2. **Multi-source acquisition** — local retrieval sources (e.g., Srch-Law V2's ChromaDB legal provisions) and real-time web retrieval work together.
+3. **Source grading & filtering** — low-quality and unverifiable sources are filtered and downgraded before they can become evidence.
+4. **Multi-source cross-validation** — contradicting information is surfaced explicitly rather than hidden.
+5. **Reasoning chain construction** — verified evidence feeds forced deep-analysis chains (e.g., the 6-chain legal analysis).
+6. **Self-check & uncertainty declaration** — explicitly declare what cannot be confirmed; never fabricate.
+7. **Structured output** — citations carry source, latest revision/publication date, and confidence marks.
+
+Where a local vector knowledge base does exist (e.g., the ChromaDB + bge-m3 legal provisions in Srch-Law V2), it operates as **one retrieval source inside the RAR pipeline**: retrieved provisions are cross-verified against real-time web information and reasoned over in the analysis chains — never simply pasted into the generated text.
 
 * * *
 
@@ -66,7 +94,7 @@ Prompt-driven, innovatively featuring the **Sequential Thinking** structured cha
 
 ### Guncat Srch Series — Accurate, Traceable Information Retrieval
 
-Distinct from general-purpose agents, the **Guncat Srch Series** is purpose-built for **accurate, traceable information retrieval**, leveraging carefully designed mechanisms to substantially reduce large model hallucinations at the source. Three versions target different scenarios:
+Distinct from general-purpose agents, the **Guncat Srch Series** is purpose-built for **accurate, traceable information retrieval**, fully embodying the RAR (Retrieval-Augmented Reasoning) paradigm — mandatory multi-round retrieval, source grading, and cross-validation reduce large model hallucinations at the source. Three versions target different scenarios:
 
 #### Guncat Srch-Law — SOE Legal Analysis Expert
 
@@ -109,7 +137,7 @@ Distinct from general-purpose agents, the **Guncat Srch Series** is purpose-buil
 
 ### Guncat Eval Series — Evaluation Agent Series
 
-The **Guncat Eval Series** (Evaluate) is purpose-built for high-quality evaluation tasks. Its first agent, **Guncat Eval-LLM**, is an **LLM evaluation expert** (LLM Evaluation Intelligence Analyst) tackling one of the hardest anti-hallucination questions in the LLM space: **"What model is this equivalent to?"** It filters noise, identifies timeliness, and restores the true capability landscape of models, while explicitly declaring uncertainty when information is incomplete — never fabricating.
+The **Guncat Eval Series** (Evaluate) is purpose-built for high-quality evaluation tasks. Its first agent, **Guncat Eval-LLM**, is an **LLM evaluation expert** (LLM Evaluation Intelligence Analyst) tackling one of the hardest anti-hallucination questions in the LLM space: **"What model is this equivalent to?"** It filters noise, identifies timeliness, and restores the true capability landscape of models, while explicitly declaring uncertainty when information is incomplete — never fabricating. As the purest expression of Guncat's RAR paradigm, Eval-LLM runs a full **retrieve → verify → reason → self-check** closed loop — retrieval is never a simple "retrieve then generate" step.
 
 **Core Anti-Hallucination Design**
 
@@ -192,15 +220,15 @@ Built on the **LangChain / LangGraph** ecosystem, Python code-driven, equipped w
 
 ### Guncat Srch-Law V2 — SOE Legal Intelligent Analysis Agent System
 
-**Guncat Srch-Law V2** is a **complete agent application upgrade** of Srch-Law V1.0, transitioning from prompt-driven to a **Python code-driven Multi-Agent system**. It introduces RAG knowledge bases, real-time web retrieval, structured output, and other full capabilities, achieving the leap from a "prompt-based agent" to an "application-level intelligent system."
+**Guncat Srch-Law V2** is a **complete agent application upgrade** of Srch-Law V1.0, transitioning from prompt-driven to a **Python code-driven Multi-Agent system**. It introduces a Retrieval-Augmented Reasoning (RAR) pipeline, real-time web retrieval, structured output, and other full capabilities, achieving the leap from a "prompt-based agent" to an "application-level intelligent system."
 
 **Core Upgrades (vs V1.0)**
 
 | Dimension       | V1.0 (Prompt-Driven)                                  | V2.0 (Python Code-Driven)                                                                                                |
 | --------------- | ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
 | Architecture    | Monolithic Prompt, relies on platform tool invocation | Multi-Agent routing architecture (Router + Contract + Compliance + Criminal)                                             |
-| Knowledge Base  | Relies solely on web search                           | **RAG legal provisions knowledge base** (ChromaDB + bge-m3)                                                              |
-| Retrieval       | Platform web search                                   | Dual-engine: local RAG retrieval + real-time web retrieval                                                               |
+| Knowledge Base  | Relies solely on web search                           | **Local legal provisions retrieval** (ChromaDB + bge-m3) — one RAR retrieval source              |
+| Retrieval       | Platform web search                                   | RAR dual-source retrieval: local legal provisions + real-time web, cross-validated then reasoned over |
 | Output          | Markdown text                                         | Three structured formats: Markdown / Word / PDF                                                                          |
 | SOE Compliance  | Prompt conventions                                    | **Dedicated ComplianceAgent** ("Triple Major, One Large" decisions, state asset supervision, related-party transactions) |
 | Criminal Risk   | Prompt coverage                                       | **Dedicated CriminalAgent** (full coverage of Criminal Law Articles 165–169)                                             |
@@ -216,7 +244,7 @@ Built on the **LangChain / LangGraph** ecosystem, Python code-driven, equipped w
 | ComplianceAgent | SOE compliance review                                      | "Triple Major, One Large" decision procedures, state asset supervision procedural compliance, related-party transaction review, state asset loss risk |
 | CriminalAgent   | Criminal risk assessment                                   | Full coverage of Criminal Law Articles 165–169, duty crime risk simulation, management personnel liability analysis                                   |
 
-**RAG Knowledge Base (ChromaDB + bge-m3)**
+**Local Legal Retrieval Source (ChromaDB + bge-m3)**
 
 | Category                   | Count | Regulation List                                                                                                                                                                                                                               |
 | -------------------------- | ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -225,7 +253,7 @@ Built on the **LangChain / LangGraph** ecosystem, Python code-driven, equipped w
 | SASAC Normative Documents  | 4     | "Triple Major, One Large" Decision System Opinions, Central Enterprise Compliance Management Measures, Interim Measures for Management of SOE Equity Participation, Interim Measures for Management of Enterprise State-Owned Asset Appraisal |
 | Judicial Interpretations   | 5     | Supreme Court Company Law Judicial Interpretations (I–V)                                                                                                                                                                                      |
 
-**Workflow**: Case classification → RAG knowledge base retrieval → Real-time web retrieval → 6-chain deep analysis (legal relationship deconstruction → systematic contract interpretation → SOE-specific rule application → in-depth jurisprudential analysis → liability risk simulation → compliance recommendations) → Formatted legal opinion letter output.
+**Workflow**: Case classification → RAR retrieval phase (local legal provisions + real-time web) → source grading & cross-validation → 6-chain deep analysis (legal relationship deconstruction → systematic contract interpretation → SOE-specific rule application → in-depth jurisprudential analysis → liability risk simulation → compliance recommendations) → Formatted legal opinion letter output.
 
 * * *
 
@@ -339,7 +367,35 @@ Copyright (c) 2026 Zhu Bowen
 
 Guncat AI 是一套覆盖**通用智能体、垂直检索、内容改写、法律分析、模型评测**到**跨平台客户端**的大模型智能体方案。它不只提供提示词，而是从 Prompt 驱动、Python 代码驱动、Web 客户端到鸿蒙原生应用，提供了多条可落地的技术路径。
 
-Guncat 的核心设计目标是：**让复杂任务能被稳定、可控、可溯源地完成**。为此，Guncat 在多个产品线中引入了结构化思维链、多 Agent 协同、强制多轮检索、RAG 知识库、来源分级等机制，系统性地降低大模型幻觉，提升长程任务和复杂推理的可靠性。
+Guncat 的核心设计目标是：**让复杂任务能被稳定、可控、可溯源地完成**。为此，Guncat 在多个产品线中引入了结构化思维链、多 Agent 协同、强制多轮检索、检索增强推理（RAR）、来源分级等机制，系统性地降低大模型幻觉，提升长程任务和复杂推理的可靠性。
+
+---
+
+## 核心技术 — RAR（检索增强推理）
+
+Guncat 的智能体并不依赖传统的 **RAG（Retrieval-Augmented Generation，检索增强生成）**——把检索到的片段直接拼进提示词去「生成」答案——而是普遍采用 **RAR（Retrieval-Augmented Reasoning，检索增强推理）**：让检索服务于推理，让证据先于结论，让每一步都可验证、可追溯。这是 Guncat 的 Srch、Eval 及所有检索相关产品线共用的反幻觉内核。
+
+### RAG 与 RAR 的对比
+
+| 维度     | 传统 RAG     | Guncat RAR  |
+| ------ | ---------- | --------- |
+| 核心流程   | 检索 → 生成    | 规划 → 检索 → 验证 → 推理 → 自检 → 输出    |
+| 检索结果的用途 | 直接粘贴进答案    | 经交叉验证后作为**证据**进入推理链         |
+| 信源治理   | 少有分级       | 强制信源分级（P0–P5 / S–A–B–C–D）+ 引用前检查门 |
+| 幻觉控制   | 依赖片段质量     | 全链路防线：检索纪律 + 验证门 + 自检清单      |
+| 可追溯性   | 弱          | 每个引用都携带来源、时间戳与验证状态          |
+
+### RAR 推理管线
+
+1. **检索规划**——先澄清问题再检索，按优先级安排检索序列（杜绝「无检索即作答」）。
+2. **多源获取**——本地检索源（如 Srch-Law V2 的 ChromaDB 法条库）与联网实时检索协同。
+3. **信源分级与筛选**——低质、不可溯源的信源在成为证据前即被过滤与降级。
+4. **多源交叉验证**——矛盾信息被显性化，而非被掩盖。
+5. **推理链构建**——经验证的证据进入强制深度分析链（如 6 条法律推理链）。
+6. **自检与不确定性声明**——无法确认的内容明确声明，绝不编造。
+7. **结构化输出**——引用携带来源、最新修订/发布时间与置信度标注。
+
+即便在存在本地向量知识库的产品线中（如 Srch-Law V2 的 ChromaDB + bge-m3 法条库），它也是作为 **RAR 管线中的一个检索源**运行：检索出的法条需与联网信息交叉验证后，才作为证据进入推理链，而非直接拼入生成文本。
 
 ---
 
@@ -383,7 +439,7 @@ Prompt 驱动，创新搭载 **Sequential Thinking** 结构化思维链与多 Ag
 
 ### Guncat Srch 系列 — 准确、可溯源的信息检索
 
-区别于通用智能体，**Guncat Srch 系列**专为**准确、可溯源的信息检索**而生，通过精心设计的机制从源头大幅降低大模型幻觉。三个版本针对不同场景：
+区别于通用智能体，**Guncat Srch 系列**专为**准确、可溯源的信息检索**而生，完整践行 RAR（检索增强推理）范式——强制多轮检索、信源分级与交叉验证，从源头大幅降低大模型幻觉。三个版本针对不同场景：
 
 #### Guncat Srch-Law — 国企法律分析专家
 
@@ -426,7 +482,7 @@ Prompt 驱动，创新搭载 **Sequential Thinking** 结构化思维链与多 Ag
 
 ### Guncat Eval 系列 — 评估智能体系列
 
-**Guncat Eval 系列**（Evaluate 评估）专为实现高质量评估任务而生，首款智能体 **Guncat Eval-LLM** 是系列中的 **LLM 评估专家**（大模型评测情报分析师），专攻大模型领域最困难的反幻觉命题之一——**「这个模型相当于什么模型」**——为用户过滤噪声、识别时效性、还原模型能力的真实图景，并在信息不完备时明确声明不确定性，绝不编造。
+**Guncat Eval 系列**（Evaluate 评估）专为实现高质量评估任务而生，首款智能体 **Guncat Eval-LLM** 是系列中的 **LLM 评估专家**（大模型评测情报分析师），专攻大模型领域最困难的反幻觉命题之一——**「这个模型相当于什么模型」**——为用户过滤噪声、识别时效性、还原模型能力的真实图景，并在信息不完备时明确声明不确定性，绝不编造。作为 Guncat RAR 范式最纯粹的体现，Eval-LLM 执行完整的「**检索 → 验证 → 推理 → 自检**」闭环——检索绝非简单的「检索后即生成」。
 
 **核心反幻觉设计**
 
@@ -509,15 +565,15 @@ Guncat Eval-LLM 的设计与提示词工程已开源技术报告：[技术报告
 
 ### Guncat Srch-Law V2 — 国企法律智能分析 Agent 系统
 
-**Guncat Srch-Law V2** 是 Srch-Law V1.0 的**完整 Agent 应用升级版**，从 Prompt 驱动升级为 **Python 代码驱动的 Multi-Agent 系统**，引入 RAG 知识库、联网实时检索、结构化输出等完整能力，实现从「提示词智能体」到「应用级智能系统」的跨越。
+**Guncat Srch-Law V2** 是 Srch-Law V1.0 的**完整 Agent 应用升级版**，从 Prompt 驱动升级为 **Python 代码驱动的 Multi-Agent 系统**，引入 RAR（检索增强推理）管线、联网实时检索、结构化输出等完整能力，实现从「提示词智能体」到「应用级智能系统」的跨越。
 
 **核心升级（相对 V1.0）**
 
 | 维度   | V1.0（Prompt 驱动）    | V2.0（Python 代码驱动）                                           |
 | ---- | ------------------ | ----------------------------------------------------------- |
 | 架构   | 单体 Prompt，依赖平台工具调用 | Multi-Agent 路由架构（Router + Contract + Compliance + Criminal） |
-| 知识库  | 仅依赖联网搜索            | **RAG 法律条文知识库**（ChromaDB + bge-m3）                          |
-| 检索   | 平台联网搜索             | 本地 RAG 检索 + 联网实时检索双引擎                                       |
+| 知识库  | 仅依赖联网搜索            | **本地法条检索引擎**（ChromaDB + bge-m3）——RAR 检索源之一                          |
+| 检索   | 平台联网搜索             | RAR 双源检索：本地法条 + 联网实时，交叉验证后进入推理                                       |
 | 输出   | Markdown 文本        | Markdown / Word / PDF 三种结构化格式                               |
 | 国企合规 | Prompt 约定          | **专项 ComplianceAgent**（「三重一大」、国资监管、关联交易）                    |
 | 刑事风险 | Prompt 覆盖          | **专项 CriminalAgent**（刑法第 165-169 条全覆盖）                      |
@@ -533,7 +589,7 @@ Guncat Eval-LLM 的设计与提示词工程已开源技术报告：[技术报告
 | ComplianceAgent | 国企合规审查         | 「三重一大」决策程序、国资监管程序合规、关联交易审查、国有资产流失风险 |
 | CriminalAgent   | 刑事风险评估         | 刑法第 165-169 条全覆盖、职务犯罪风险推演、管理人员责任分析  |
 
-**RAG 知识库（ChromaDB + bge-m3）**
+**本地法条检索引擎（ChromaDB + bge-m3）**
 
 | 类别       | 数量  | 法规列表                                                |
 | -------- | --- | --------------------------------------------------- |
@@ -542,7 +598,7 @@ Guncat Eval-LLM 的设计与提示词工程已开源技术报告：[技术报告
 | 国资委规范性文件 | 4 部 | 「三重一大」决策制度意见、中央企业合规管理办法、国有企业参股管理暂行办法、企业国有资产评估管理暂行办法 |
 | 司法解释     | 5 部 | 最高法公司法司法解释（一~五）                                     |
 
-**工作流**：案件分类 → RAG 知识库检索 → 联网实时检索 → 6 条推理链深度分析（法律关系解构 → 合同体系化解释 → 国企特殊规则适用 → 法理深度分析 → 责任风险推演 → 合规建议）→ 格式化输出法律意见书。
+**工作流**：案件分类 → RAR 检索阶段（本地法条 + 联网实时）→ 信源分级与交叉验证 → 6 条推理链深度分析（法律关系解构 → 合同体系化解释 → 国企特殊规则适用 → 法理深度分析 → 责任风险推演 → 合规建议）→ 格式化输出法律意见书。
 
 ---
 

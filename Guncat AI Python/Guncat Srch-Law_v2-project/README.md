@@ -10,11 +10,12 @@ V2.0 - 2026年6月
 
 ## 功能概述
 
-Guncat Srch-Law V2 是一款专为国有企业法律事务设计的智能分析系统，具备以下核心能力：
+Guncat Srch-Law V2 是一款专为国有企业法律事务设计的智能分析系统，完整践行 **RAR（Retrieval-Augmented Reasoning，检索增强推理）** 范式——检索服务于推理、证据先于结论，具备以下核心能力：
 
 - **Multi-Agent 路由架构**：自动识别案件类型，路由到专用子Agent（合同解析/国企合规/刑事风险）
-- **RAG 法律条文知识库**：基于 ChromaDB 的向量化法律条文检索，确保法条引用准确
-- **联网实时检索**：支持搜索最新法律法规、司法解释和裁判案例
+- **RAR 本地法条检索源**：基于 ChromaDB + bge-m3 的向量化法律条文检索，检索结果经交叉验证后作为证据进入推理链，确保法条引用准确
+- **联网实时检索**：支持搜索最新法律法规、司法解释和裁判案例，与本地法条检索构成 RAR 双检索源
+- **强制深度推理链**：检索证据进入 6 条推理链深度分析，全程「检索 → 验证 → 推理 → 自检」
 - **结构化法律意见书生成**：支持 Markdown / Word / PDF 三种输出格式
 - **国企合规专项强化**：针对"三重一大"、国资监管、关联交易等国企特有场景专项优化
 
@@ -30,12 +31,16 @@ RouterAgent（意图识别与分类）
 Agent     Agent     Agent
 └─────────┴─────────┴─────────┘
    ↓
-工具层：RAG检索 / 联网搜索 / 案例检索
+RAR 检索阶段：本地法条检索 / 联网搜索 / 案例检索
    ↓
-记忆与状态管理
+信源分级与交叉验证
+   ↓
+6 条推理链深度分析（记忆与状态管理）
    ↓
 结构化法律意见书输出
 ```
+
+> **RAR 检索增强推理**：系统不是把检索片段直接拼进提示词去生成，而是执行「检索 → 验证 → 推理 → 自检」闭环——本地法条库（ChromaDB + bge-m3）与联网检索构成双检索源，检索结果先经信源分级与交叉验证，再作为证据进入 6 条推理链深度分析，每条引用携带来源与时效标注。
 
 ## 快速开始
 
@@ -63,9 +68,9 @@ export LLM_MODEL="gpt-4o"  # 或 claude-3-5-sonnet 等
 export LLM_PROVIDER="openai"  # openai / anthropic / qwen
 ```
 
-### 3. 初始化知识库
+### 3. 初始化本地法条库
 
-首次运行时会自动加载核心法律法规数据到向量数据库。
+首次运行时会自动加载核心法律法规数据到向量数据库（RAR 本地检索源）。
 
 如需手动初始化：
 
@@ -130,7 +135,7 @@ python main.py --mode file --input case_description.txt --format markdown
 | 合同Agent | `agents/contract_agent.py` | 合同解析分析 |
 | 合规Agent | `agents/compliance_agent.py` | 国企合规审查 |
 | 刑事Agent | `agents/criminal_agent.py` | 刑事风险评估 |
-| RAG引擎 | `knowledge_base/rag_engine.py` | 法条向量检索 |
+| 法条检索引擎 | `knowledge_base/rag_engine.py` | 法条向量检索（RAR 本地检索源） |
 | 向量库 | `knowledge_base/vector_store.py` | ChromaDB封装 |
 | 联网检索 | `tools/web_search.py` | 实时搜索工具 |
 | 输出格式化 | `output/formatter.py` | 法律意见书生成 |
@@ -140,7 +145,7 @@ python main.py --mode file --input case_description.txt --format markdown
 ### 问题1：分析深度不够 → 解法
 
 - **强化 System Prompt**：新增"法理分析工具箱"，强制运用整体对价理论、不当得利理论等深层法理工具
-- **RAG 知识库**：检索真实法条后再分析，避免模型"幻觉"
+- **RAR 本地法条检索**：先检索真实法条、经与联网信息交叉验证后再推理分析，避免模型"幻觉"
 - **五步合同解释法**：体系解释→目的解释→文义解释→历史解释→诚信解释，缺一不可
 
 ### 问题2：国企场景覆盖弱 → 解法
@@ -158,7 +163,7 @@ python main.py --mode file --input case_description.txt --format markdown
 - 裁判文书网
 - 国家法律法规数据库
 
-### 2. 增强 RAG 知识库
+### 2. 增强本地法条库（RAR 检索源）
 
 在 `knowledge_base/law_data_loader.py` 中加载更多法律法规全文：
 - 建议加载至少 20 部核心法规的完整条文

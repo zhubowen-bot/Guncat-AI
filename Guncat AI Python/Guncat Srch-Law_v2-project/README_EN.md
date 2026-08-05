@@ -10,11 +10,12 @@ V2.0 - June 2026
 
 ## Overview
 
-Guncat Srch-Law V2 is an intelligent analysis system specifically designed for legal affairs of state-owned enterprises (SOEs), featuring the following core capabilities:
+Guncat Srch-Law V2 is an intelligent analysis system specifically designed for legal affairs of state-owned enterprises (SOEs), fully embodying the **RAR (Retrieval-Augmented Reasoning)** paradigm — retrieval serves reasoning, and evidence precedes conclusions. Core capabilities:
 
 - **Multi-Agent Routing Architecture**: Automatically identifies case types and routes to specialized sub-agents (Contract Analysis / SOE Compliance / Criminal Risk)
-- **RAG Legal Knowledge Base**: Vectorized legal article retrieval based on ChromaDB, ensuring accurate legal citation
-- **Real-time Web Search**: Supports searching for the latest laws, regulations, judicial interpretations, and court cases
+- **RAR Local Legal Retrieval Source**: Vectorized legal article retrieval based on ChromaDB + bge-m3; retrieved provisions enter the reasoning chains as evidence after cross-validation, ensuring accurate legal citation
+- **Real-time Web Search**: Supports searching for the latest laws, regulations, judicial interpretations, and court cases, forming the RAR dual retrieval source with local legal retrieval
+- **Forced Deep Reasoning Chains**: Verified evidence feeds 6-chain deep analysis, running a full "retrieve → verify → reason → self-check" loop
 - **Structured Legal Opinion Generation**: Supports Markdown / Word / PDF output formats
 - **SOE Compliance Specialization**: Optimized for SOE-specific scenarios including "Three Important and One Major" decisions, state asset supervision, and related-party transactions
 
@@ -31,12 +32,16 @@ Analysis   Compliance Risk
 Agent      Agent      Agent
 └──────────┴──────────┴──────────┘
     ↓
-Tool Layer: RAG Search / Web Search / Case Retrieval
+RAR Retrieval Phase: Local Legal Retrieval / Web Search / Case Retrieval
     ↓
-Memory & State Management
+Source Grading & Cross-Validation
+    ↓
+6-Chain Deep Analysis (Memory & State Management)
     ↓
 Structured Legal Opinion Output
 ```
+
+> **RAR (Retrieval-Augmented Reasoning)**: The system does not stuff retrieved snippets into prompts to generate answers. Instead, it runs a "retrieve → verify → reason → self-check" closed loop — the local legal provisions store (ChromaDB + bge-m3) and web retrieval form dual retrieval sources; results are first source-graded and cross-validated, then enter the 6-chain deep analysis as evidence, with every citation carrying a source and timeliness mark.
 
 ## Quick Start
 
@@ -64,9 +69,9 @@ export LLM_MODEL="gpt-4o"  # or claude-3-5-sonnet, etc.
 export LLM_PROVIDER="openai"  # openai / anthropic / qwen
 ```
 
-### 3. Initialize Knowledge Base
+### 3. Initialize Local Legal Retrieval Source
 
-Core legal data will be automatically loaded into the vector database on first run.
+Core legal data will be automatically loaded into the vector database on first run (the RAR local retrieval source).
 
 To manually initialize:
 
@@ -134,7 +139,7 @@ The system will automatically identify this as a "Contract Dispute" case and inv
 | Contract Agent | `agents/contract_agent.py` | Contract analysis |
 | Compliance Agent | `agents/compliance_agent.py` | SOE compliance review |
 | Criminal Agent | `agents/criminal_agent.py` | Criminal risk assessment |
-| RAG Engine | `knowledge_base/rag_engine.py` | Legal article vector retrieval |
+| Legal Retrieval Engine | `knowledge_base/rag_engine.py` | Legal article vector retrieval (RAR local source) |
 | Vector Store | `knowledge_base/vector_store.py` | ChromaDB wrapper |
 | Web Search | `tools/web_search.py` | Real-time search tool |
 | Output Formatter | `output/formatter.py` | Legal opinion generation |
@@ -144,7 +149,7 @@ The system will automatically identify this as a "Contract Dispute" case and inv
 ### Issue 1: Insufficient Analysis Depth → Solution
 
 - **Enhanced System Prompt**: Added "Legal Analysis Toolbox" forcing deep legal reasoning tools such as overall consideration theory and unjust enrichment theory
-- **RAG Knowledge Base**: Analyzes after retrieving real legal articles to avoid model "hallucinations"
+- **RAR Local Legal Retrieval**: Cross-validates retrieved real legal articles against web information before reasoning, to avoid model "hallucinations"
 - **Five-Step Contract Interpretation**: Systematic Interpretation → Purpose Interpretation → Literal Interpretation → Historical Interpretation → Good Faith Interpretation
 
 ### Issue 2: Weak SOE Scenario Coverage → Solution
@@ -162,7 +167,7 @@ The current `tools/` module has interfaces ready for integration with:
 - China Judgments Online
 - National Laws and Regulations Database
 
-### 2. Enhance RAG Knowledge Base
+### 2. Enhance Local Legal Retrieval Source (RAR)
 
 Load more legal regulation full texts in `knowledge_base/law_data_loader.py`:
 - Recommended: Load complete articles of at least 20 core regulations
