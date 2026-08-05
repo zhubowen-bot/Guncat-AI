@@ -359,7 +359,7 @@ Copyright (c) 2026 Zhu Bowen
 
 # Guncat AI
 
-> 结构化思维链 × 多 Agent 协同 × 可配置 API —— 新一代大模型智能体框架
+> 新一代 LLM 代理框架：结构化 CoT × 多代理协作。基于 RAR 的防幻觉代理，覆盖通用、检索、重写、法律和模型评估——可部署在 Python、Web-for-API、元气、清言、Coze 和 HarmonyOS 上。
 
 ---
 
