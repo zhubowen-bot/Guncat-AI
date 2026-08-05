@@ -14,7 +14,7 @@
 
 # Guncat AI
 
-> Structured Chain-of-Thought × Multi-Agent Collaboration × Configurable API — A New-Generation Large Model Agent Framework
+> New-generation LLM agent framework: structured CoT × multi-agent collaboration. RAR-based anti-hallucination agents spanning general-purpose, retrieval, rewriting, legal, and model-evaluation — deployed across Python, Web-for-API, Yuanqi, Qingyan, Coze, and HarmonyOS.
 
 * * *
 
