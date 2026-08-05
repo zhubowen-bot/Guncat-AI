@@ -20,14 +20,14 @@ Guncat AI Release/
 ├── Guncat 2.5/                          # Tencent Yuanqi deployment prompts (Sequential Thinking version)
 │   ├── Guncat 2.5-lite _prompt.md
 │   └── Guncat 2.5-max _prompt.md
-├── Guncat Cnvt-Paper/                   # Paper rewriting agent prompts
+├── Guncat Cnvt/                         # Paper rewriting agent prompts
 │   └── Guncat Cnvt-Paper_prompt.md
-├── Guncat Srch-Law/                     # SOE legal search agent prompts
-│   └── Guncat Srch-Law V1.0-prompt.md
-├── Guncat Srch-Research/                # Multi-turn research agent prompts
-│   └── Guncat Srch-Research-prompt.md
-├── Guncat Srch-Sift/                    # AI information filtering agent prompts
+├── Guncat Srch/                         # Information retrieval agent prompts (Legal / Research / Sift)
+│   ├── Guncat Srch-Law V1.0-prompt.md
+│   ├── Guncat Srch-Research-prompt.md
 │   └── Guncat Srch-Sift-prompt.md
+├── Guncat Eval/                         # LLM evaluation intelligence analysis agent prompts
+│   └── Guncat Eval-LLM_prompt.md
 └── LICENSE
 ```
 

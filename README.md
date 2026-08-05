@@ -32,13 +32,13 @@ Guncat's agents do not rely on traditional **RAG** (Retrieval-Augmented Generati
 
 ### RAG vs. RAR
 
-| Dimension | Traditional RAG | Guncat RAR |
-| --------- | --------------- | ---------- |
-| Core flow | Retrieve → Generate | Plan → Retrieve → Verify → Reason → Self-check → Output |
-| Role of retrieved content | Directly pasted into the answer | Treated as **evidence** entering reasoning chains, after cross-validation |
-| Source governance | Rarely graded | Mandatory source grading (P0–P5 / S–A–B–C–D) + pre-citation check gate |
-| Hallucination control | Depends on snippet quality | Full-chain defense: retrieval discipline + verification gates + self-check checklists |
-| Traceability | Weak | Every citation carries a source, timestamp, and verification status |
+| Dimension                 | Traditional RAG                 | Guncat RAR                                                                            |
+| ------------------------- | ------------------------------- | ------------------------------------------------------------------------------------- |
+| Core flow                 | Retrieve → Generate             | Plan → Retrieve → Verify → Reason → Self-check → Output                               |
+| Role of retrieved content | Directly pasted into the answer | Treated as **evidence** entering reasoning chains, after cross-validation             |
+| Source governance         | Rarely graded                   | Mandatory source grading (P0–P5 / S–A–B–C–D) + pre-citation check gate                |
+| Hallucination control     | Depends on snippet quality      | Full-chain defense: retrieval discipline + verification gates + self-check checklists |
+| Traceability              | Weak                            | Every citation carries a source, timestamp, and verification status                   |
 
 ### The RAR Pipeline
 
@@ -227,8 +227,8 @@ Built on the **LangChain / LangGraph** ecosystem, Python code-driven, equipped w
 | Dimension       | V1.0 (Prompt-Driven)                                  | V2.0 (Python Code-Driven)                                                                                                |
 | --------------- | ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
 | Architecture    | Monolithic Prompt, relies on platform tool invocation | Multi-Agent routing architecture (Router + Contract + Compliance + Criminal)                                             |
-| Knowledge Base  | Relies solely on web search                           | **Local legal provisions retrieval** (ChromaDB + bge-m3) — one RAR retrieval source              |
-| Retrieval       | Platform web search                                   | RAR dual-source retrieval: local legal provisions + real-time web, cross-validated then reasoned over |
+| Knowledge Base  | Relies solely on web search                           | **Local legal provisions retrieval** (ChromaDB + bge-m3) — one RAR retrieval source                                      |
+| Retrieval       | Platform web search                                   | RAR dual-source retrieval: local legal provisions + real-time web, cross-validated then reasoned over                    |
 | Output          | Markdown text                                         | Three structured formats: Markdown / Word / PDF                                                                          |
 | SOE Compliance  | Prompt conventions                                    | **Dedicated ComplianceAgent** ("Triple Major, One Large" decisions, state asset supervision, related-party transactions) |
 | Criminal Risk   | Prompt coverage                                       | **Dedicated CriminalAgent** (full coverage of Criminal Law Articles 165–169)                                             |
@@ -261,14 +261,14 @@ Built on the **LangChain / LangGraph** ecosystem, Python code-driven, equipped w
 
 The same set of agents can be carried by different clients or platforms. Guncat offers 6 deployment forms.
 
-| Deployment Solution     | Applicable Agents                     | Form                    | Description                                                                                                      |
-| ----------------------- | ------------------------------------- | ----------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| **Tencent Yuanqi**      | Guncat 2.0 / 2.5 Series               | Platform-hosted         | Platform-adapted prompts; agents can be created directly on Tencent Yuanqi                                       |
-| **Zhipu Qingyan**       | Guncat Srch / Cnvt Series             | Platform-hosted         | Platform-adapted prompts, deployed on the Zhipu Qingyan platform                                                 |
-| **Guncat Web for API**  | Universal prompts (platform-agnostic) | Web / Windows / Android | "Configuration-as-Agent" architecture; users select their own OpenAI-compatible API                              |
-| **Coze Service**        | Guncat 2.5-Pro                        | Cloud API               | Python agent deployed as a Coze API service for external capability provision                                    |
-| **HarmonyOS H5 App**    | Web for API universal prompts         | HarmonyOS H5 wrapper    | Secondary packaging based on Web for API, with HarmonyOS rawfile preloading + resource interception optimization |
-| **HarmonyOS Native App**| Universal prompts (platform-agnostic) | HarmonyOS native app    | Pure ArkTS + ArkUI implementation, native SSE streaming, Markdown rendering, multi-agent system                 |
+| Deployment Solution      | Applicable Agents                     | Form                    | Description                                                                                                      |
+| ------------------------ | ------------------------------------- | ----------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| **Tencent Yuanqi**       | Guncat 2.0 / 2.5 Series               | Platform-hosted         | Platform-adapted prompts; agents can be created directly on Tencent Yuanqi                                       |
+| **Zhipu Qingyan**        | Guncat Srch / Cnvt Series             | Platform-hosted         | Platform-adapted prompts, deployed on the Zhipu Qingyan platform                                                 |
+| **Guncat Web for API**   | Universal prompts (platform-agnostic) | Web / Windows / Android | "Configuration-as-Agent" architecture; users select their own OpenAI-compatible API                              |
+| **Coze Service**         | Guncat 2.5-Pro                        | Cloud API               | Python agent deployed as a Coze API service for external capability provision                                    |
+| **HarmonyOS H5 App**     | Web for API universal prompts         | HarmonyOS H5 wrapper    | Secondary packaging based on Web for API, with HarmonyOS rawfile preloading + resource interception optimization |
+| **HarmonyOS Native App** | Universal prompts (platform-agnostic) | HarmonyOS native app    | Pure ArkTS + ArkUI implementation, native SSE streaming, Markdown rendering, multi-agent system                  |
 
 ### 1. Tencent Yuanqi
 
@@ -318,15 +318,15 @@ A pre-built `.bat` file is included; simply click to launch the local HTTP servi
 
 This project has been fully restructured, with **agent series** and **deployment solutions** clearly separated by responsibility:
 
-| Module                                                                            | Category           | Description                                                                                  |
-| --------------------------------------------------------------------------------- | ------------------ | -------------------------------------------------------------------------------------------- |
-| [Guncat AI Release](./Guncat%20AI%20Release/)                                     | Agent + Deployment | Tencent Yuanqi, Zhipu Qingyan, and other platform-adapted prompts               |
-| [Guncat AI Python](./Guncat%20AI%20Python/)                                       | Agent              | Two Python code-driven projects: Guncat 2.5-Pro and Srch-Law V2                              |
-| [Guncat AI Web for API](./Guncat%20AI%20Web%20for%20API/)                         | Deployment         | Universal prompt web client, self-configured API                                             |
-| [Guncat AI Web for API_local-setup](./Guncat%20AI%20Web%20for%20API_local-setup/) | Deployment         | Windows one-click local launch version of the web client                                     |
-| [GuncatAI-Web-for-API_HMOS-APP](./GuncatAI-Web-for-API_HMOS-APP/)                 | Deployment         | HarmonyOS H5 wrapper application (based on Web for API)                                      |
-| [GuncatAI_HMOS-APP](./GuncatAI_HMOS-APP/)                                         | Deployment         | HarmonyOS native application (pure ArkTS + ArkUI)                                            |
-| [Technical_Report](./Technical_Report/)                                           | Documentation      | Guncat Eval-LLM design & prompt engineering technical reports (CN/EN)                        |
+| Module                                                                            | Category           | Description                                                           |
+| --------------------------------------------------------------------------------- | ------------------ | --------------------------------------------------------------------- |
+| [Guncat AI Release](./Guncat%20AI%20Release/)                                     | Agent + Deployment | Tencent Yuanqi, Zhipu Qingyan, and other platform-adapted prompts     |
+| [Guncat AI Python](./Guncat%20AI%20Python/)                                       | Agent              | Two Python code-driven projects: Guncat 2.5-Pro and Srch-Law V2       |
+| [Guncat AI Web for API](./Guncat%20AI%20Web%20for%20API/)                         | Deployment         | Universal prompt web client, self-configured API                      |
+| [Guncat AI Web for API_local-setup](./Guncat%20AI%20Web%20for%20API_local-setup/) | Deployment         | Windows one-click local launch version of the web client              |
+| [GuncatAI-Web-for-API_HMOS-APP](./GuncatAI-Web-for-API_HMOS-APP/)                 | Deployment         | HarmonyOS H5 wrapper application (based on Web for API)               |
+| [GuncatAI_HMOS-APP](./GuncatAI_HMOS-APP/)                                         | Deployment         | HarmonyOS native application (pure ArkTS + ArkUI)                     |
+| [Technical_Report](./Technical_Report/)                                           | Documentation      | Guncat Eval-LLM design & prompt engineering technical reports (CN/EN) |
 
 * * *
 
@@ -377,13 +377,13 @@ Guncat 的智能体并不依赖传统的 **RAG（Retrieval-Augmented Generation�
 
 ### RAG 与 RAR 的对比
 
-| 维度     | 传统 RAG     | Guncat RAR  |
-| ------ | ---------- | --------- |
-| 核心流程   | 检索 → 生成    | 规划 → 检索 → 验证 → 推理 → 自检 → 输出    |
-| 检索结果的用途 | 直接粘贴进答案    | 经交叉验证后作为**证据**进入推理链         |
-| 信源治理   | 少有分级       | 强制信源分级（P0–P5 / S–A–B–C–D）+ 引用前检查门 |
-| 幻觉控制   | 依赖片段质量     | 全链路防线：检索纪律 + 验证门 + 自检清单      |
-| 可追溯性   | 弱          | 每个引用都携带来源、时间戳与验证状态          |
+| 维度      | 传统 RAG  | Guncat RAR                        |
+| ------- | ------- | --------------------------------- |
+| 核心流程    | 检索 → 生成 | 规划 → 检索 → 验证 → 推理 → 自检 → 输出       |
+| 检索结果的用途 | 直接粘贴进答案 | 经交叉验证后作为**证据**进入推理链               |
+| 信源治理    | 少有分级    | 强制信源分级（P0–P5 / S–A–B–C–D）+ 引用前检查门 |
+| 幻觉控制    | 依赖片段质量  | 全链路防线：检索纪律 + 验证门 + 自检清单           |
+| 可追溯性    | 弱       | 每个引用都携带来源、时间戳与验证状态                |
 
 ### RAR 推理管线
 
@@ -572,8 +572,8 @@ Guncat Eval-LLM 的设计与提示词工程已开源技术报告：[技术报告
 | 维度   | V1.0（Prompt 驱动）    | V2.0（Python 代码驱动）                                           |
 | ---- | ------------------ | ----------------------------------------------------------- |
 | 架构   | 单体 Prompt，依赖平台工具调用 | Multi-Agent 路由架构（Router + Contract + Compliance + Criminal） |
-| 知识库  | 仅依赖联网搜索            | **本地法条检索引擎**（ChromaDB + bge-m3）——RAR 检索源之一                          |
-| 检索   | 平台联网搜索             | RAR 双源检索：本地法条 + 联网实时，交叉验证后进入推理                                       |
+| 知识库  | 仅依赖联网搜索            | **本地法条检索引擎**（ChromaDB + bge-m3）——RAR 检索源之一                  |
+| 检索   | 平台联网搜索             | RAR 双源检索：本地法条 + 联网实时，交叉验证后进入推理                              |
 | 输出   | Markdown 文本        | Markdown / Word / PDF 三种结构化格式                               |
 | 国企合规 | Prompt 约定          | **专项 ComplianceAgent**（「三重一大」、国资监管、关联交易）                    |
 | 刑事风险 | Prompt 覆盖          | **专项 CriminalAgent**（刑法第 165-169 条全覆盖）                      |
@@ -606,13 +606,13 @@ Guncat Eval-LLM 的设计与提示词工程已开源技术报告：[技术报告
 
 同一套智能体可以由不同的客户端或平台承载，Guncat 提供 6 种部署形态。
 
-| 部署方案                   | 适用智能体                 | 形态                      | 说明                                           |
-| ---------------------- | --------------------- | ----------------------- | -------------------------------------------- |
-| **腾讯元器**               | Guncat 2.0 / 2.5 系列   | 平台托管                    | 平台适配提示词，可直接在腾讯元器创建智能体                        |
-| **智谱清言**               | Guncat Srch / Cnvt 系列 | 平台托管                    | 平台适配提示词，部署于智谱清言平台                            |
-| **Guncat Web for API** | 通用提示词（不绑定平台）          | Web / Windows / Android | 「配置即智能体」架构，用户自选 OpenAI 兼容 API                |
-| **Coze 服务**            | Guncat 2.5-Pro        | 云端 API                  | Python 智能体部署为 Coze API 服务对外提供能力              |
-| **鸿蒙 H5 应用**           | Web for API 通用提示词     | 鸿蒙 H5 套壳 App            | 基于 Web for API 二次包装，鸿蒙端 rawfile 预加载 + 资源拦截优化 |
+| 部署方案                   | 适用智能体                 | 形态                      | 说明                                                |
+| ---------------------- | --------------------- | ----------------------- | ------------------------------------------------- |
+| **腾讯元器**               | Guncat 2.0 / 2.5 系列   | 平台托管                    | 平台适配提示词，可直接在腾讯元器创建智能体                             |
+| **智谱清言**               | Guncat Srch / Cnvt 系列 | 平台托管                    | 平台适配提示词，部署于智谱清言平台                                 |
+| **Guncat Web for API** | 通用提示词（不绑定平台）          | Web / Windows / Android | 「配置即智能体」架构，用户自选 OpenAI 兼容 API                     |
+| **Coze 服务**            | Guncat 2.5-Pro        | 云端 API                  | Python 智能体部署为 Coze API 服务对外提供能力                   |
+| **鸿蒙 H5 应用**           | Web for API 通用提示词     | 鸿蒙 H5 套壳 App            | 基于 Web for API 二次包装，鸿蒙端 rawfile 预加载 + 资源拦截优化      |
 | **鸿蒙原生应用**             | 通用提示词（不绑定平台）          | 鸿蒙原生 App                | 纯 ArkTS + ArkUI 实现，原生 SSE 流式通信、Markdown 渲染、多智能体系统 |
 
 ### 1. 腾讯元器
@@ -669,9 +669,9 @@ Guncat Eval-LLM 的设计与提示词工程已开源技术报告：[技术报告
 | [Guncat AI Python](./Guncat%20AI%20Python/)                                       | 智能体      | Guncat 2.5-Pro 与 Srch-Law V2 两个 Python 代码驱动项目 |
 | [Guncat AI Web for API](./Guncat%20AI%20Web%20for%20API/)                         | 部署       | 通用提示词 Web 客户端，自主配置 API                        |
 | [Guncat AI Web for API_local-setup](./Guncat%20AI%20Web%20for%20API_local-setup/) | 部署       | Web 客户端的 Windows 一键本地启动版                      |
-| [GuncatAI-Web-for-API_HMOS-APP](./GuncatAI-Web-for-API_HMOS-APP/)                 | 部署       | 鸿蒙 H5 套壳应用（基于 Web for API）                       |
-| [GuncatAI_HMOS-APP](./GuncatAI_HMOS-APP/)                                         | 部署       | 鸿蒙原生应用（纯 ArkTS + ArkUI）                          |
-| [Technical_Report](./Technical_Report/)                                           | 技术文档     | Guncat Eval-LLM 设计与提示词工程技术报告（中/英）                 |
+| [GuncatAI-Web-for-API_HMOS-APP](./GuncatAI-Web-for-API_HMOS-APP/)                 | 部署       | 鸿蒙 H5 套壳应用（基于 Web for API）                    |
+| [GuncatAI_HMOS-APP](./GuncatAI_HMOS-APP/)                                         | 部署       | 鸿蒙原生应用（纯 ArkTS + ArkUI）                       |
+| [Technical_Report](./Technical_Report/)                                           | 技术文档     | Guncat Eval-LLM 设计与提示词工程技术报告（中/英）             |
 
 ---
 
@@ -684,7 +684,7 @@ Guncat Eval-LLM 的设计与提示词工程已开源技术报告：[技术报告
 | 在浏览器中使用自己的 API Key  | [Guncat AI Web for API](./Guncat%20AI%20Web%20for%20API/)                         |
 | Windows 一键本地启动      | [Guncat AI Web for API_local-setup](./Guncat%20AI%20Web%20for%20API_local-setup/) |
 | 在鸿蒙设备上安装 H5 套壳应用    | [GuncatAI-Web-for-API_HMOS-APP](./GuncatAI-Web-for-API_HMOS-APP/)                 |
-| 在鸿蒙设备上安装原生 ArkTS 应用  | [GuncatAI_HMOS-APP](./GuncatAI_HMOS-APP/)                                         |
+| 在鸿蒙设备上安装原生 ArkTS 应用 | [GuncatAI_HMOS-APP](./GuncatAI_HMOS-APP/)                                         |
 
 ---
 

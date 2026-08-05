@@ -20,14 +20,14 @@ Guncat AI Release/
 ├── Guncat 2.5/                          # 腾讯元器部署用提示词（Sequential Thinking 版）
 │   ├── Guncat 2.5-lite _prompt.md
 │   └── Guncat 2.5-max _prompt.md
-├── Guncat Cnvt-Paper/                   # 论文改写智能体提示词
+├── Guncat Cnvt/                         # 论文改写智能体提示词
 │   └── Guncat Cnvt-Paper_prompt.md
-├── Guncat Srch-Law/                     # 国企法律检索智能体提示词
-│   └── Guncat Srch-Law V1.0-prompt.md
-├── Guncat Srch-Research/                # 多轮研究检索智能体提示词
-│   └── Guncat Srch-Research-prompt.md
-├── Guncat Srch-Sift/                    # AI 信息筛滤检索智能体提示词
+├── Guncat Srch/                         # 信息检索智能体提示词（法律 / 研究 / 筛滤）
+│   ├── Guncat Srch-Law V1.0-prompt.md
+│   ├── Guncat Srch-Research-prompt.md
 │   └── Guncat Srch-Sift-prompt.md
+├── Guncat Eval/                         # 模型评测情报分析智能体提示词
+│   └── Guncat Eval-LLM_prompt.md
 └── LICENSE
 ```
 
