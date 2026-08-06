@@ -49,7 +49,7 @@
     .header { height: 56px; background: var(--surface); border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; padding: 0 12px; flex-shrink: 0; z-index: 10; }
     .header-left, .header-right { display: flex; align-items: center; gap: 8px; min-width: 80px; }
     .header-right { justify-content: flex-end; }
-    .icon-btn { width: 40px; height: 40px; border-radius: 10px; border: none; background: transparent; color: var(--text-secondary); display: flex; align-items: center; justify-content: center; cursor: pointer; transition: background .2s; }
+    .icon-btn { width: 40px; height: 40px; border-radius: 10px; border: none; background: transparent; color: var(--text-secondary); font-size: 20px; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: background .2s; }
     .icon-btn:hover, .icon-btn:active { background: var(--bg); color: var(--primary); }
     .header-title { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 16px; min-width: 0; }
     .header-title img { width: 28px; height: 28px; border-radius: 50%; object-fit: cover; flex-shrink: 0; }
@@ -143,6 +143,55 @@
     .tool-toggle.active { background: var(--primary-light); border-color: var(--primary); color: var(--primary); font-weight: 600; }
     .tool-toggle .dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; opacity: .4; transition: opacity .2s; }
     .tool-toggle.active .dot { opacity: 1; box-shadow: 0 0 6px currentColor; }
+
+    /* Model selector (配置方案快速切换, 对齐鸿蒙版 buildModelSelector) */
+    .model-selector { display: flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 16px; border: 1px solid var(--border); background: var(--surface); cursor: pointer; font-size: 13px; color: var(--text-secondary); transition: all .2s; user-select: none; flex-shrink: 0; max-width: 150px; }
+    .model-selector:hover:not(.disabled) { border-color: var(--primary); color: var(--primary); }
+    .model-selector.disabled { opacity: .5; cursor: not-allowed; }
+    .model-selector .model-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+    .model-selector .caret { font-size: 10px; opacity: .7; flex-shrink: 0; }
+    .model-menu { position: fixed; z-index: 45; min-width: 190px; max-width: 260px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow); padding: 6px; display: none; }
+    .model-menu.show { display: block; animation: fadeIn .15s ease; }
+    .model-menu-item { display: flex; align-items: center; gap: 8px; padding: 9px 12px; border-radius: 8px; font-size: 13px; cursor: pointer; color: var(--text); }
+    .model-menu-item:hover { background: var(--bg); }
+    .model-menu-item.active { background: var(--primary-light); color: var(--primary); font-weight: 600; }
+    .model-menu-item .check { margin-left: auto; font-size: 12px; opacity: 0; }
+    .model-menu-item.active .check { opacity: 1; }
+    .model-menu .menu-add { border-top: 1px solid var(--border); margin-top: 4px; padding-top: 8px; color: var(--primary); }
+
+    /* Settings: 配置方案 */
+    .profile-row { display: flex; gap: 8px; }
+    .profile-row select { flex: 1; min-width: 0; }
+    .add-profile-btn { width: 42px; flex-shrink: 0; padding: 0; border-radius: 10px; border: 1px solid var(--border); background: var(--bg); color: var(--primary); font-size: 20px; font-weight: 600; cursor: pointer; line-height: 1; }
+    .add-profile-btn:hover { background: var(--primary-light); }
+
+    /* Switch (先行解析附件 / 等开关) */
+    .switch-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px; }
+    .switch-label { font-size: 13px; color: var(--text); }
+    .switch-label small { display: block; font-size: 11px; color: var(--text-secondary); margin-top: 2px; line-height: 1.5; }
+    .switch { position: relative; width: 42px; height: 24px; flex-shrink: 0; }
+    .switch input { opacity: 0; width: 0; height: 0; }
+    .switch .track { position: absolute; inset: 0; background: var(--border); border-radius: 12px; transition: background .2s; cursor: pointer; }
+    .switch .track::after { content: ''; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%; background: #fff; transition: transform .2s; box-shadow: 0 1px 3px rgba(0,0,0,.3); }
+    .switch input:checked + .track { background: var(--primary); }
+    .switch input:checked + .track::after { transform: translateX(18px); }
+
+    /* Reader bar (自动朗读控制条) */
+    .reader-bar { position: fixed; top: 64px; left: 50%; transform: translateX(-50%); z-index: 55; display: none; align-items: center; gap: 8px; background: var(--surface); border: 1px solid var(--border); border-radius: 20px; box-shadow: var(--shadow); padding: 6px 10px; font-size: 12px; color: var(--text); }
+    .reader-bar.show { display: flex; animation: fadeIn .2s ease; }
+    .reader-bar .rb-status { white-space: nowrap; }
+    .reader-bar .rb-btn { border: none; background: var(--bg); color: var(--text-secondary); width: 26px; height: 26px; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 12px; flex-shrink: 0; }
+    .reader-bar .rb-btn:hover { color: var(--primary); }
+    .reader-bar .rb-rate { border: 1px solid var(--border); background: transparent; border-radius: 10px; padding: 2px 8px; font-size: 11px; color: var(--text-secondary); cursor: pointer; flex-shrink: 0; width: auto; height: auto; }
+
+    /* Voice input */
+    .mic-btn { width: 38px; height: 38px; border-radius: 50%; border: none; background: transparent; color: var(--text-secondary); display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all .2s; flex-shrink: 0; }
+    .mic-btn:hover { background: var(--bg); color: var(--primary); }
+    .mic-btn.listening { background: var(--primary); color: #fff; animation: pulse 1.2s ease infinite; }
+    .mic-btn:disabled { opacity: .5; cursor: not-allowed; }
+    @keyframes pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(37,99,235,.35); } 50% { box-shadow: 0 0 0 6px rgba(37,99,235,0); } }
+
+    .icon-btn.active { color: var(--primary); background: var(--primary-light); }
 
     /* Input toolbar */
     .input-toolbar { display: flex; align-items: center; gap: 8px; padding: 0 14px 6px; margin: -4px -12px 4px; }
@@ -265,7 +314,8 @@
         <span class="agent-name" id="headerAgentName"></span>
       </div>
       <div class="header-right">
-        <button class="icon-btn" id="settingsBtn" title="API 设置">⚙</button>
+        <button class="icon-btn" id="autoReadBtn" title="自动朗读" style="display:none"></button>
+        <button class="icon-btn" id="settingsBtn" title="API 设置"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg></button>
       </div>
     </header>
 
@@ -297,13 +347,20 @@
             <img src="cat-avatar(1).png" alt="Guncat">
             <h2>Guncat AI</h2>
             <p>选择一个智能体，配置 API 后即可开始对话。</p>
-            <p>支持 Deepseek API 与火山方舟引擎两种预置接入方式。</p>
+            <p>支持 Deepseek API 与火山方舟引擎两种预置接入方式，可保存多套配置方案随时切换。</p>
           </div>
         </div>
 
         <div class="input-area">
+          <button class="mic-btn" id="micBtn" title="语音输入" type="button">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="23"></line><line x1="8" y1="23" x2="16" y2="23"></line></svg>
+          </button>
           <div style="flex:1; display:flex; flex-direction:column;">
             <div class="input-toolbar">
+              <div class="model-selector" id="modelSelector" title="切换配置方案">
+                <span class="model-name" id="modelSelectorName">模型</span>
+                <span class="caret" id="modelSelectorCaret">▼</span>
+              </div>
               <div class="tool-toggle thinking-toggle" id="thinkingToggle" title="开启/关闭深度思考">
                 <span class="dot"></span>
                 <span>深度思考</span>
@@ -338,6 +395,17 @@
         <button class="modal-close" id="closeSettings">✕</button>
       </div>
       <div class="modal-body">
+        <div class="form-group">
+          <label>配置方案</label>
+          <div class="profile-row">
+            <select id="apiProfileSelect"></select>
+            <button class="add-profile-btn" id="addProfileBtn" title="新建配置方案">+</button>
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="profileName">配置名称</label>
+          <input type="text" id="profileName" placeholder="例如：火山豆包 Pro">
+        </div>
         <div class="form-group">
           <label>快速选择预设</label>
           <div class="preset-btns">
@@ -396,25 +464,42 @@
           <span class="arrow">▼</span>
         </div>
         <div class="advanced-panel" id="multimodalPanel">
+          <div class="switch-row">
+            <div class="switch-label">先行解析附件
+              <small>开启后先由下方独立 API 解析，再将文本交给主模型；关闭后图片和文档将直接传给火山主模型（直传模式仅支持火山方舟引擎）。</small>
+            </div>
+            <label class="switch"><input type="checkbox" id="mmPreparseEnabled" checked><span class="track"></span></label>
+          </div>
+          <div id="mmFields">
+            <div class="form-group">
+              <label for="mmBaseUrl">Base URL</label>
+              <input type="text" id="mmBaseUrl" placeholder="https://open.bigmodel.cn/api/paas/v4">
+            </div>
+            <div class="form-group">
+              <label for="mmApiKey">API Key</label>
+              <input type="password" id="mmApiKey" placeholder="...">
+            </div>
+            <div class="form-group">
+              <label for="mmModel">模型名称</label>
+              <input type="text" id="mmModel" placeholder="glm-4.6v-flash">
+            </div>
+          </div>
           <p class="param-help">上传图片或文件时，先用该 API 解析内容。默认使用智谱 GLM-4.6V-Flash。</p>
-          <div class="form-group">
-            <label for="mmBaseUrl">Base URL</label>
-            <input type="text" id="mmBaseUrl" placeholder="https://open.bigmodel.cn/api/paas/v4">
-          </div>
-          <div class="form-group">
-            <label for="mmApiKey">API Key</label>
-            <input type="password" id="mmApiKey" placeholder="...">
-          </div>
-          <div class="form-group">
-            <label for="mmModel">模型名称</label>
-            <input type="text" id="mmModel" placeholder="glm-4.6v-flash">
-          </div>
         </div>
         <p class="hint" id="apiHint">所有配置仅保存在浏览器本地（localStorage），不会上传到任何服务器。</p>
         <button class="save-btn" id="saveSettings">保存配置</button>
       </div>
     </div>
   </div>
+
+  <div class="reader-bar" id="readerBar">
+    <span class="rb-status" id="readerStatus">🔊 朗读中</span>
+    <button class="rb-btn" id="readerPauseBtn" title="暂停/继续">⏸</button>
+    <button class="rb-btn rb-rate" id="readerRateBtn" title="语速">1×</button>
+    <button class="rb-btn" id="readerStopBtn" title="停止">✕</button>
+  </div>
+
+  <div class="model-menu" id="modelMenu"></div>
 
   <div class="toast" id="toast"></div>
 
@@ -429,7 +514,7 @@
         <div class="about-logo">
           <img src="cat-avatar(1).png" alt="Guncat">
           <div class="about-name">Guncat AI</div>
-          <div class="about-version">version 3.1.0</div>
+          <div class="about-version">version 3.2.0</div>
         </div>
         <div class="about-links">
           <a href="https://github.com/zhubowen-bot" target="_blank" rel="noopener noreferrer">
@@ -456,14 +541,22 @@
         currentAgent: 'guncat_current_agent',
         currentConv: 'guncat_current_conv',
         thinking: 'guncat_thinking_enabled',
-        webSearch: 'guncat_web_search_enabled'
+        webSearch: 'guncat_web_search_enabled',
+        apiProfiles: 'guncat_api_profiles',
+        currentProfileId: 'guncat_current_api_profile',
+        autoRead: 'guncat_auto_read_enabled'
       };
 
       const DEFAULT_MM_CONFIG = {
         baseUrl: 'https://open.bigmodel.cn/api/paas/v4',
         apiKey: '',
-        model: 'glm-4.6v-flash'
+        model: 'glm-4.6v-flash',
+        preparseEnabled: true
       };
+
+      function defaultApiConfig() {
+        return { provider: 'custom', baseUrl: '', apiKey: '', model: '', temperature: null, topP: null, maxTokens: null, extraBody: '' };
+      }
 
       const PRESETS = {
         deepseek: { provider: 'deepseek', baseUrl: 'https://api.deepseek.com', model: 'deepseek-chat' },
@@ -478,7 +571,24 @@
       let abortController = null;
       let thinkingEnabled = localStorage.getItem(LS_KEYS.thinking) === 'true';
       let webSearchEnabled = localStorage.getItem(LS_KEYS.webSearch) === 'true';
+      let autoReadEnabled = localStorage.getItem(LS_KEYS.autoRead) === 'true';
       let pendingFiles = [];
+
+      // 配置方案 (对齐鸿蒙版 ApiProfile, 支持多套命名配置快速切换)
+      let apiProfiles = [];
+      let currentProfileId = '';
+
+      // 朗读 (Web Speech API)
+      const speechSupported = 'speechSynthesis' in window;
+      let isReading = false;
+      let currentUtterance = null;
+      let readerRate = 1;
+
+      // 语音输入 (webkitSpeechRecognition)
+      const SpeechRecognitionImpl = window.SpeechRecognition || window.webkitSpeechRecognition || null;
+      let recognition = null;
+      let isVoiceListening = false;
+      let voiceFinalText = '';
 
       // 流式输出渲染节流，避免输出太快时页面抖动
       let streamUpdatePending = false;
@@ -489,7 +599,9 @@
 
       const ICONS = {
         send: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>',
-        stop: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="6" width="12" height="12" rx="2" ry="2"></rect></svg>'
+        stop: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="6" width="12" height="12" rx="2" ry="2"></rect></svg>',
+        speakerOn: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path><path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path></svg>',
+        speakerOff: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><line x1="23" y1="9" x2="17" y2="15"></line><line x1="17" y1="9" x2="23" y2="15"></line></svg>'
       };
 
       const els = {
@@ -536,7 +648,23 @@
         aboutBtn: document.getElementById('aboutBtn'),
         aboutModal: document.getElementById('aboutModal'),
         aboutBackdrop: document.getElementById('aboutBackdrop'),
-        closeAbout: document.getElementById('closeAbout')
+        closeAbout: document.getElementById('closeAbout'),
+        modelSelector: document.getElementById('modelSelector'),
+        modelSelectorCaret: document.getElementById('modelSelectorCaret'),
+        modelSelectorName: document.getElementById('modelSelectorName'),
+        modelMenu: document.getElementById('modelMenu'),
+        apiProfileSelect: document.getElementById('apiProfileSelect'),
+        addProfileBtn: document.getElementById('addProfileBtn'),
+        profileName: document.getElementById('profileName'),
+        mmPreparseEnabled: document.getElementById('mmPreparseEnabled'),
+        mmFields: document.getElementById('mmFields'),
+        autoReadBtn: document.getElementById('autoReadBtn'),
+        readerBar: document.getElementById('readerBar'),
+        readerStatus: document.getElementById('readerStatus'),
+        readerPauseBtn: document.getElementById('readerPauseBtn'),
+        readerRateBtn: document.getElementById('readerRateBtn'),
+        readerStopBtn: document.getElementById('readerStopBtn'),
+        micBtn: document.getElementById('micBtn')
       };
 
       function showToast(msg) {
@@ -559,6 +687,119 @@
         catch { return fallback; }
       }
       function saveToStorage(key, val) { localStorage.setItem(key, JSON.stringify(val)); }
+
+      /* ---------- 配置方案 (API Profiles, 对齐鸿蒙版 ApiProfile) ---------- */
+
+      function loadApiProfiles() {
+        apiProfiles = loadFromStorage(LS_KEYS.apiProfiles, []);
+        if (!Array.isArray(apiProfiles) || apiProfiles.length === 0) {
+          // 旧版单配置自动迁移为第一套方案
+          const legacyApi = loadFromStorage(LS_KEYS.config, {});
+          const legacyMm = loadFromStorage(LS_KEYS.multimodalConfig, DEFAULT_MM_CONFIG);
+          apiProfiles = [{
+            id: 'api-profile-' + Date.now(),
+            name: '默认配置',
+            apiConfig: Object.assign(defaultApiConfig(), legacyApi),
+            multimodalConfig: Object.assign({}, DEFAULT_MM_CONFIG, legacyMm)
+          }];
+          saveToStorage(LS_KEYS.apiProfiles, apiProfiles);
+        }
+        // 规范化缺失字段
+        apiProfiles.forEach(p => {
+          if (!p.id) p.id = 'api-profile-' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
+          p.apiConfig = Object.assign(defaultApiConfig(), p.apiConfig || {});
+          p.multimodalConfig = Object.assign({}, DEFAULT_MM_CONFIG, p.multimodalConfig || {});
+        });
+        const savedId = localStorage.getItem(LS_KEYS.currentProfileId);
+        const profile = apiProfiles.find(p => p.id === savedId) || apiProfiles[0];
+        currentProfileId = profile.id;
+      }
+
+      function getCurrentProfile() {
+        return apiProfiles.find(p => p.id === currentProfileId) || null;
+      }
+
+      // 当前方案的主 API 配置
+      function getCurrentConfig() {
+        const p = getCurrentProfile();
+        if (p) return p.apiConfig;
+        return loadFromStorage(LS_KEYS.config, {});
+      }
+
+      // 当前方案的多模态配置
+      function getMultimodalConfig() {
+        const p = getCurrentProfile();
+        if (p) return p.multimodalConfig;
+        return Object.assign({}, DEFAULT_MM_CONFIG, loadFromStorage(LS_KEYS.multimodalConfig, {}));
+      }
+
+      function selectApiProfile(profileId) {
+        if (isStreaming) { showToast('AI 正在回复中，请稍候'); return; }
+        const profile = apiProfiles.find(p => p.id === profileId);
+        if (!profile) return;
+        currentProfileId = profile.id;
+        localStorage.setItem(LS_KEYS.currentProfileId, profile.id);
+        renderProfileUI();
+      }
+
+      function addApiProfile() {
+        const profile = {
+          id: 'api-profile-' + Date.now(),
+          name: '新配置 ' + (apiProfiles.length + 1),
+          apiConfig: defaultApiConfig(),
+          multimodalConfig: Object.assign({}, DEFAULT_MM_CONFIG)
+        };
+        apiProfiles.push(profile);
+        currentProfileId = profile.id;
+        localStorage.setItem(LS_KEYS.currentProfileId, profile.id);
+        saveToStorage(LS_KEYS.apiProfiles, apiProfiles);
+        renderProfileUI();
+      }
+
+      function renderProfileUI() {
+        const p = getCurrentProfile();
+        els.modelSelectorName.textContent = p ? p.name : '模型';
+        els.apiProfileSelect.innerHTML = apiProfiles.map(x =>
+          `<option value="${escapeHtml(x.id)}">${escapeHtml(x.name)}</option>`).join('');
+        if (p) els.apiProfileSelect.value = p.id;
+        renderModelMenu();
+      }
+
+      function renderModelMenu() {
+        els.modelMenu.innerHTML = apiProfiles.map(x => `
+          <div class="model-menu-item ${x.id === currentProfileId ? 'active' : ''}" data-id="${escapeHtml(x.id)}">
+            <span>${escapeHtml(x.name)}</span><span class="check">✓</span>
+          </div>`).join('') +
+          `<div class="model-menu-item menu-add">+ 新建配置方案</div>`;
+        els.modelMenu.querySelectorAll('.model-menu-item[data-id]').forEach(el => {
+          el.addEventListener('click', () => {
+            closeModelMenu();
+            selectApiProfile(el.dataset.id);
+          });
+        });
+        els.modelMenu.querySelector('.menu-add').addEventListener('click', () => {
+          closeModelMenu();
+          addApiProfile();
+        });
+      }
+
+      function openModelMenu() {
+        if (isStreaming || pendingFiles.some(f => f.isParsing)) { showToast('AI 正在回复中，请稍候'); return; }
+        renderModelMenu();
+        const rect = els.modelSelector.getBoundingClientRect();
+        els.modelMenu.classList.add('show');
+        // 胶囊在输入区上方, 屏幕底部空间不足, 默认向上展开; 顶部空间不够时才向下兜底
+        const up = rect.top - els.modelMenu.offsetHeight - 6;
+        const openUp = up >= 8;
+        els.modelMenu.style.top = (openUp ? up : Math.min(rect.bottom + 6, window.innerHeight - els.modelMenu.offsetHeight - 8)) + 'px';
+        els.modelMenu.style.left = Math.max(8, Math.min(rect.left, window.innerWidth - els.modelMenu.offsetWidth - 8)) + 'px';
+        // 箭头跟随展开方向翻转
+        els.modelSelectorCaret.textContent = openUp ? '▲' : '▼';
+      }
+      function closeModelMenu() {
+        els.modelMenu.classList.remove('show');
+        els.modelSelectorCaret.textContent = '▼';
+      }
 
       async function loadAgents() {
         try {
@@ -762,6 +1003,7 @@
               <div class="message-actions">
                 <button class="msg-action-btn" data-action="copy-text" type="button">复制</button>
                 <button class="msg-action-btn" data-action="copy-md" type="button">复制 Markdown</button>
+                <button class="msg-action-btn" data-action="read" type="button">朗读</button>
                 <button class="msg-action-btn" data-action="regenerate" type="button">重新回答</button>
               </div>
             </div>
@@ -1017,7 +1259,7 @@
         }
         if (!userMsg) { showToast('未找到对应的问题'); return; }
 
-        const config = loadFromStorage(LS_KEYS.config, {});
+        const config = getCurrentConfig();
         if (!config.apiKey) { showToast('请先配置 API Key'); openSettings(); return; }
 
         const newDisplayContent = '重新回答：' + (userMsg.displayContent || userMsg.content || '');
@@ -1057,10 +1299,6 @@
 
       function scrollToBottom() {
         els.messages.scrollTop = els.messages.scrollHeight;
-      }
-
-      function getMultimodalConfig() {
-        return loadFromStorage(LS_KEYS.multimodalConfig, DEFAULT_MM_CONFIG);
       }
 
       function readFileAsText(file) {
@@ -1215,6 +1453,8 @@
         const hasText = els.input.value.trim().length > 0;
         els.uploadBtn.disabled = isStreaming || isParsing;
         els.uploadBtn.classList.toggle('processing', isParsing);
+        els.micBtn.disabled = (isStreaming || isParsing) && !isVoiceListening;
+        els.modelSelector.classList.toggle('disabled', isStreaming || isParsing);
 
         if (isStreaming) {
           els.sendBtn.disabled = false;
@@ -1236,8 +1476,52 @@
         await processFiles(files);
       }
 
+      function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
       async function processFiles(files) {
         const mmConfig = getMultimodalConfig();
+        const apiConfig = getCurrentConfig();
+
+        // 直传模式：跳过预解析，附件直接随请求发给火山主模型
+        if (mmConfig.preparseEnabled === false) {
+          if (apiConfig.provider !== 'volcano') {
+            showToast('附件直传目前仅支持火山方舟引擎');
+            return;
+          }
+          const validFiles = files.filter(file => {
+            if (file.type.startsWith('image/')) return true;
+            if (isTextFile(file)) return true;
+            if (isDocumentFile(file)) return true;
+            showToast(`跳过不支持的文件：${file.name}`);
+            return false;
+          });
+          if (!validFiles.length) return;
+          validFiles.forEach(file => {
+            pendingFiles.push({ id: 'file_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7), file, parsedText: '', dataUrl: null, thumbnail: null, isParsing: true, error: false });
+          });
+          updateFilePreviewUI();
+          showToast('正在读取文件...');
+          for (let i = 0; i < validFiles.length; i++) {
+            if (i > 0) await sleep(800);
+            const item = pendingFiles.find(f => f.file === validFiles[i]);
+            if (!item) continue;
+            try {
+              const dataUrl = await readFileAsDataURL(validFiles[i]);
+              item.dataUrl = dataUrl;
+              if (validFiles[i].type.startsWith('image/')) {
+                item.thumbnail = await createImageThumbnail(dataUrl);
+              }
+              item.isParsing = false;
+            } catch (err) {
+              item.isParsing = false;
+              item.error = true;
+              showToast(`${validFiles[i].name} 读取失败：${err.message || '未知错误'}`);
+            }
+            updateFilePreviewUI();
+          }
+          return;
+        }
+
         if (!mmConfig.apiKey) {
           showToast('请先配置多模态解析 API 密钥');
           openSettings();
@@ -1321,7 +1605,7 @@
         if (!userText || isStreaming) return;
         if (pendingFiles.some(f => f.isParsing)) { showToast('文件解析中，请稍候'); return; }
         if (!currentAgent) { showToast('请先选择一个智能体'); return; }
-        const config = loadFromStorage(LS_KEYS.config, {});
+        const config = getCurrentConfig();
         if (!config.apiKey) { showToast('请先配置 API Key'); openSettings(); return; }
 
         const readyFiles = pendingFiles.filter(f => f.parsedText && !f.error);
@@ -1337,7 +1621,8 @@
           name: f.file.name,
           parsedText: f.parsedText,
           type: f.file.type.startsWith('image/') ? 'image' : 'file',
-          thumbnail: f.thumbnail || null
+          thumbnail: f.thumbnail || null,
+          dataUrl: f.dataUrl || null
         }));
         clearPendingFiles();
         appendUserMessage(userText, fullText, attachments);
@@ -1363,6 +1648,7 @@
         abortController = new AbortController();
         let fullContent = '';
         let aborted = false;
+        let streamError = false;
         try {
           const res = await fetch(url, {
             method: 'POST',
@@ -1374,12 +1660,12 @@
             signal: abortController.signal
           });
           if (!res.ok) {
-            const errText = await res.text();
-            throw new Error('API 请求失败 (' + res.status + '): ' + errText);
+            throw new Error(friendlyApiError(res.status));
           }
           fullContent = isVolcano ? await streamResponses(res, el, bubble) : await streamChatCompletions(res, el, bubble);
         } catch (err) {
           if (err.name !== 'AbortError') {
+            streamError = true;
             bubble.innerHTML = `<span style="color:#ef4444">请求出错：${escapeHtml(err.message)}</span>`;
             fullContent = '请求出错：' + err.message;
           } else {
@@ -1405,10 +1691,148 @@
             }
             saveConversations();
           }
+          // 自动朗读：回答正常完成后自动播报（对齐鸿蒙版 autoReadEnabled）
+          if (!aborted && !streamError && fullContent && autoReadEnabled) {
+            speakText(markdownToPlainText(fullContent));
+          }
           isStreaming = false;
           updateInputButtons();
           abortController = null;
         }
+      }
+
+      function friendlyApiError(status) {
+        if (status === 401) return 'API Key 无效，请检查设置';
+        if (status === 429) return '请求过于频繁，请稍后再试';
+        if (status >= 400 && status < 500) return 'API 请求错误 (' + status + ')，请检查配置';
+        if (status >= 500) return '服务器错误 (' + status + ')，请稍后再试';
+        return '请求失败，状态码: ' + status;
+      }
+
+      /* ---------- 朗读 (Web Speech API, 对齐鸿蒙版 TextReaderService) ---------- */
+      function speakText(text) {
+        if (!speechSupported) { showToast('当前浏览器不支持朗读'); return; }
+        if (!text) return;
+        speechSynthesis.cancel();
+        const utter = new SpeechSynthesisUtterance(text);
+        utter.lang = (navigator.language || 'zh-CN').startsWith('zh') ? 'zh-CN' : 'en-US';
+        utter.rate = readerRate;
+        utter.onstart = () => {
+          isReading = true;
+          els.readerStatus.textContent = '🔊 朗读中';
+          els.readerPauseBtn.textContent = '⏸';
+          els.readerBar.classList.add('show');
+        };
+        utter.onend = () => {
+          isReading = false;
+          els.readerBar.classList.remove('show');
+        };
+        utter.onerror = () => {
+          isReading = false;
+          els.readerBar.classList.remove('show');
+        };
+        currentUtterance = utter;
+        speechSynthesis.speak(utter);
+      }
+
+      function stopReading() {
+        if (!speechSupported) return;
+        speechSynthesis.cancel();
+        isReading = false;
+        els.readerBar.classList.remove('show');
+      }
+
+      function togglePauseReading() {
+        if (!speechSupported) return;
+        if (speechSynthesis.paused) {
+          speechSynthesis.resume();
+          els.readerPauseBtn.textContent = '⏸';
+        } else if (speechSynthesis.speaking) {
+          speechSynthesis.pause();
+          els.readerPauseBtn.textContent = '▶';
+        }
+      }
+
+      function cycleReaderRate() {
+        const rates = [1, 1.25, 1.5, 0.75];
+        readerRate = rates[(rates.indexOf(readerRate) + 1) % rates.length];
+        els.readerRateBtn.textContent = readerRate + '×';
+        if (isReading && currentUtterance) {
+          // 重新以新语速朗读
+          const text = currentUtterance.text;
+          speakText(text);
+        }
+      }
+
+      function readMessageContent(msg) {
+        if (!speechSupported) { showToast('当前浏览器不支持朗读'); return; }
+        const text = markdownToPlainText(msg.content);
+        if (!text) return;
+        speakText(text);
+      }
+
+      function updateAutoReadUI() {
+        if (!speechSupported) {
+          els.autoReadBtn.style.display = 'none';
+          return;
+        }
+        els.autoReadBtn.style.display = '';
+        els.autoReadBtn.innerHTML = autoReadEnabled ? ICONS.speakerOn : ICONS.speakerOff;
+        els.autoReadBtn.classList.toggle('active', autoReadEnabled);
+        els.autoReadBtn.title = autoReadEnabled ? '关闭自动朗读' : '开启自动朗读';
+      }
+
+      /* ---------- 语音输入 (webkitSpeechRecognition, 对齐鸿蒙版 VoiceInputService) ---------- */
+      function initVoiceInput() {
+        if (!SpeechRecognitionImpl) {
+          els.micBtn.style.display = 'none';
+          return;
+        }
+        recognition = new SpeechRecognitionImpl();
+        recognition.lang = (navigator.language || 'zh-CN').startsWith('zh') ? 'zh-CN' : 'en-US';
+        recognition.continuous = false;
+        recognition.interimResults = true;
+        recognition.onresult = (e) => {
+          let interim = '';
+          for (let i = e.resultIndex; i < e.results.length; i++) {
+            if (e.results[i].isFinal) voiceFinalText += e.results[i][0].transcript;
+            else interim += e.results[i][0].transcript;
+          }
+          els.input.value = voiceFinalText + interim;
+          els.input.style.height = 'auto';
+          els.input.style.height = Math.min(els.input.scrollHeight, 120) + 'px';
+          updateInputButtons();
+        };
+        recognition.onend = () => {
+          isVoiceListening = false;
+          els.micBtn.classList.remove('listening');
+          els.micBtn.title = '语音输入';
+          voiceFinalText = '';
+          updateInputButtons();
+        };
+        recognition.onerror = (e) => {
+          if (e.error === 'not-allowed') showToast('请允许麦克风权限后再使用语音输入');
+          else if (e.error === 'no-speech') showToast('未检测到语音');
+          else if (e.error !== 'aborted') showToast('语音识别失败：' + e.error);
+        };
+      }
+
+      function toggleVoiceInput() {
+        if (!recognition) { showToast('当前浏览器不支持语音输入'); return; }
+        if (isVoiceListening) {
+          recognition.stop();
+          return;
+        }
+        if (isStreaming) { showToast('AI 正在回复中，请稍候'); return; }
+        if (pendingFiles.some(f => f.isParsing)) { showToast('文件解析中，请稍候'); return; }
+        voiceFinalText = '';
+        try {
+          recognition.start();
+          isVoiceListening = true;
+          els.micBtn.classList.add('listening');
+          els.micBtn.title = '点击停止';
+          showToast('正在聆听...');
+        } catch (e) { /* start() 可能抛错，静默忽略 */ }
       }
 
       function buildChatCompletionsBody(userText, config) {
@@ -1449,15 +1873,28 @@
       function buildResponsesBody(userText, config) {
         const input = [];
         const conv = getCurrentConversation();
-        if (conv) {
-          conv.messages.slice(0, -1).forEach(m => {
-            if (m.role !== 'user' && m.role !== 'assistant') return;
-            // 跳过空内容消息，火山 Responses API 会拒绝并报 MissingParameter
-            if (!m.content) return;
+        // 调用时机：assistant 占位消息尚未追加，conv.messages 的最后一条就是刚添加的当前 user 消息，
+        // 必须整段遍历（含当前消息），否则直传附件和文本都会漏发。
+        const historyMsgs = conv ? conv.messages : [];
+        historyMsgs.forEach(m => {
+          if (m.role !== 'user' && m.role !== 'assistant') return;
+          // 跳过空内容消息，火山 Responses API 会拒绝并报 MissingParameter
+          if (!m.content) return;
+          // 直传附件（dataUrl 且无解析文本）转成 content parts 随消息发送
+          const directAtts = (m.attachments || []).filter(a => a.dataUrl && !a.parsedText);
+          if (m.role === 'user' && directAtts.length) {
+            const parts = [{ type: 'input_text', text: m.content }];
+            directAtts.forEach(a => {
+              if (a.type === 'image') parts.push({ type: 'input_image', image_url: a.dataUrl });
+              else parts.push({ type: 'input_file', filename: a.name, file_data: a.dataUrl });
+            });
+            input.push({ role: m.role, content: parts });
+          } else {
             input.push({ role: m.role, content: m.content });
-          });
-        }
-        input.push({ role: 'user', content: userText });
+          }
+        });
+        // 当前 user 消息已在上面整段遍历中写入，这里无需重复追加。
+        if (input.length === 0) input.push({ role: 'user', content: userText });
 
         const body = {
           model: config.model || 'doubao-seed-2-1-pro-260628',
@@ -1468,7 +1905,6 @@
         if (currentAgent?.systemPrompt) {
           body.instructions = currentAgent.systemPrompt;
         }
-        if (thinkingEnabled) body.thinking = { type: 'enabled' };
         if (webSearchEnabled) body.tools = [{ type: 'web_search', max_keyword: 5 }];
         if (config.temperature != null) body.temperature = config.temperature;
         if (config.topP != null) body.top_p = config.topP;
@@ -1477,6 +1913,8 @@
           const extraBody = config.extraBody ? JSON.parse(config.extraBody) : {};
           Object.assign(body, extraBody);
         } catch (e) { /* 忽略无效的 extraBody */ }
+        // 深度思考必须显式控制方舟 Responses API；放在 extraBody 之后，界面开关拥有最高优先级
+        body.thinking = { type: thinkingEnabled ? 'enabled' : 'disabled' };
         return body;
       }
 
@@ -1565,7 +2003,7 @@
 
       /* Settings */
       function loadSettings() {
-        const config = loadFromStorage(LS_KEYS.config, {});
+        const config = getCurrentConfig();
         els.apiProvider.value = config.provider || 'custom';
         els.apiBaseUrl.value = config.baseUrl || '';
         els.apiKey.value = config.apiKey || '';
@@ -1574,11 +2012,17 @@
         els.apiTopP.value = config.topP != null ? config.topP : '';
         els.apiMaxTokens.value = config.maxTokens != null ? config.maxTokens : '';
         els.apiExtraBody.value = config.extraBody || '';
-        const mm = loadFromStorage(LS_KEYS.multimodalConfig, DEFAULT_MM_CONFIG);
+        const mm = getMultimodalConfig();
+        els.mmPreparseEnabled.checked = mm.preparseEnabled !== false;
         els.mmBaseUrl.value = mm.baseUrl || DEFAULT_MM_CONFIG.baseUrl;
         els.mmApiKey.value = mm.apiKey || '';
         els.mmModel.value = mm.model || DEFAULT_MM_CONFIG.model;
+        els.profileName.value = getCurrentProfile()?.name || '';
         updateHint();
+        updateMmFieldsVisibility();
+      }
+      function updateMmFieldsVisibility() {
+        els.mmFields.style.display = els.mmPreparseEnabled.checked ? '' : 'none';
       }
       function saveSettings() {
         const extraBodyText = els.apiExtraBody.value.trim();
@@ -1587,7 +2031,10 @@
           try { extraBody = JSON.parse(extraBodyText); }
           catch (e) { showToast('额外请求参数不是有效 JSON'); return; }
         }
-        const config = {
+        const profile = getCurrentProfile();
+        if (!profile) { showToast('配置方案不存在'); return; }
+        profile.name = els.profileName.value.trim() || '未命名配置';
+        profile.apiConfig = {
           provider: els.apiProvider.value,
           baseUrl: els.apiBaseUrl.value.trim(),
           apiKey: els.apiKey.value.trim(),
@@ -1597,13 +2044,17 @@
           maxTokens: els.apiMaxTokens.value !== '' ? parseInt(els.apiMaxTokens.value, 10) : null,
           extraBody: extraBodyText
         };
-        const mmConfig = {
+        profile.multimodalConfig = {
           baseUrl: els.mmBaseUrl.value.trim() || DEFAULT_MM_CONFIG.baseUrl,
           apiKey: els.mmApiKey.value.trim(),
-          model: els.mmModel.value.trim() || DEFAULT_MM_CONFIG.model
+          model: els.mmModel.value.trim() || DEFAULT_MM_CONFIG.model,
+          preparseEnabled: els.mmPreparseEnabled.checked
         };
-        saveToStorage(LS_KEYS.config, config);
-        saveToStorage(LS_KEYS.multimodalConfig, mmConfig);
+        saveToStorage(LS_KEYS.apiProfiles, apiProfiles);
+        // 保留旧键，便于降级到旧版本应用
+        saveToStorage(LS_KEYS.config, profile.apiConfig);
+        saveToStorage(LS_KEYS.multimodalConfig, profile.multimodalConfig);
+        renderProfileUI();
         showToast('配置已保存');
         closeSettingsModal();
       }
@@ -1613,6 +2064,25 @@
       els.closeSettings.addEventListener('click', closeSettingsModal);
       els.settingsBackdrop.addEventListener('click', closeSettingsModal);
       els.saveSettings.addEventListener('click', saveSettings);
+      els.apiProfileSelect.addEventListener('change', () => {
+        selectApiProfile(els.apiProfileSelect.value);
+        loadSettings();
+      });
+      els.addProfileBtn.addEventListener('click', () => {
+        addApiProfile();
+        loadSettings();
+      });
+      els.mmPreparseEnabled.addEventListener('change', updateMmFieldsVisibility);
+      els.modelSelector.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (els.modelMenu.classList.contains('show')) closeModelMenu();
+        else openModelMenu();
+      });
+      document.addEventListener('click', (e) => {
+        if (els.modelMenu.classList.contains('show') && !els.modelMenu.contains(e.target)) {
+          closeModelMenu();
+        }
+      });
       els.advancedToggle.addEventListener('click', () => {
         els.advancedToggle.classList.toggle('open');
         els.advancedPanel.classList.toggle('open');
@@ -1679,6 +2149,19 @@
       });
       updateWebSearchToggleUI();
 
+      /* Reader bar + voice input + auto-read */
+      els.readerPauseBtn.addEventListener('click', togglePauseReading);
+      els.readerRateBtn.addEventListener('click', cycleReaderRate);
+      els.readerStopBtn.addEventListener('click', stopReading);
+      els.micBtn.addEventListener('click', toggleVoiceInput);
+      els.autoReadBtn.addEventListener('click', () => {
+        autoReadEnabled = !autoReadEnabled;
+        localStorage.setItem(LS_KEYS.autoRead, autoReadEnabled ? 'true' : 'false');
+        if (!autoReadEnabled) stopReading();
+        updateAutoReadUI();
+        showToast(autoReadEnabled ? '已开启自动朗读' : '已关闭自动朗读');
+      });
+
       document.querySelectorAll('.preset-btn').forEach(btn => {
         btn.addEventListener('click', () => {
           const p = PRESETS[btn.dataset.preset];
@@ -1737,6 +2220,7 @@
         const action = btn.dataset.action;
         if (action === 'copy-text') copyMessagePlainText(msg, btn);
         else if (action === 'copy-md') copyMessageMarkdown(msg, btn);
+        else if (action === 'read') readMessageContent(msg);
         else if (action === 'regenerate') regenerateMessage(msg);
       });
       els.imgLightboxClose.addEventListener('click', closeImageLightbox);
@@ -1752,6 +2236,10 @@
       els.aboutBackdrop.addEventListener('click', closeAboutModal);
 
       /* Init */
+      loadApiProfiles();
+      renderProfileUI();
+      updateAutoReadUI();
+      initVoiceInput();
       loadAgents().then(() => {
         loadConversations();
       });

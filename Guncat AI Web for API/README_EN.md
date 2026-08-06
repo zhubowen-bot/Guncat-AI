@@ -1,16 +1,21 @@
-# Guncat AI Web for API - Configurable API Chat Client
+# Guncat AI Web for API - Local Setup (Windows)
 
 > [中文](README.md) | English
 
+> Configurable API Chat Client - Windows Local Launch Version
+
 ---
 
-Web for API Version: 3.1.0
+Web for API Version: 3.2.0
 
+2026.8.6 Aligned with HarmonyOS app: multiple API profiles (custom model switching), direct file upload to Volcano, auto-read (TTS), voice input.
 2026.7.7 Fixed bugs with duplicate message input and errors after terminating conversations.
 
 ---
 
 Guncat AI Web for API is a **custom configuration client solution** for the Guncat agent framework, adopting the "Configuration as Agent" design philosophy: all agent information is configured via `agents.json`, and prompts are stored as external `.md` files.
+
+Due to cross-origin restrictions, the `file://` protocol cannot read external JSON files. Therefore, this Windows local launch version includes a `.bat` file that can be clicked to start an HTTP service, making it easy for beginners to use out of the box.
 
 ### Core Design Philosophy
 
@@ -70,6 +75,10 @@ Each agent configuration includes:
 * **Markdown Rendering**: Full Markdown syntax support including code highlighting, tables, lists, blockquotes, etc.
 * **Streaming Output**: Typewriter-effect streaming display for AI responses
 * **Deep Thinking / Web Search Toggles**: UI switches for manually enabling or disabling deep thinking, web search, and other features
+* **API Profiles (Custom Model Switching)**: Save multiple named API configuration profiles (each with its own main model and multimodal settings), switch anytime via the model selector pill above the input or the settings panel; legacy single config auto-migrates to a default profile
+* **Direct Attachment Upload**: Multimodal parsing supports both "pre-parse" and "direct upload" modes; in direct mode, images and documents are sent as-is to a multimodal-capable Volcano Ark main model
+* **Auto-Read (TTS)**: Auto-read replies when enabled, or tap the "Read" button under any AI message; supports pause and speed control (browser TTS)
+* **Voice Input**: Mic button next to the input box for speech-to-text (browser speech recognition; Chrome/Edge engines)
 * **New Conversation**: Supports clearing context to start a new conversation session
 * **Conversation History**: Supports saving and viewing historical conversations
 * **File Parsing**: Supports configuring specialized multimodal APIs to parse files and images that pure text models cannot handle
@@ -85,4 +94,5 @@ Each agent configuration includes:
 
 * **Frontend**: Pure HTML/CSS/JavaScript, no framework dependencies
 * **Rendering**: Marked.js (Markdown rendering) + Highlight.js (code highlighting), with LaTeX formula rendering support (after version 2.0.0)
+* **Mobile**: WebView wrapped as Android APK
 * **API Protocol**: OpenAI-compatible `/v1/chat/completions` endpoint

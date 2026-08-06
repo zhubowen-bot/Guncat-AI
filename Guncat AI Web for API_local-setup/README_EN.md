@@ -6,8 +6,9 @@
 
 ---
 
-Web for API Version: 3.1.0
+Web for API Version: 3.2.0
 
+2026.8.6 Aligned with HarmonyOS app: multiple API profiles (custom model switching), direct file upload to Volcano, auto-read (TTS), voice input.
 2026.7.7 Fixed bugs with duplicate message input and errors after terminating conversations.
 
 ---
@@ -74,6 +75,10 @@ Each agent configuration includes:
 * **Markdown Rendering**: Full Markdown syntax support including code highlighting, tables, lists, blockquotes, etc.
 * **Streaming Output**: Typewriter-effect streaming display for AI responses
 * **Deep Thinking / Web Search Toggles**: UI switches for manually enabling or disabling deep thinking, web search, and other features
+* **API Profiles (Custom Model Switching)**: Save multiple named API configuration profiles (each with its own main model and multimodal settings), switch anytime via the model selector pill above the input or the settings panel; legacy single config auto-migrates to a default profile
+* **Direct Attachment Upload**: Multimodal parsing supports both "pre-parse" and "direct upload" modes; in direct mode, images and documents are sent as-is to a multimodal-capable Volcano Ark main model
+* **Auto-Read (TTS)**: Auto-read replies when enabled, or tap the "Read" button under any AI message; supports pause and speed control (browser TTS)
+* **Voice Input**: Mic button next to the input box for speech-to-text (browser speech recognition; Chrome/Edge engines)
 * **New Conversation**: Supports clearing context to start a new conversation session
 * **Conversation History**: Supports saving and viewing historical conversations
 * **File Parsing**: Supports configuring specialized multimodal APIs to parse files and images that pure text models cannot handle
