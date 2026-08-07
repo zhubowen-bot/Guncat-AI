@@ -8,9 +8,13 @@ export struct ChatBubbleView {
   @ObjectLink message: Message;
   private onCopyPlain: (id: string) => void = (_id: string): void => {};
   private onCopyMarkdown: (id: string) => void = (_id: string): void => {};
+  private onSelectPartial: (id: string) => void = (_id: string): void => {};
   private onRegenerate: (id: string) => void = (_id: string): void => {};
   private onRead: (id: string) => void = (_id: string): void => {};
+  private onExportWord: (id: string) => void = (_id: string): void => {};
   private onImageTap: (url: string) => void = (_url: string): void => {};
+  // 复制局部: 点击次数递增, 传给 RichTextView 触发开启文本选择模式
+  @State private selectionTick: number = 0;
   // 流式也走 RichTextView (库内置流式增量渲染 + Worker 子线程解析)
   // visibleText 保留 33ms 节流, 作为 UI 缓冲, 避免每个 token 都触发整块重渲染
   @State visibleText: string = '';
@@ -171,7 +175,8 @@ export struct ChatBubbleView {
           .alignItems(VerticalAlign.Center)
         } else {
           RichTextView({
-            content: this.isStreaming ? this.visibleText : this.message.content
+            content: this.isStreaming ? this.visibleText : this.message.content,
+            selectionTrigger: this.selectionTick
           })
         }
 
@@ -212,7 +217,12 @@ export struct ChatBubbleView {
     Flex({ wrap: FlexWrap.Wrap, direction: FlexDirection.Row }) {
       this.buildActionChip('复制', false, () => this.onCopyPlain(this.message.id))
       this.buildActionChip('复制 MD', false, () => this.onCopyMarkdown(this.message.id))
+      this.buildActionChip('复制局部', false, () => {
+        this.selectionTick++;
+        this.onSelectPartial(this.message.id);
+      })
       this.buildActionChip('朗读', false, () => this.onRead(this.message.id))
+      this.buildActionChip('导出 Word', false, () => this.onExportWord(this.message.id))
       this.buildActionChip('重新回答', false, () => this.onRegenerate(this.message.id))
     }
     .width('100%')

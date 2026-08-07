@@ -13,6 +13,8 @@ import { promptAction } from '@kit.ArkUI';
 @Component
 export struct RichTextView {
   @Prop content: string = '';
+  // 外部「复制局部」按钮点击次数, 每次递增触发开启文本选择模式 (长按拖选 + 复制)
+  @Prop @Watch('onSelectionTrigger') selectionTrigger: number = 0;
   // v1 组件不支持 @State 修饰 controller, 按库文档使用无装饰器字段
   private controller: MarkdownController = new MarkdownController();
   // 响应式监听系统主题 (由 EntryAbility 写入 AppStorage)
@@ -95,6 +97,24 @@ export struct RichTextView {
         // ignore
       }
     });
+    // 文本选择复制监听 (复制局部): 长按拖选后点操作栏「复制」时回传选中文本
+    // 库只回传文本, 业务侧负责写剪贴板
+    this.controller.setTextSelectionCopyListener((text: string) => {
+      try {
+        const pb = pasteboard.getSystemPasteboard();
+        const data = pasteboard.createData(pasteboard.MIMETYPE_TEXT_PLAIN, text);
+        pb.setData(data).then(() => {
+          promptAction.showToast({ message: '已复制' });
+        });
+      } catch (e) {
+        // ignore
+      }
+    });
+  }
+
+  // 外部「复制局部」按钮触发: 开启跨 Text 文本选择能力, 长按即可拖选复制
+  onSelectionTrigger(): void {
+    this.controller.setTextSelectionEnable(true);
   }
 
   // 根据系统深色模式切换代码块主题与语法高亮配色

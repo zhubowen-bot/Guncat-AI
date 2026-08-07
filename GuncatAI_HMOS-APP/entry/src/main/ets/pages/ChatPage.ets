@@ -24,6 +24,7 @@ import {
 } from '../service/TextReaderService';
 import { abilityAccessCtrl, common, PermissionRequestResult } from '@kit.AbilityKit';
 import { BusinessError } from '@kit.BasicServicesKit';
+import { DocxExporter } from '../export/DocxExporter';
 
 @Entry
 @Component
@@ -57,6 +58,11 @@ struct ChatPage {
   private messageScroller: Scroller = new Scroller();
   private toastTimer: number = -1;
   private voiceInputService: VoiceInputService = new VoiceInputService();
+  // 用户手指触摸滚动期间暂停自动置底, 松手后恢复
+  // (避免 scrollTo 与进行中的手势冲突导致白屏)
+  private userScrolling: boolean = false;
+  // 流式自动置底定时器句柄(页面销毁时需清理)
+  private streamScrollTimer: number = -1;
 
   aboutToAppear(): void {
     let context: common.UIAbilityContext = getContext(this) as common.UIAbilityContext;
@@ -81,22 +87,26 @@ struct ChatPage {
     this.vm.setStateChangeListener(() => {
       this.rebuildPreviewItems();
       this.refreshTick++;
-      // 每次 VM 状态变化触发置底 (对齐 web 版本自动滚动)
+      // 每次 VM 状态变化触发置底 (对齐 web 版本自动滚动); 用户触摸时跳过, 松手后恢复
       setTimeout(() => {
-        this.messageScroller.scrollTo({ xOffset: 0, yOffset: 999999, animation: { duration: 0 } });
+        if (!this.userScrolling) {
+          this.messageScroller.scrollTo({ xOffset: 0, yOffset: 999999, animation: { duration: 0 } });
+        }
       }, 0);
     });
     this.vm.init().then(() => {
       this.refreshTick++;
       this.consumeSharedFiles();
       setTimeout(() => {
-        this.messageScroller.scrollTo({ xOffset: 0, yOffset: 999999, animation: { duration: 0 } });
+        if (!this.userScrolling) {
+          this.messageScroller.scrollTo({ xOffset: 0, yOffset: 999999, animation: { duration: 0 } });
+        }
       }, 100);
     });
     // 流式期间每 100ms 置底一次 (revealedCount 在 ChatBubbleView 内部定时推进,
     // ChatPage 需要通过此 timer 确保 Scroll 跟随新字符出现)
-    setInterval(() => {
-      if (this.vm.isStreaming) {
+    this.streamScrollTimer = setInterval(() => {
+      if (this.vm.isStreaming && !this.userScrolling) {
         this.messageScroller.scrollTo({ xOffset: 0, yOffset: 999999, animation: { duration: 0 } });
       }
     }, 100);
@@ -137,6 +147,10 @@ struct ChatPage {
     if (this.toastTimer !== -1) {
       clearTimeout(this.toastTimer);
       this.toastTimer = -1;
+    }
+    if (this.streamScrollTimer !== -1) {
+      clearInterval(this.streamScrollTimer);
+      this.streamScrollTimer = -1;
     }
   }
 
@@ -213,6 +227,9 @@ struct ChatPage {
             },
             onVoiceInput: () => {
               this.handleVoiceInput();
+            },
+            onCameraCapture: () => {
+              this.handleCameraCapture();
             }
           })
         }
@@ -740,12 +757,18 @@ struct ChatPage {
               this.vm.copyMessageMarkdown(id);
               this.showToast('已复制 Markdown');
             },
+            onSelectPartial: (id: string) => {
+              this.showToast('已开启，长按内容即可选择复制');
+            },
             onRegenerate: (id: string) => {
               this.vm.regenerateMessage(id);
               this.refreshTick++;
             },
             onRead: (id: string) => {
               this.vm.readMessage(id);
+            },
+            onExportWord: (id: string) => {
+              this.handleExportWord(id);
             },
             onImageTap: (url: string) => {
               this.lightboxUrl = url;
@@ -762,6 +785,44 @@ struct ChatPage {
     .width('100%')
     .edgeEffect(EdgeEffect.Spring)
     .scrollBar(BarState.Off)
+    // 触摸期间标记 userScrolling, 暂停自动置底; 松手后恢复自动置底
+    .onTouch((event: TouchEvent) => {
+      if (event.type === TouchType.Down || event.type === TouchType.Move) {
+        this.userScrolling = true;
+      } else if (event.type === TouchType.Up || event.type === TouchType.Cancel) {
+        this.userScrolling = false;
+      }
+    })
+  }
+
+  // 导出消息为 Word 文档
+  private handleExportWord(msgId: string): void {
+    let msg: Message | null = this.findMessage(msgId);
+    if (msg === null || msg.role !== 'assistant') {
+      this.showToast('消息不存在');
+      return;
+    }
+    if (msg.content.trim() === '') {
+      this.showToast('消息内容为空');
+      return;
+    }
+    this.showToast('正在导出…');
+    let context: common.UIAbilityContext = getContext(this) as common.UIAbilityContext;
+    DocxExporter.exportToDocx(context, msg.content, 'Guncat AI 对话导出').then((fileName: string) => {
+      this.showToast('已导出 ' + fileName);
+    }).catch((error: Error) => {
+      this.showToast('导出失败: ' + error.message);
+    });
+  }
+
+  private findMessage(id: string): Message | null {
+    let msgs: Message[] = this.vm.currentMessages;
+    for (let i: number = 0; i < msgs.length; i++) {
+      if (msgs[i].id === id) {
+        return msgs[i];
+      }
+    }
+    return null;
   }
 
   private handleSend(text: string): void {
@@ -893,6 +954,20 @@ struct ChatPage {
   private async handleFileUpload(): Promise<void> {
     await this.vm.pickAndParseFiles();
     this.rebuildPreviewItems();
+    this.refreshTick++;
+  }
+
+  // 快捷拍照: 系统相机拍照后加入附件
+  private async handleCameraCapture(): Promise<void> {
+    if (this.vm.isStreaming || this.vm.isParsing || this.isListening) {
+      return;
+    }
+    try {
+      await this.vm.capturePhoto();
+    } catch (error) {
+      let err: Error = error as Error;
+      this.showToast('拍照失败: ' + err.message);
+    }
     this.refreshTick++;
   }
 

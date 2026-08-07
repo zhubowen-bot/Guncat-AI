@@ -24,6 +24,8 @@ export class FileItem {
   }
 
   // 从已有 item + 解析结果创建新实例
+  // 注意: thumbnail 不再复用 dataUrl(全尺寸原图 base64), 由调用方生成真缩略图,
+  // 避免列表/气泡解码全尺寸 PixelMap 撑爆内存
   static withParsed(source: FileItem, parsedText: string, dataUrl: string): FileItem {
     let item: FileItem = new FileItem();
     item.id = source.id;
@@ -32,9 +34,7 @@ export class FileItem {
     item.type = source.type;
     item.parsedText = parsedText;
     item.dataUrl = dataUrl;
-    if (source.type.startsWith('image/')) {
-      item.thumbnail = dataUrl;
-    }
+    item.thumbnail = '';
     item.isParsing = false;
     item.error = false;
     return item;

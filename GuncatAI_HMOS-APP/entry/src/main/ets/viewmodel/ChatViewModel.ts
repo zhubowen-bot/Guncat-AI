@@ -19,6 +19,9 @@ import { arrayBufferToBase64 } from '../common/Utils';
 import { promptAction } from '@kit.ArkUI';
 import { pasteboard } from '@kit.BasicServicesKit';
 import { common } from '@kit.AbilityKit';
+import { cameraPicker, camera } from '@kit.CameraKit';
+import { util } from '@kit.ArkTS';
+import { image } from '@kit.ImageKit';
 
 @Observed
 export class ChatViewModel {
@@ -437,12 +440,7 @@ export class ChatViewModel {
     if (this.context === null) {
       return;
     }
-    if (this.multimodalConfig.preparseEnabled && this.multimodalConfig.apiKey === '') {
-      promptAction.showToast({ message: '请先配置多模态解析 API 密钥', duration: 2000 });
-      return;
-    }
-    if (!this.multimodalConfig.preparseEnabled && this.apiConfig.provider !== 'volcano') {
-      promptAction.showToast({ message: '附件直传目前仅支持火山方舟引擎', duration: 2000 });
+    if (!this.checkAttachmentSupported()) {
       return;
     }
     // 提前 toast, 避免 picker 返回后到文件读取之间的空白期页面无反馈
@@ -459,28 +457,44 @@ export class ChatViewModel {
     if (files.length === 0) {
       return;
     }
-    this._isParsing = true;
-    this.notifyUIChange();
-    let newPending: FileItem[] = [];
-    for (let i: number = 0; i < files.length; i++) {
-      let item: FileItem = FileService.createFileItem(files[i]);
-      this.fileBuffers.set(item.id, files[i].buffer);
-      newPending.push(item);
+    await this.enqueueFiles(files);
+  }
+
+  // 快捷拍照: 系统相机(CameraPicker, 无需相机权限)拍照后加入附件并解析
+  async capturePhoto(): Promise<void> {
+    if (this.context === null) {
+      return;
     }
-    // 必须整体重新赋值, 不能 push, 否则 @Observed 检测不到数组变更
-    this.pendingFiles = [...this.pendingFiles, ...newPending];
-    // picker 关闭后立刻刷新一次,让预览条/按钮状态立刻出现
-    this.notifyUIChange();
-    // 文件列表已经出现在预览条上, 同时开始解析
-    for (let i: number = 0; i < this.pendingFiles.length; i++) {
-      if (i > 0) {
-        await this.sleep(Constants.FILE_PARSE_INTERLEAVE_MS);
+    if (!this.checkAttachmentSupported()) {
+      return;
+    }
+    let uri: string = '';
+    try {
+      // 注意: PickerProfile 字段为只读, 必须用对象字面量初始化(不能 new 后赋值)
+      let profile: cameraPicker.PickerProfile = {
+        cameraPosition: camera.CameraPosition.CAMERA_POSITION_BACK
+      };
+      let result: cameraPicker.PickerResult = await cameraPicker.pick(this.context,
+        [cameraPicker.PickerMediaType.PHOTO], profile);
+      // resultCode 非 0 表示用户取消或失败
+      if (result.resultCode !== 0 || result.resultUri === '') {
+        return;
       }
-      await this.parseOneFile(i);
+      uri = result.resultUri;
+    } catch (e) {
+      promptAction.showToast({ message: '拍照失败: ' + (e as Error).message, duration: 2000 });
+      return;
     }
-    // 所有文件解析完毕
-    this._isParsing = false;
-    this.notifyUIChange();
+    promptAction.showToast({ message: '正在读取照片...', duration: 2000 });
+    let stamp: string = new Date().getTime().toString();
+    let picked: PickedFile | null = await FileService.readUri(uri, 'IMG_' + stamp + '.jpg');
+    if (picked === null) {
+      promptAction.showToast({ message: '照片读取失败', duration: 2000 });
+      return;
+    }
+    let files: PickedFile[] = [picked];
+    await this.enqueueFiles(files);
+    promptAction.showToast({ message: '照片已加入附件', duration: 2000 });
   }
 
   async acceptSharedFiles(uris: string[]): Promise<void> {
@@ -492,7 +506,30 @@ export class ChatViewModel {
       promptAction.showToast({ message: '无法读取分享的文件', duration: 2000 });
       return;
     }
+    await this.enqueueFiles(files);
+    promptAction.showToast({
+      message: files.length.toString() + ' 个分享文件已加入附件',
+      duration: 2000
+    });
+  }
+
+  // 附件能力前置检查
+  private checkAttachmentSupported(): boolean {
+    if (this.multimodalConfig.preparseEnabled && this.multimodalConfig.apiKey === '') {
+      promptAction.showToast({ message: '请先配置多模态解析 API 密钥', duration: 2000 });
+      return false;
+    }
+    if (!this.multimodalConfig.preparseEnabled && this.apiConfig.provider !== 'volcano') {
+      promptAction.showToast({ message: '附件直传目前仅支持火山方舟引擎', duration: 2000 });
+      return false;
+    }
+    return true;
+  }
+
+  // 把已读取的文件加入 pendingFiles 并逐个解析
+  private async enqueueFiles(files: PickedFile[]): Promise<void> {
     this._isParsing = true;
+    this.notifyUIChange();
     let firstNewIndex: number = this.pendingFiles.length;
     let newPending: FileItem[] = [];
     for (let i: number = 0; i < files.length; i++) {
@@ -500,7 +537,9 @@ export class ChatViewModel {
       this.fileBuffers.set(item.id, files[i].buffer);
       newPending.push(item);
     }
+    // 必须整体重新赋值, 不能 push, 否则 @Observed 检测不到数组变更
     this.pendingFiles = [...this.pendingFiles, ...newPending];
+    // 文件列表已经出现在预览条上, 立刻刷新一次, 再开始解析
     this.notifyUIChange();
     for (let index: number = firstNewIndex; index < this.pendingFiles.length; index++) {
       if (index > firstNewIndex) {
@@ -508,12 +547,9 @@ export class ChatViewModel {
       }
       await this.parseOneFile(index);
     }
+    // 所有文件解析完毕
     this._isParsing = false;
     this.notifyUIChange();
-    promptAction.showToast({
-      message: files.length.toString() + ' 个分享文件已加入附件',
-      duration: 2000
-    });
   }
 
   private async parseOneFile(index: number): Promise<void> {
@@ -536,6 +572,8 @@ export class ChatViewModel {
       let dataUrl: string = 'data:' + item.type + ';base64,' + arrayBufferToBase64(buf);
       let directItems: FileItem[] = [...this.pendingFiles];
       directItems[index] = FileItem.withParsed(item, '', dataUrl);
+      // 生成缩略图, 列表/气泡显示小图, 避免全尺寸原图反复解码撑爆内存
+      directItems[index].thumbnail = await this.makeThumbnail(dataUrl);
       this.pendingFiles = directItems;
       this.notifyUIChange();
       return;
@@ -548,6 +586,8 @@ export class ChatViewModel {
         // 创建新 FileItem 实例替换旧对象 → @Prop 能检测到属性变化
         let updated: FileItem[] = [...this.pendingFiles];
         updated[index] = FileItem.withParsed(item, result.content, result.dataUrl);
+        // 生成缩略图, 列表/气泡显示小图, 避免全尺寸原图反复解码撑爆内存
+        updated[index].thumbnail = await this.makeThumbnail(result.dataUrl);
         this.pendingFiles = updated;
         this.notifyUIChange();
         return;
@@ -897,6 +937,56 @@ export class ChatViewModel {
       if (conv.messages[i].id === msgId) {
         await this.copyText(conv.messages[i].content);
         return;
+      }
+    }
+  }
+
+  // 生成图片缩略图(最长边 256px JPEG): 消息列表/气泡/预览条显示小图,
+  // 点击灯箱才加载原图, 避免全尺寸 PixelMap 反复解码撑爆内存
+  private async makeThumbnail(dataUrl: string): Promise<string> {
+    if (!dataUrl.startsWith('data:image/')) {
+      return '';
+    }
+    let src: image.ImageSource | null = null;
+    let pixel: image.PixelMap | null = null;
+    let packer: image.ImagePacker | null = null;
+    try {
+      let comma: number = dataUrl.indexOf(',');
+      if (comma === -1) {
+        return '';
+      }
+      let helper: util.Base64Helper = new util.Base64Helper();
+      let bytes: Uint8Array = helper.decodeSync(dataUrl.substring(comma + 1));
+      src = image.createImageSource(bytes.buffer);
+      pixel = await src.createPixelMap({
+        desiredSize: { width: 256, height: 256 }
+      });
+      packer = image.createImagePacker();
+      let packed: ArrayBuffer = await packer.packToData(pixel, { format: 'image/jpeg', quality: 55 });
+      return 'data:image/jpeg;base64,' + helper.encodeToStringSync(new Uint8Array(packed));
+    } catch (error) {
+      return '';
+    } finally {
+      try {
+        if (pixel !== null) {
+          pixel.release();
+        }
+      } catch (e) {
+        // ignore
+      }
+      try {
+        if (packer !== null) {
+          packer.release();
+        }
+      } catch (e) {
+        // ignore
+      }
+      try {
+        if (src !== null) {
+          src.release();
+        }
+      } catch (e) {
+        // ignore
       }
     }
   }

@@ -10,6 +10,7 @@ export struct MessageInputView {
   private onStop: () => void = (): void => {};
   private onFileUpload: () => void = (): void => {};
   private onVoiceInput: () => void = (): void => {};
+  private onCameraCapture: () => void = (): void => {};
 
   @State private parsingAngle: number = 0;
   private angleTimer: number = -1;
@@ -51,6 +52,7 @@ export struct MessageInputView {
   build() {
     Row() {
       this.buildVoiceButton()
+      this.buildCameraButton()
       this.buildInputWrap()
       this.buildUploadButton()
       this.buildSendButton()
@@ -67,14 +69,34 @@ export struct MessageInputView {
         .fontSize(20)
         .fontColor([this.isListening ? Color.White : $r('app.color.text_secondary')])
     }
-    .width(40)
-    .height(40)
-    .borderRadius(20)
+    .width(32)
+    .height(32)
+    .borderRadius(16)
     .backgroundColor(this.isListening ? $r('app.color.brand') : Color.Transparent)
-    .margin({ right: 4 })
+    // 底部对齐的 Row 中 32 高按钮中心偏低 4vp, 用 bottom margin 上移与 40 高的右侧按钮对齐
+    .margin({ right: 2, bottom: 4 })
     .onClick(() => {
       if (!this.isStreaming && !this.isParsing) {
         this.onVoiceInput();
+      }
+    })
+  }
+
+  @Builder
+  buildCameraButton() {
+    Button() {
+      SymbolGlyph($r('sys.symbol.camera_fill'))
+        .fontSize(20)
+        .fontColor([$r('app.color.text_secondary')])
+    }
+    .width(32)
+    .height(32)
+    .borderRadius(16)
+    .backgroundColor(Color.Transparent)
+    .margin({ left: 2, right: 10, bottom: 4 })
+    .onClick(() => {
+      if (!this.isStreaming && !this.isParsing && !this.isListening) {
+        this.onCameraCapture();
       }
     })
   }

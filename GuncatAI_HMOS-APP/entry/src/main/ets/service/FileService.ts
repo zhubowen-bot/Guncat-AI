@@ -21,30 +21,38 @@ export class FileService {
     let files: PickedFile[] = [];
     let count: number = Math.min(5, uris.length);
     for (let i: number = 0; i < count; i++) {
-      try {
-        let uri: string = uris[i];
-        let stat: fileIo.Stat = fileIo.statSync(uri);
-        let file: fileIo.File = fileIo.openSync(uri, fileIo.OpenMode.READ_ONLY);
-        let buffer: ArrayBuffer = new ArrayBuffer(stat.size);
-        fileIo.readSync(file.fd, buffer, { offset: 0 });
-        fileIo.closeSync(file.fd);
-        let cleanUri: string = uri.split('?')[0];
-        let name: string = cleanUri.substring(cleanUri.lastIndexOf('/') + 1);
-        if (name === '') {
-          name = 'shared-file-' + (i + 1).toString();
-        }
-        files.push({
-          name: decodeURIComponent(name),
-          uri: uri,
-          fileType: FileService.guessTypeByName(name),
-          size: stat.size,
-          buffer: buffer
-        });
-      } catch (error) {
-        hilog.error(DOMAIN, TAG, 'read shared file failed: %{public}s', JSON.stringify(error));
+      let picked: PickedFile | null = await FileService.readUri(uris[i], 'shared-file-' + (i + 1).toString());
+      if (picked !== null) {
+        files.push(picked);
       }
     }
     return files;
+  }
+
+  // 按 URI 读取单个文件(拍照/分享等场景), 失败返回 null
+  static async readUri(uri: string, fallbackName: string): Promise<PickedFile | null> {
+    try {
+      let stat: fileIo.Stat = fileIo.statSync(uri);
+      let file: fileIo.File = fileIo.openSync(uri, fileIo.OpenMode.READ_ONLY);
+      let buffer: ArrayBuffer = new ArrayBuffer(stat.size);
+      fileIo.readSync(file.fd, buffer, { offset: 0 });
+      fileIo.closeSync(file.fd);
+      let cleanUri: string = uri.split('?')[0];
+      let name: string = cleanUri.substring(cleanUri.lastIndexOf('/') + 1);
+      if (name === '') {
+        name = fallbackName;
+      }
+      return {
+        name: decodeURIComponent(name),
+        uri: uri,
+        fileType: FileService.guessTypeByName(name),
+        size: stat.size,
+        buffer: buffer
+      };
+    } catch (error) {
+      hilog.error(DOMAIN, TAG, 'read uri failed: %{public}s', JSON.stringify(error));
+      return null;
+    }
   }
 
   static async pickFiles(): Promise<PickedFile[]> {

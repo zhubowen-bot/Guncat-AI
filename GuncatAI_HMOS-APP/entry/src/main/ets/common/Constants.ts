@@ -43,4 +43,8 @@ export class Constants {
   static readonly MAX_FILE_PARSE_RETRY: number = 4;
   static readonly MAX_FILE_PARSE_RETRY_WAIT_MS: number = 800;
   static readonly FILE_PARSE_INTERLEAVE_MS: number = 200;
+
+  // 会话持久化安全阈值(UTF-16 码元): Preferences 单值上限 16MB 字节,
+  // 附件图片 base64 字节量超过该值即剥离, 防止序列化大字符串引发 OOM
+  static readonly LS_CONVERSATIONS_SAFE_BYTES: number = 4 * 1024 * 1024;
 }
