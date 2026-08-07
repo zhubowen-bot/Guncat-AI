@@ -4,7 +4,7 @@
 
 Guncat AI is a native HarmonyOS AI chat client built with ArkTS and ArkUI. Its primary interface is not hosted in a WebView.
 
-Current app version: `4.2.1`
+Current app version: `4.3.1`
 
 ## Features
 
@@ -42,6 +42,24 @@ Rendered with the native `@luvi/lv-markdown-in` component, with support for:
 - Supports image previews, text extraction, Office documents, and PDFs.
 - Attachments can be pre-parsed or sent directly as multimodal Responses API input.
 - Parsing includes status feedback, retries, and concurrency throttling.
+- Image attachments render as auto-generated 256px thumbnails; tap to view the full image, keeping memory usage low.
+
+### Quick camera capture
+
+- A camera button sits right of the microphone, launching the system CameraPicker (no camera permission required).
+- The captured photo joins the pending attachments and goes through the same parsing pipeline.
+
+### Export to Word
+
+- Export any AI reply to a `.docx` file and choose the destination through the system save panel.
+- Faithfully restores the Markdown structure: headings, bold/italic/strikethrough, tables (borders and shaded headers), code blocks, quotes, ordered/unordered lists, links, and embedded images.
+- LaTeX formulas become native Word formulas (OMML) that remain editable in Word.
+- Images from data URLs or network URLs are auto-scaled to the page width.
+
+### Partial text selection
+
+- A "Select part" action enables cross-paragraph text selection with a long press.
+- The selection toolbar provides copy / select-all / cancel, writing the selection to the clipboard.
 
 ### Receiving system shares
 
@@ -282,6 +300,21 @@ You can also select content in Gallery or a file manager and choose Guncat AI fr
 - Items received from the system share sheet are never sent automatically; the user must tap Send.
 - Original attachments are not copied into permanent app storage.
 - Requests use HTTPS. Data-processing policies still depend on the configured model provider.
+
+## Version 4.3.1
+
+- Fixed a crash when rendering Markdown tables: the @luvi/lv-markdown-in rendering library threw an uncaught exception while iterating undefined data for structurally broken tables (empty header cells, header/separator column-count mismatch, header-only tables, or a message truncated at the table), killing the process; re-rendering saved history on cold start always reproduced it.
+- Added pre-render table normalization: structurally valid tables are padded to a consistent column count with closed pipes and preserved alignment; unrepairable degenerate tables degrade to plain text without losing content.
+- Normalization touches table blocks only; code fences, lists, blockquotes and other Markdown syntax are unaffected.
+
+## Version 4.3.0
+
+- Added one-tap Word export: AI replies export to `.docx` with headings, bold/italic, tables, code blocks, quotes, lists, links, and embedded images; LaTeX formulas convert to native Word formulas (OMML).
+- Added quick camera capture: a camera button next to the microphone launches the system CameraPicker (no camera permission required).
+- Added partial text selection: the "Select part" action enables long-press cross-paragraph text selection and copying.
+- Fixed the white screen when swiping up to review history during streaming: auto-scroll pauses while touching and resumes on release.
+- Fixed an intermittent out-of-memory crash with large image attachments: persistence now strips oversized image bytes and attachments render as 256px thumbnails.
+- Tidied the input bar: the microphone and camera buttons are compact and vertically aligned.
 
 ## Version 4.2.1
 

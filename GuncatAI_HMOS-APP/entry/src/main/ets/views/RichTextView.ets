@@ -9,6 +9,9 @@
 import { Markdown, MarkdownController, CodeHighlight } from '@luvi/lv-markdown-in';
 import { pasteboard } from '@kit.BasicServicesKit';
 import { promptAction } from '@kit.ArkUI';
+// 表格防闪退: 三方库 TableRender 对结构异常的表格 (空表头/缺列行) 会遍历 undefined
+// 直接抛 TypeError 导致进程闪退 (3.4.5 最新版未修复), 渲染前先规范化表格结构
+import { sanitizeMarkdownForRender } from '../common/MarkdownSanitizer';
 
 @Component
 export struct RichTextView {
@@ -195,7 +198,7 @@ export struct RichTextView {
       if (this.renderKey % 2 === 0) {
         Markdown({
           controller: this.controller,
-          text: this.content,
+          text: sanitizeMarkdownForRender(this.content),
           mode: 'text',
         })
           .width('100%')
@@ -203,7 +206,7 @@ export struct RichTextView {
       } else {
         Markdown({
           controller: this.controller,
-          text: this.content,
+          text: sanitizeMarkdownForRender(this.content),
           mode: 'text',
         })
           .width('100%')
