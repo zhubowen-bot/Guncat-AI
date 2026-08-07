@@ -340,9 +340,9 @@
 
 GPT 系列，Claude 系列，Grok 系列，Gemini系列，Kimi系列，Deepseek系列，GLM系列，Qwen 系列，Minimax系列
 
-以下是截止2026年8月3日，世界主流模型的公认梯队格局（仅保留最高档思考模式数据）：
+以下是截止2026年8月3日，世界主流模型的公认第一梯队格局（仅保留最高档思考模式数据）：
 
-###### 第一梯队
+###### 第一梯队·SOTA
 
 | 排名  | 模型             | 智能指数 | 机构        |
 | --- | -------------- | ---- | --------- |
@@ -352,7 +352,7 @@ GPT 系列，Claude 系列，Grok 系列，Gemini系列，Kimi系列，Deepseek�
 | 7   | Kimi K3        | 57   | Kimi      |
 | 9   | GPT-5.6 Terra  | 55   | OpenAI    |
 
-###### 第二梯队
+###### 第一梯队·顶尖
 
 | 排名  | 模型                     | 智能指数 | 机构        |
 | --- | ---------------------- | ---- | --------- |
@@ -363,18 +363,18 @@ GPT 系列，Claude 系列，Grok 系列，Gemini系列，Kimi系列，Deepseek�
 | 18  | GLM-5.2                | 51   | 智谱AI      |
 | 20  | Gemini 3.5/3.6 Flash   | 50   | Google    |
 
-###### 第三梯队
+###### 第一梯队·主流
 
-| 排名  | 模型                     | 智能指数 | 机构               |
-| --- | ---------------------- | ---- | ---------------- |
-| 26  | Gemini 3.1 Pro Preview | 46   | Google Deep Mind |
-| 28  | Qwen3.7 Max            | 46   | 阿里巴巴             |
-| 31  | MiniMax M3             | 44   | MiniMaxAI        |
-| 32  | DeepSeek-V4-Pro-0426   | 44   | DeepSeek-AI      |
-| 33  | GPT-5.3 Codex          | 44   | OpenAI           |
-| 37  | MiMo-V2.5-Pro          | 42   | Xiaomi           |
-| 38  | Kimi K2.7 Code         | 42   | Moonshot AI      |
-| 46  | Qwen 3.6/3.7 Plus      | 40   | 阿里巴巴             |
+| 排名  | 模型                                               | 智能指数 | 机构               |
+| --- | ------------------------------------------------ | ---- | ---------------- |
+| 26  | Gemini 3.1 Pro Preview                           | 46   | Google Deep Mind |
+| 28  | Qwen3.7 Max                                      | 46   | 阿里巴巴             |
+| 31  | MiniMax M3                                       | 44   | MiniMaxAI        |
+| 32  | DeepSeek-V4-Pro-0426 | 44   | DeepSeek-AI      |
+| 33  | GPT-5.3 Codex                                    | 44   | OpenAI           |
+| 37  | MiMo-V2.5-Pro                                    | 42   | Xiaomi           |
+| 38  | Kimi K2.7 Code                                   | 42   | Moonshot AI      |
+| 46  | Qwen 3.6/3.7 Plus                                | 40   | 阿里巴巴             |
 
 ###### 其它模型
 
