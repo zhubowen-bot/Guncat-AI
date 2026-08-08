@@ -4,9 +4,10 @@
 
 ---
 
-Web for API 版本：3.2.0
+Web for API 版本：3.3.0
 
-2026.8.6 对齐鸿蒙版新增功能：多套配置方案（自定义切换模型）、附件直传火山、自动朗读、语音输入
+2026.8.8 新增表格提取工具：图片表格识别为 HTML/Excel（保留合并单元格与行高）
+2026.8.6 对齐鸿蒙版新增功能：多套配置方案（自动保存模型切换）、附件直传火山、自动朗读、语音输入
 2026.7.7 修复了重复输入消息和终止对话后报错的Bug
 
 ---
@@ -29,6 +30,7 @@ Guncat AI Web for API 是 Guncat 智能体框架的**自定义配置客户端方
     Guncat AI Web for API
     ├── agents.json                     # 智能体列表配置
     ├── index.html                      # Web 版入口
+    ├── table-ocr.html                  # 表格提取工具（图片→HTML/Excel）
     ├── cat-avatar(1).png               # 应用图标
     ├── Guncat 2.0-flash-main_agent_prompt.md
     ├── Guncat 2.0-pro-main_agent_prompt .md
@@ -83,6 +85,7 @@ Guncat AI Web for API 是 Guncat 智能体框架的**自定义配置客户端方
 * **历史对话**：支持保存历史对话并查看
 * **文件解析**：支持配置专门的多模态API，解析纯文本模型不能解析的文件和图片
 * **API 配置**：用户可在界面中配置自己的 API Key、Base URL 和模型名称，支持Chat API和Response API两种配置方式，支持自定义高级模型参数（长度控制、Top P等），以及自定义json请求体
+* **表格提取**：侧边栏"智能体"分类下的"表格提取"工具入口，基于视觉大模型（智谱 GLM / 火山方舟 豆包）将表格图片识别为可编辑的 HTML 表格并导出 Excel（.xlsx），忠实保留合并单元格（rowspan/colspan）、空白书写行高信息与单元格内换行，支持渲染预览 / HTML 代码 / 网格结构 / 调试信息多视图，API Key 只保存在浏览器 localStorage
 
 ### 如何新增智能体
 

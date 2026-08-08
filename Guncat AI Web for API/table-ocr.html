@@ -1,0 +1,767 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>表格识别引擎 · 图片 → HTML → Excel</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; }
+  .drop-zone { transition: all 0.2s; }
+  .drop-zone.dragover { border-color: #3b82f6; background: #eff6ff; }
+  pre { tab-size: 2; }
+  .tab-active { background: #1e40af; color: white; }
+</style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+
+<div class="max-w-5xl mx-auto p-6">
+
+  <!-- Header -->
+  <header class="mb-8">
+    <a href="index.html" class="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800 text-sm mb-4">← 返回主页</a>
+    <h1 class="text-3xl font-bold text-gray-900">表格识别引擎</h1>
+    <p class="text-gray-500 mt-1">图片 → HTML 表格 → Excel（保留合并单元格 + 行高）</p>
+  </header>
+
+  <!-- Step 1: Settings -->
+  <section class="bg-white rounded-lg shadow-sm p-6 mb-6">
+    <h2 class="text-lg font-semibold mb-4 flex items-center gap-2">
+      <span class="bg-blue-600 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm">1</span>
+      API 设置
+    </h2>
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">平台</label>
+        <select id="provider" class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm">
+          <option value="zhipu">智谱 GLM</option>
+          <option value="volc">火山方舟 (豆包)</option>
+        </select>
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">模型</label>
+        <input id="model" type="text" value="glm-4.6v-flash" class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm" placeholder="模型名称或 Endpoint ID">
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">API Key</label>
+        <input id="apiKey" type="password" class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm" placeholder="sk-...">
+      </div>
+    </div>
+    <div class="mt-3 flex items-center gap-3">
+      <button id="saveKey" class="bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm px-3 py-1.5 rounded-md">保存到本地</button>
+      <span id="keyStatus" class="text-xs text-gray-400"></span>
+    </div>
+    <div class="mt-3 text-xs text-gray-400">
+      <p>• 智谱：填 <code class="bg-gray-100 px-1 rounded">glm-4.6v-flash</code>，Key 从 open.bigmodel.cn 获取</p>
+      <p>• 火山方舟：模型填 Endpoint ID（如 <code class="bg-gray-100 px-1 rounded">ep-2024xxxxxx</code>）或 <code class="bg-gray-100 px-1 rounded">doubao-seed-2-0-lite-260428</code>，Key 从 console.volcengine.com 获取</p>
+      <p>• Key 只存在你浏览器的 localStorage，不会上传到任何服务器（除了 API 提供商本身）</p>
+    </div>
+  </section>
+
+  <!-- Step 2: Upload -->
+  <section class="bg-white rounded-lg shadow-sm p-6 mb-6">
+    <h2 class="text-lg font-semibold mb-4 flex items-center gap-2">
+      <span class="bg-blue-600 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm">2</span>
+      上传表格图片
+    </h2>
+    <div id="dropZone" class="drop-zone border-2 border-dashed border-gray-300 rounded-lg p-8 text-center cursor-pointer hover:border-blue-400">
+      <div id="dropHint">
+        <svg class="mx-auto h-12 w-12 text-gray-400 mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.9 5 5 0 019.9-1.49A4.5 4.5 0 1117 16M9 13l3-3 3 3M12 10v9"/></svg>
+        <p class="text-gray-600">点击或拖拽图片到此处</p>
+        <p class="text-xs text-gray-400 mt-1">支持 JPG / PNG / WebP，建议宽度 1000-3000px</p>
+      </div>
+      <img id="preview" class="max-w-full max-h-96 mx-auto hidden rounded-lg shadow-sm">
+      <input id="fileInput" type="file" accept="image/*" class="hidden">
+    </div>
+    <div class="mt-4 flex items-center gap-3">
+      <button id="convertBtn" disabled class="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white font-medium px-6 py-2 rounded-md text-sm">
+        识别表格
+      </button>
+      <button id="clearBtn" class="text-gray-500 hover:text-gray-700 text-sm px-3 py-2">清除</button>
+      <span id="convertStatus" class="text-sm text-gray-400"></span>
+    </div>
+  </section>
+
+  <!-- Step 3: Results -->
+  <section id="resultSection" class="bg-white rounded-lg shadow-sm p-6 hidden">
+    <h2 class="text-lg font-semibold mb-4 flex items-center gap-2">
+      <span class="bg-blue-600 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm">3</span>
+      结果
+    </h2>
+
+    <!-- Tabs -->
+    <div class="flex gap-2 mb-4 border-b border-gray-200">
+      <button data-tab="preview" class="tab-btn tab-active px-4 py-2 text-sm font-medium rounded-t-md">渲染预览</button>
+      <button data-tab="html" class="tab-btn px-4 py-2 text-sm font-medium rounded-t-md text-gray-600 hover:text-gray-900">HTML 代码</button>
+      <button data-tab="grid" class="tab-btn px-4 py-2 text-sm font-medium rounded-t-md text-gray-600 hover:text-gray-900">网格结构</button>
+      <button data-tab="debug" class="tab-btn px-4 py-2 text-sm font-medium rounded-t-md text-gray-600 hover:text-gray-900">调试信息</button>
+    </div>
+
+    <!-- Tab: Preview -->
+    <div id="tab-preview" class="tab-content">
+      <div id="tablePreview" class="overflow-x-auto border border-gray-200 rounded-lg p-4 bg-gray-50"></div>
+    </div>
+
+    <!-- Tab: HTML -->
+    <div id="tab-html" class="tab-content hidden">
+      <div class="flex gap-2 mb-3">
+        <button id="copyHtml" class="bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm px-3 py-1.5 rounded-md">复制 HTML</button>
+        <button id="downloadHtml" class="bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm px-3 py-1.5 rounded-md">下载 .html</button>
+      </div>
+      <pre id="htmlCode" class="bg-gray-900 text-gray-100 p-4 rounded-lg overflow-x-auto text-xs max-h-96"></pre>
+    </div>
+
+    <!-- Tab: Grid -->
+    <div id="tab-grid" class="tab-content hidden">
+      <div id="gridInfo" class="text-sm text-gray-600 mb-3"></div>
+      <div id="gridTable" class="overflow-x-auto"></div>
+    </div>
+
+    <!-- Tab: Debug -->
+    <div id="tab-debug" class="tab-content hidden">
+      <pre id="debugInfo" class="bg-gray-900 text-gray-100 p-4 rounded-lg overflow-x-auto text-xs max-h-96"></pre>
+    </div>
+
+    <!-- Download Excel -->
+    <div class="mt-6 pt-4 border-t border-gray-200 flex items-center gap-3">
+      <button id="downloadExcel" class="bg-green-600 hover:bg-green-700 text-white font-medium px-6 py-2 rounded-md text-sm">
+        下载 Excel (.xlsx)
+      </button>
+      <span id="excelInfo" class="text-sm text-gray-400"></span>
+    </div>
+  </section>
+
+  <!-- Error display -->
+  <div id="errorBox" class="bg-red-50 border border-red-200 text-red-700 rounded-lg p-4 mb-6 hidden">
+    <p class="font-medium">出错：</p>
+    <pre id="errorDetail" class="text-xs mt-2 whitespace-pre-wrap"></pre>
+  </div>
+
+  <footer class="text-center text-xs text-gray-400 mt-12 pb-6">
+    <p>纯前端部署 · API Key 存于浏览器本地 · 可直接拖到 Netlify</p>
+  </footer>
+</div>
+
+<script>
+// ============================================================
+//  配置
+// ============================================================
+const PROVIDERS = {
+  zhipu: {
+    name: '智谱 GLM',
+    endpoint: 'https://open.bigmodel.cn/api/paas/v4/chat/completions',
+    defaultModel: 'glm-4.6v-flash'
+  },
+  volc: {
+    name: '火山方舟',
+    endpoint: 'https://ark.cn-beijing.volces.com/api/v3/chat/completions',
+    defaultModel: 'doubao-seed-2-0-lite-260428'
+  }
+};
+
+const PROMPT = `你是专业的表格识别引擎。任务：把图片中的表格转换成等价的 HTML <table>，忠实保留合并关系、内容和行高信息。
+
+【输出格式】
+- 只输出 <table>...</table>，不要代码块、不要反引号围栏、不要任何解释文字。
+- 表头单元格用 <th>，数据单元格用 <td>。
+- 空单元格输出 <td></td>，不要省略。
+- 单元格内的换行用 <br> 表示。
+
+【合并单元格 - 最重要】
+- 合并区域只在左上角单元格写内容，用 rowspan / colspan 表达跨度。
+- 被合并覆盖的位置不要再输出 <td>。
+- 跨 N 行 M 列的单元格：<td rowspan="N" colspan="M">内容</td>
+
+【行高信息 - 用 data-lines 属性】
+表格中有些行在视觉上明显很高，是预留出来给人手写或填写内容的空白区域。请用 data-lines 属性标注这类行：
+- 在 <tr> 上加 data-lines="N"，N 表示这行预留的"书写行数"（不是文字行数，而是空白书写空间能写几行字）。
+- 判断方法：看这行的空白区域大约能写下几行正常大小的字。
+  - 普通单行文本行：不标注（默认 data-lines="1"）。
+  - 预留 2 行书写空间：data-lines="2"
+  - 预留 4 行书写空间：data-lines="4"
+  - 预留 6 行书写空间：data-lines="6"
+- 仅由单元格内文字自然换行撑高的行，不要标注 data-lines（那种高度由文字本身决定）。
+- 只标注"有大量空白书写区域"的行。
+
+【内容忠实】
+- 保留原有数字、小数、百分比、货币符号、千分位、空格。
+- 看不清或模糊的字一律留空，宁可空着也不要猜测或补全。
+- 不要添加原表中没有的标题、说明或汇总行。
+
+【示例 1：rowspan】
+<table>
+<tr><th rowspan="2">项目</th><th>2023</th><th>2024</th></tr>
+<tr><td>100</td><td>120</td></tr>
+</table>
+
+【示例 2：colspan + 空单元格】
+<table>
+<tr><th>地区</th><th colspan="2">销售额</th></tr>
+<tr><th></th><th>Q1</th><th>Q2</th></tr>
+<tr><td>华东</td><td>100</td><td>120</td></tr>
+</table>
+
+【示例 3：data-lines 标注高行】
+<table>
+<tr><th>姓名</th><td></td></tr>
+<tr data-lines="4"><th>审批意见</th><td></td></tr>
+<tr><th>日期</th><td></td></tr>
+</table>
+
+【示例 4：单元格内换行】
+<table>
+<tr><td>第一行<br>第二行</td><td>数据</td></tr>
+</table>
+
+现在请转换图片中的表格。先在心中规划好每个单元格的位置和跨度，判断每行是否需要标注 data-lines，再输出 HTML。`;
+
+// ============================================================
+//  状态
+// ============================================================
+let currentImage = null;      // { dataUrl, base64, mimeType }
+let currentHtml = '';         // VLM 返回的 HTML
+let currentGrid = null;       // { grid, maxCols, rowData }
+
+// ============================================================
+//  UI 辅助
+// ============================================================
+const $ = id => document.getElementById(id);
+
+function showError(msg) {
+  $('errorBox').classList.remove('hidden');
+  $('errorDetail').textContent = msg;
+}
+function clearError() {
+  $('errorBox').classList.add('hidden');
+}
+function setStatus(text) {
+  $('convertStatus').textContent = text;
+}
+
+// ============================================================
+//  设置管理
+// ============================================================
+function loadSettings() {
+  const provider = localStorage.getItem('table-ocr-provider') || 'zhipu';
+  $('provider').value = provider;
+  loadProviderSettings(provider, true);
+}
+
+// 加载指定平台的模型与 Key（旧版单一 key 作为兜底迁移）
+function loadProviderSettings(provider, migrated) {
+  const prefix = 'table-ocr-' + provider;
+  const model = localStorage.getItem(prefix + '-model') || PROVIDERS[provider].defaultModel;
+  const apiKey = localStorage.getItem(prefix + '-apikey') || localStorage.getItem('table-ocr-apikey') || '';
+
+  $('model').value = model;
+  $('model').placeholder = provider === 'volc' ? 'ep-2024xxxxxx 或 doubao-seed-2-0-lite-260428' : 'glm-4.6v-flash';
+  $('apiKey').value = apiKey;
+  $('keyStatus').textContent = apiKey ? (migrated ? '✓ 已保存（迁移旧配置）' : '✓ 已保存') : '';
+}
+
+function saveSettings() {
+  const p = $('provider').value;
+  localStorage.setItem('table-ocr-provider', p);
+  localStorage.setItem('table-ocr-' + p + '-model', $('model').value);
+  localStorage.setItem('table-ocr-' + p + '-apikey', $('apiKey').value.trim());
+  // 兼容旧的单一 key（始终同步成当前平台的 key）
+  localStorage.setItem('table-ocr-apikey', $('apiKey').value.trim());
+  $('keyStatus').textContent = '✓ 已保存';
+}
+
+// 平台切换时切换到该平台自己的 Key 和模型
+$('provider').addEventListener('change', (e) => {
+  loadProviderSettings(e.target.value, false);
+});
+
+$('saveKey').addEventListener('click', saveSettings);
+
+// ============================================================
+//  图片上传
+// ============================================================
+const dropZone = $('dropZone');
+const fileInput = $('fileInput');
+
+dropZone.addEventListener('click', () => fileInput.click());
+fileInput.addEventListener('change', (e) => {
+  if (e.target.files[0]) handleFile(e.target.files[0]);
+});
+
+dropZone.addEventListener('dragover', (e) => {
+  e.preventDefault();
+  dropZone.classList.add('dragover');
+});
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+dropZone.addEventListener('drop', (e) => {
+  e.preventDefault();
+  dropZone.classList.remove('dragover');
+  if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]);
+});
+
+function handleFile(file) {
+  if (!file.type.startsWith('image/')) {
+    showError('请上传图片文件');
+    return;
+  }
+  clearError();
+
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    const img = new Image();
+    img.onload = () => {
+      // 如果图片太大，缩放到合理尺寸
+      const maxSize = 2500;
+      let w = img.width, h = img.height;
+      if (w > maxSize || h > maxSize) {
+        const scale = maxSize / Math.max(w, h);
+        w = Math.round(w * scale);
+        h = Math.round(h * scale);
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, w, h);
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
+      const base64 = dataUrl.split(',')[1];
+
+      currentImage = { dataUrl, base64, mimeType: 'image/jpeg' };
+
+      $('preview').src = dataUrl;
+      $('preview').classList.remove('hidden');
+      $('dropHint').classList.add('hidden');
+      $('convertBtn').disabled = false;
+    };
+    img.src = e.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+
+$('clearBtn').addEventListener('click', () => {
+  currentImage = null;
+  currentHtml = '';
+  currentGrid = null;
+  $('preview').classList.add('hidden');
+  $('dropHint').classList.remove('hidden');
+  $('fileInput').value = '';
+  $('convertBtn').disabled = true;
+  $('resultSection').classList.add('hidden');
+  setStatus('');
+});
+
+// ============================================================
+//  调用 VLM API
+// ============================================================
+$('convertBtn').addEventListener('click', async () => {
+  if (!currentImage) return;
+  const apiKey = $('apiKey').value.trim();
+  if (!apiKey) {
+    showError('请先填写 API Key');
+    return;
+  }
+  const provider = $('provider').value;
+  const model = $('model').value.trim();
+  if (!model) {
+    showError('请填写模型名称');
+    return;
+  }
+
+  clearError();
+  $('convertBtn').disabled = true;
+  $('convertBtn').textContent = '识别中...';
+  setStatus('正在调用 ' + PROVIDERS[provider].name + '...');
+
+  try {
+    const html = await callVLM(provider, model, apiKey, currentImage);
+    currentHtml = cleanHtml(html);
+
+    // 解析
+    currentGrid = parseTable(currentHtml);
+
+    // 渲染结果
+    renderResults();
+
+    setStatus('✓ 识别完成');
+  } catch (err) {
+    console.error(err);
+    let msg = err.message || String(err);
+    if (msg.includes('Failed to fetch') || msg.includes('NetworkError')) {
+      msg += '\n\n可能原因：\n1. API Key 错误\n2. CORS 跨域限制（浏览器直接调 API 被拦）\n3. 网络问题\n\n如果是 CORS 问题，需要部署 Netlify Edge Function 做转发。';
+    }
+    showError(msg);
+    setStatus('✗ 失败');
+  } finally {
+    $('convertBtn').disabled = false;
+    $('convertBtn').textContent = '识别表格';
+  }
+});
+
+async function callVLM(provider, model, apiKey, image) {
+  const cfg = PROVIDERS[provider];
+  const body = {
+    model: model,
+    messages: [{
+      role: 'user',
+      content: [
+        { type: 'text', text: PROMPT },
+        { type: 'image_url', image_url: { url: `data:${image.mimeType};base64,${image.base64}` } }
+      ]
+    }],
+    temperature: 0.1,
+    max_tokens: 4096
+  };
+
+  const resp = await fetch(cfg.endpoint, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${apiKey}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(body)
+  });
+
+  if (!resp.ok) {
+    const text = await resp.text();
+    throw new Error(`API 返回 ${resp.status}: ${text}`);
+  }
+
+  const data = await resp.json();
+  const content = data.choices?.[0]?.message?.content;
+  if (!content) {
+    throw new Error('API 返回为空\n' + JSON.stringify(data, null, 2));
+  }
+  return content;
+}
+
+// 清理 VLM 输出：去掉 markdown 围栏
+function cleanHtml(raw) {
+  let s = raw.trim();
+  // 去掉 ```html ... ``` 围栏
+  s = s.replace(/^```(?:html)?\s*\n?/i, '').replace(/\n?```\s*$/i, '');
+  // 去掉前后多余文字，只保留 <table>...</table>
+  const match = s.match(/<table[\s\S]*<\/table>/i);
+  if (match) s = match[0];
+  return s.trim();
+}
+
+// ============================================================
+//  HTML 表格解析 → 网格
+// ============================================================
+function parseTable(htmlStr) {
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(htmlStr, 'text/html');
+  const table = doc.querySelector('table');
+  if (!table) throw new Error('未找到 <table> 标签');
+
+  const trs = table.querySelectorAll(':scope > tr, :scope > tbody > tr');
+  const rowData = [];
+  let maxCols = 0;
+
+  // 处理 caption
+  const caption = table.querySelector('caption');
+  if (caption) {
+    // 先算 maxCols 再插入 caption 行
+  }
+
+  // 第一遍：收集单元格 + 算 maxCols
+  for (const tr of trs) {
+    const cells = [];
+    const tds = tr.querySelectorAll(':scope > td, :scope > th');
+    for (const td of tds) {
+      const rowspan = parseInt(td.getAttribute('rowspan') || '1', 10);
+      const colspan = parseInt(td.getAttribute('colspan') || '1', 10);
+      // 把 <br> 转成 \n
+      const text = td.innerHTML
+        .replace(/<br\s*\/?>/gi, '\n')
+        .replace(/<[^>]+>/g, '')  // 去掉其他 HTML 标签
+        .replace(/&nbsp;/g, ' ')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&amp;/g, '&')
+        .trim();
+      cells.push({ text, rowspan, colspan, isHeader: td.tagName === 'TH' });
+    }
+    const cols = cells.reduce((s, c) => s + c.colspan, 0);
+    if (cols > maxCols) maxCols = cols;
+
+    const dataLines = parseInt(tr.getAttribute('data-lines') || '1', 10);
+    const dataH = tr.getAttribute('data-h');
+    rowData.push({ cells, dataLines, dataH });
+  }
+
+  // 如果有 caption，插到最前面
+  if (caption && maxCols > 0) {
+    rowData.unshift({
+      cells: [{ text: caption.textContent.trim(), rowspan: 1, colspan: maxCols, isHeader: true }],
+      dataLines: 1, dataH: null
+    });
+  }
+
+  // 第二遍：构建网格
+  const grid = [];
+  const occupied = {};  // "r,c" -> true
+
+  for (let r = 0; r < rowData.length; r++) {
+    const gridRow = [];
+    let ci = 0;
+    let cellIdx = 0;
+    const cells = rowData[r].cells;
+
+    while (ci < maxCols) {
+      const key = `${r},${ci}`;
+      if (occupied[key]) {
+        gridRow.push(null);
+        ci++;
+        continue;
+      }
+      if (cellIdx >= cells.length) {
+        // 补空单元格
+        gridRow.push({ text: '', rowspan: 1, colspan: 1, isHeader: false });
+        ci++;
+        continue;
+      }
+      const cell = cells[cellIdx++];
+      gridRow.push(cell);
+      // 标记 colspan 占位
+      for (let dc = 1; dc < cell.colspan; dc++) {
+        gridRow.push(null);
+      }
+      // 标记 rowspan 占位
+      for (let dr = 1; dr < cell.rowspan; dr++) {
+        for (let dc = 0; dc < cell.colspan; dc++) {
+          occupied[`${r + dr},${ci + dc}`] = true;
+        }
+      }
+      ci += cell.colspan;
+    }
+    grid.push(gridRow);
+  }
+
+  return { grid, maxCols, rowData, totalRows: rowData.length };
+}
+
+// ============================================================
+//  渲染结果
+// ============================================================
+function renderResults() {
+  $('resultSection').classList.remove('hidden');
+
+  // 1. 渲染预览
+  $('tablePreview').innerHTML = currentHtml;
+
+  // 2. HTML 代码
+  $('htmlCode').textContent = currentHtml;
+
+  // 3. 网格信息
+  renderGridInfo();
+
+  // 4. 调试信息
+  $('debugInfo').textContent = JSON.stringify({
+    totalRows: currentGrid.totalRows,
+    maxCols: currentGrid.maxCols,
+    rowData: currentGrid.rowData.map(r => ({
+      cellCount: r.cells.length,
+      dataLines: r.dataLines,
+      dataH: r.dataH,
+      cells: r.cells.map(c => ({ text: c.text.substring(0, 30), rs: c.rowspan, cs: c.colspan, h: c.isHeader }))
+    }))
+  }, null, 2);
+
+  // 5. Excel 信息
+  const merges = countMerges();
+  const highRows = currentGrid.rowData.filter(r => r.dataLines > 1).length;
+  $('excelInfo').textContent = `${currentGrid.totalRows} 行 × ${currentGrid.maxCols} 列 · ${merges} 个合并 · ${highRows} 个高行`;
+}
+
+function renderGridInfo() {
+  const { grid, maxCols, totalRows, rowData } = currentGrid;
+  let html = `<p>共 ${totalRows} 行 × ${maxCols} 列</p>`;
+
+  // 列数校验
+  const issues = [];
+  for (let r = 0; r < grid.length; r++) {
+    if (grid[r].length !== maxCols) {
+      issues.push(`第 ${r + 1} 行: ${grid[r].length} 列 (应为 ${maxCols})`);
+    }
+  }
+  if (issues.length) {
+    html += `<p class="text-red-600 mt-1">⚠️ 列数不一致：${issues.join('；')}</p>`;
+  } else {
+    html += `<p class="text-green-600 mt-1">✓ 列数一致性校验通过</p>`;
+  }
+
+  // 行高信息
+  const highRows = rowData.map((r, i) => ({ i, dl: r.dataLines, dh: r.dataH })).filter(x => x.dl > 1 || x.dh);
+  if (highRows.length) {
+    html += '<p class="mt-1">高行：' + highRows.map(x => `第${x.i + 1}行(data-lines=${x.dl}${x.dh ? ', data-h=' + x.dh : ''})`).join('，') + '</p>';
+  }
+
+  $('gridInfo').innerHTML = html;
+
+  // 网格表格
+  let t = '<table class="border-collapse text-xs"><tbody>';
+  for (let r = 0; r < grid.length; r++) {
+    t += '<tr>';
+    for (let c = 0; c < maxCols; c++) {
+      const cell = grid[r][c];
+      if (cell === null) {
+        t += '<td class="border border-gray-300 bg-gray-100 p-1 text-gray-400 text-center" style="min-width:40px;min-height:20px">·</td>';
+      } else {
+        const bg = cell.isHeader ? 'bg-blue-50' : 'bg-white';
+        const rs = cell.rowspan > 1 ? ` rowspan="${cell.rowspan}"` : '';
+        const cs = cell.colspan > 1 ? ` colspan="${cell.colspan}"` : '';
+        t += `<td class="border border-gray-300 ${bg} p-1 align-top"${rs}${cs}>${escapeHtml(cell.text) || '&nbsp;'}</td>`;
+      }
+    }
+    t += '</tr>';
+  }
+  t += '</tbody></table>';
+  $('gridTable').innerHTML = t;
+}
+
+function countMerges() {
+  let n = 0;
+  for (const row of currentGrid.grid) {
+    for (const cell of row) {
+      if (cell && (cell.rowspan > 1 || cell.colspan > 1)) n++;
+    }
+  }
+  return n;
+}
+
+function escapeHtml(s) {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+// ============================================================
+//  Tab 切换
+// ============================================================
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('tab-active'));
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.add('text-gray-600'));
+    btn.classList.add('tab-active');
+    btn.classList.remove('text-gray-600');
+    document.querySelectorAll('.tab-content').forEach(c => c.classList.add('hidden'));
+    $('tab-' + btn.dataset.tab).classList.remove('hidden');
+  });
+});
+
+// ============================================================
+//  复制 / 下载 HTML
+// ============================================================
+$('copyHtml').addEventListener('click', () => {
+  navigator.clipboard.writeText(currentHtml).then(() => {
+    $('copyHtml').textContent = '✓ 已复制';
+    setTimeout(() => $('copyHtml').textContent = '复制 HTML', 1500);
+  });
+});
+
+$('downloadHtml').addEventListener('click', () => {
+  const blob = new Blob([currentHtml], { type: 'text/html' });
+  downloadBlob(blob, 'table.html');
+});
+
+// ============================================================
+//  生成 Excel
+// ============================================================
+$('downloadExcel').addEventListener('click', () => {
+  if (!currentGrid) return;
+  const wb = generateExcel();
+  XLSX.writeFile(wb, 'table.xlsx');
+});
+
+function generateExcel() {
+  const { grid, maxCols, rowData } = currentGrid;
+
+  // 构建 2D 数组
+  const aoa = [];
+  for (let r = 0; r < grid.length; r++) {
+    const row = [];
+    for (let c = 0; c < maxCols; c++) {
+      const cell = grid[r][c];
+      row.push(cell ? cell.text : '');
+    }
+    aoa.push(row);
+  }
+
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+
+  // 合并单元格
+  const merges = [];
+  for (let r = 0; r < grid.length; r++) {
+    for (let c = 0; c < maxCols; c++) {
+      const cell = grid[r][c];
+      if (cell && (cell.rowspan > 1 || cell.colspan > 1)) {
+        merges.push({
+          s: { r, c },
+          e: { r: r + cell.rowspan - 1, c: c + cell.colspan - 1 }
+        });
+      }
+    }
+  }
+  ws['!merges'] = merges;
+
+  // 行高
+  const DEFAULT_H = 20;
+  const LINE_H = 16;
+  const rows = [];
+  for (let r = 0; r < grid.length; r++) {
+    const meta = rowData[r];
+    let height = DEFAULT_H;
+
+    // data-lines
+    if (meta.dataLines > 1) {
+      height = meta.dataLines * LINE_H;
+    }
+    // data-h 兜底
+    if (meta.dataH) {
+      const h = parseFloat(meta.dataH);
+      if (!isNaN(h)) height = DEFAULT_H * h;
+    }
+    // 文字行数
+    let maxTextLines = 1;
+    for (let c = 0; c < maxCols; c++) {
+      const cell = grid[r][c];
+      if (cell && cell.text) {
+        const lines = cell.text.split('\n').length;
+        if (lines > maxTextLines) maxTextLines = lines;
+      }
+    }
+    height = Math.max(height, maxTextLines * LINE_H, DEFAULT_H);
+    rows.push({ hpt: height });
+  }
+  ws['!rows'] = rows;
+
+  // 列宽
+  const cols = [];
+  for (let c = 0; c < maxCols; c++) {
+    cols.push({ wch: 18 });
+  }
+  ws['!cols'] = cols;
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, '表格');
+  return wb;
+}
+
+// ============================================================
+//  工具
+// ============================================================
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// ============================================================
+//  初始化
+// ============================================================
+loadSettings();
+</script>
+</body>
+</html>

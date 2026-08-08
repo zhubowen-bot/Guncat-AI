@@ -8,6 +8,7 @@
 
 Web for API Version: 3.2.0
 
+2026.8.8 Added table extraction tool: recognize table images into HTML/Excel (preserving merged cells and row heights).
 2026.8.6 Aligned with HarmonyOS app: multiple API profiles (custom model switching), direct file upload to Volcano, auto-read (TTS), voice input.
 2026.7.7 Fixed bugs with duplicate message input and errors after terminating conversations.
 
@@ -29,6 +30,7 @@ Due to cross-origin restrictions, the `file://` protocol cannot read external JS
     Guncat AI Web for API
     ├── agents.json                     # Agent list configuration
     ├── index.html                      # Web entry point
+    ├── table-ocr.html                  # Table extraction tool (image → HTML/Excel)
     ├── cat-avatar(1).png               # Application icon
     ├── Guncat 2.0-flash-main_agent_prompt.md
     ├── Guncat 2.0-pro-main_agent_prompt .md
@@ -83,6 +85,7 @@ Each agent configuration includes:
 * **Conversation History**: Supports saving and viewing historical conversations
 * **File Parsing**: Supports configuring specialized multimodal APIs to parse files and images that pure text models cannot handle
 * **API Configuration**: Users can configure their API Key, Base URL, and model name in the UI, supporting both Chat API and Response API configuration methods, custom advanced model parameters (length control, Top P, etc.), and custom JSON request bodies
+* **Table Extraction**: "Table Extraction" tool entry in the sidebar; uses vision LLMs (Zhipu GLM / Volcano Ark Doubao) to recognize table images into editable HTML tables and export Excel (.xlsx), faithfully preserving merged cells (rowspan/colspan), blank writing row heights, and in-cell line breaks; supports multiple views (rendered preview / HTML code / grid structure / debug info); API keys are stored only in browser localStorage
 
 ### How to Add a New Agent
 

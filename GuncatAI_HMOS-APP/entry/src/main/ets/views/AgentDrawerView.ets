@@ -1,5 +1,6 @@
 import { Agent } from '../model/Agent';
 import { Conversation } from '../model/Conversation';
+import { router } from '@kit.ArkUI';
 
 // 智能体 / 对话抽屉 (对齐 web 版本 .drawer)
 @Component
@@ -95,6 +96,36 @@ export struct AgentDrawerView {
         .width('100%')
         .padding({ left: 12, right: 12 })
         .margin({ top: 12, bottom: 14 })
+
+        // 工具: 表格提取
+        Column() {
+          Button() {
+            Row() {
+              SymbolGlyph($r('sys.symbol.square_grid_2x2'))
+                .fontSize(15)
+                .fontColor([$r('app.color.brand')])
+              Text('表格提取')
+                .fontSize(14)
+                .fontColor($r('app.color.text_primary'))
+                .fontWeight(FontWeight.Medium)
+                .margin({ left: 8 })
+            }
+            .width('100%')
+            .height('100%')
+            .justifyContent(FlexAlign.Center)
+          }
+          .width('100%')
+          .height(40)
+          .borderRadius(10)
+          .border({ width: 1, style: BorderStyle.Dashed, color: $r('app.color.border') })
+          .backgroundColor($r('app.color.background'))
+          .onClick(() => {
+            router.pushUrl({ url: 'pages/TableOcrPage' });
+          })
+        }
+        .width('100%')
+        .padding({ left: 12, right: 12 })
+        .margin({ bottom: 14 })
 
         // 智能体列表
         Column() {

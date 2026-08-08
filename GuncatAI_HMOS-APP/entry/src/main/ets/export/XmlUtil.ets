@@ -27,16 +27,20 @@ export class XmlUtil {
     return XmlUtil.escape(value);
   }
 
-  // 生成 docx 文件名: Guncat-导出-20260807-143025.docx
-  static makeFileName(prefix: string): string {
+  // 时间戳: 20260807-143025
+  static stamp(): string {
     let d: Date = new Date();
     let p: (n: number) => string = (n: number): string => {
       return n < 10 ? '0' + n.toString() : n.toString();
     };
-    let stamp: string = d.getFullYear().toString() +
+    return d.getFullYear().toString() +
       p(d.getMonth() + 1) + p(d.getDate()) + '-' +
       p(d.getHours()) + p(d.getMinutes()) + p(d.getSeconds());
-    return prefix + '-' + stamp + '.docx';
+  }
+
+  // 生成 docx 文件名: Guncat-导出-20260807-143025.docx
+  static makeFileName(prefix: string): string {
+    return prefix + '-' + XmlUtil.stamp() + '.docx';
   }
 
   // ISO8601 (UTC) 时间, 用于 docProps/core.xml
