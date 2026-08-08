@@ -147,7 +147,7 @@ The **Guncat Eval Series** (Evaluate) is purpose-built for high-quality evaluati
 * **Three-Tier Anti-Overestimation System**: Information acquisition → benchmark positioning → intelligence estimation, forming cascading protection with redundancy.
 * **Iterative Prompt Engineering Methodology**: Failure-node-analysis-driven improvement and anti-overfitting principles (generic placeholders, failure-mode abstraction, generalizable rules).
 
-The design and prompt engineering of Guncat Eval-LLM are documented in the open-source technical report: [Technical Report (EN)](./Technical_Report/Guncat_Eval-LLM_Technical_Report_EN.md) | [技术报告 (中文)](./Technical_Report/Guncat_Eval-LLM_技术报告.md)
+The design and prompt engineering of Guncat Eval-LLM are documented in the open-source technical report: [Technical Report (EN)](./docx/Guncat_Eval-LLM_Technical_Report_EN.md) | [技术报告 (中文)](./docx/Guncat_Eval-LLM_技术报告.md)
 
 * * *
 
@@ -326,7 +326,7 @@ This project has been fully restructured, with **agent series** and **deployment
 | [Guncat AI Web for API_local-setup](./Guncat%20AI%20Web%20for%20API_local-setup/) | Deployment         | Windows one-click local launch version of the web client              |
 | [GuncatAI-Web-for-API_HMOS-APP](./GuncatAI-Web-for-API_HMOS-APP/)                 | Deployment         | HarmonyOS H5 wrapper application (based on Web for API)               |
 | [GuncatAI_HMOS-APP](./GuncatAI_HMOS-APP/)                                         | Deployment         | HarmonyOS native application (pure ArkTS + ArkUI)                     |
-| [Technical_Report](./Technical_Report/)                                           | Documentation      | Guncat Eval-LLM design & prompt engineering technical reports (CN/EN) |
+| [docx](./docx/)                                                                  | Documentation      | Technical reports: Guncat Eval-LLM (CN/EN), lv-markdown table rendering crash investigation |
 
 * * *
 
@@ -492,7 +492,7 @@ Prompt 驱动，创新搭载 **Sequential Thinking** 结构化思维链与多 Ag
 - **三层协同防高估体系**：信息获取 → 对标定位 → 智能估算，级联防护、冗余兜底。
 - **迭代式提示词工程方法论**：失败节点分析驱动改进 + 防过拟合原则（通用占位符、失败模式抽象化、规则可泛化）。
 
-Guncat Eval-LLM 的设计与提示词工程已开源技术报告：[技术报告 (中文)](./Technical_Report/Guncat_Eval-LLM_技术报告.md) | [Technical Report (EN)](./Technical_Report/Guncat_Eval-LLM_Technical_Report_EN.md)
+Guncat Eval-LLM 的设计与提示词工程已开源技术报告：[技术报告 (中文)](./docx/Guncat_Eval-LLM_技术报告.md) | [Technical Report (EN)](./docx/Guncat_Eval-LLM_Technical_Report_EN.md)
 
 ---
 
@@ -671,7 +671,7 @@ Guncat Eval-LLM 的设计与提示词工程已开源技术报告：[技术报告
 | [Guncat AI Web for API_local-setup](./Guncat%20AI%20Web%20for%20API_local-setup/) | 部署       | Web 客户端的 Windows 一键本地启动版                      |
 | [GuncatAI-Web-for-API_HMOS-APP](./GuncatAI-Web-for-API_HMOS-APP/)                 | 部署       | 鸿蒙 H5 套壳应用（基于 Web for API）                    |
 | [GuncatAI_HMOS-APP](./GuncatAI_HMOS-APP/)                                         | 部署       | 鸿蒙原生应用（纯 ArkTS + ArkUI）                       |
-| [Technical_Report](./Technical_Report/)                                           | 技术文档     | Guncat Eval-LLM 设计与提示词工程技术报告（中/英）             |
+| [docx](./docx/)                                     | 技术文档     | 技术报告：Guncat Eval-LLM（中/英）、lv-markdown 表格渲染闪退排查  |
 
 ---
 
