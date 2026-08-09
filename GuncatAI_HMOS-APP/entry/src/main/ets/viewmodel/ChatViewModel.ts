@@ -155,38 +155,16 @@ export class ChatViewModel {
       this.currentAgent = firstAgent;
     }
 
-    // 恢复当前对话
-    let currentConvId: string = await StorageManager.loadString(this.context, Constants.LS_KEY_CURRENT_CONV_ID, '');
-    let found: boolean = false;
-    if (currentConvId !== '') {
-      for (let i: number = 0; i < this.conversations.length; i++) {
-        if (this.conversations[i].id === currentConvId) {
-          this.currentConversationId = currentConvId;
-          // 同步智能体
-          if (this.currentAgent === null) {
-            let aid: string = this.conversations[i].agentId;
-            for (let j: number = 0; j < this.agents.length; j++) {
-              if (this.agents[j].id === aid) {
-                this.currentAgent = this.agents[j];
-                break;
-              }
-            }
-          }
-          found = true;
-          break;
-        }
-      }
-    }
-    if (!found && this.currentAgent !== null) {
-      // 自动选 agent 最新对话, 没有则创建新对话
+    // 每次重新打开应用都自动新建对话；若该智能体最后一条对话还是空的则直接复用
+    if (this.currentAgent !== null) {
       let latest: Conversation | null = this.findLatestConversationForAgent(this.currentAgent.id);
-      if (latest !== null) {
-        this.currentConversationId = latest.id;
+      if (latest === null || latest.messages.length > 0) {
+        await this.startNewConversation();
       } else {
-        let newConv: Conversation = Conversation.create(this.currentAgent.id, '');
-        this.conversations.unshift(newConv);
-        this.currentConversationId = newConv.id;
-        await this.persistConversations();
+        this.currentConversationId = latest.id;
+        if (this.context !== null) {
+          await StorageManager.saveString(this.context, Constants.LS_KEY_CURRENT_CONV_ID, latest.id);
+        }
       }
     }
     this.ready = true;

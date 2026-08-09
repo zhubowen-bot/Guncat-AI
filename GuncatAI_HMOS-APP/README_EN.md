@@ -4,7 +4,7 @@
 
 Guncat AI is a native HarmonyOS AI chat client built with ArkTS and ArkUI. Its primary interface is not hosted in a WebView.
 
-Current app version: `4.3.2`
+Current app version: `4.4.0`
 
 ## Features
 
@@ -301,10 +301,12 @@ You can also select content in Gallery or a file manager and choose Guncat AI fr
 - Original attachments are not copied into permanent app storage.
 - Requests use HTTPS. Data-processing policies still depend on the configured model provider.
 
-## Version 4.3.2
+## Version 4.4.0
 
 - New table recognition: a "Table Recognition" entry in the answer action bar opens a dedicated page that converts tables in images to HTML via a multimodal model, preserving merged cells (rowspan/colspan), headers and reserved writing-line heights.
 - New Excel export: recognized tables can be exported as `.xlsx` via the system save panel; the native parsing/export engine mirrors the Web version and requires no upload.
+- Split table-recognition credentials: the Zhipu option references the multimodal parsing-engine config, while the Volcano Ark (Doubao) option references the native-multimodal main-model config; the two platforms keep independent API keys.
+- Auto new conversation on launch: reopening the app creates a new conversation automatically; if the agent's latest conversation is still empty it is reused instead, so no duplicate empty conversations are created.
 
 ## Version 4.3.1
 

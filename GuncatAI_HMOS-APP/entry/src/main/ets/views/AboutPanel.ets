@@ -57,16 +57,17 @@ export struct AboutPanel {
               .fontWeight(FontWeight.Bold)
               .fontColor($r('app.color.text_primary'))
               .margin({ bottom: 4 })
-            Text('version 4.3.2')
+            Text('version 4.4.0')
               .fontSize(14)
               .fontColor($r('app.color.text_secondary'))
               .margin({ bottom: 20 })
 
             // 开源仓库
             Row() {
-              Text('⭐')
-                .fontSize(16)
-                .fontColor($r('app.color.text_primary'))
+              Image($r('app.media.github'))
+                .width(16)
+                .height(16)
+                .fillColor($r('app.color.text_primary'))
               Text('开源仓库')
                 .fontSize(14)
                 .fontColor($r('app.color.text_primary'))

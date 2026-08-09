@@ -3,7 +3,10 @@ import { common } from '@kit.AbilityKit';
 import { pasteboard } from '@kit.BasicServicesKit';
 import { util } from '@kit.ArkTS';
 import { MultimodalConfig } from '../model/MultimodalConfig';
+import { ApiConfig } from '../model/ApiConfig';
+import { ApiProfile } from '../model/ApiProfile';
 import { StorageManager } from '../data/StorageManager';
+import { Constants } from '../common/Constants';
 import { FileService, PickedFile } from '../service/FileService';
 import { TableOcrService } from '../service/TableOcrService';
 import { HtmlTableParser, TableGridInfo, TableCellInfo, TableRowInfo } from '../export/TableHtmlParser';
@@ -63,7 +66,7 @@ struct TableOcrPage {
   @State debugText: string = '';
   @State previewCells: PreviewCell[] = [];
   @State gridTotalHeight: number = 120;
-  private mmConfig: MultimodalConfig = MultimodalConfig.default();
+  private currentProfile: ApiProfile = ApiProfile.create('默认配置');
   private selectedBytes: ArrayBuffer | null = null;
   private selectedMime: string = 'image/jpeg';
 
@@ -74,14 +77,55 @@ struct TableOcrPage {
   private async loadConfig(): Promise<void> {
     let context: common.UIAbilityContext = getContext(this) as common.UIAbilityContext;
     try {
-      this.mmConfig = await StorageManager.loadMultimodalConfig(context);
+      this.currentProfile = await this.loadCurrentProfile(context);
     } catch (e) {
-      this.mmConfig = MultimodalConfig.default();
+      this.currentProfile = ApiProfile.fromLegacy('默认配置', ApiConfig.default(), MultimodalConfig.default());
     }
-    let baseUrl: string = this.mmConfig.baseUrl;
-    this.providerIndex = baseUrl.indexOf('volces.com') !== -1 ? 1 : 0;
-    this.modelText = this.mmConfig.model;
-    this.apiKeyText = this.mmConfig.apiKey;
+    let savedProvider: string = await StorageManager.loadString(
+      context, Constants.LS_KEY_TABLE_OCR_PROVIDER, '');
+    if (savedProvider === 'volc') {
+      this.providerIndex = 1;
+    } else if (savedProvider !== 'zhipu' &&
+      this.currentProfile.multimodalConfig.baseUrl.indexOf('volces.com') !== -1) {
+      // 兼容旧版本: 火山配置以前直接写在多模态配置里
+      this.providerIndex = 1;
+    } else {
+      this.providerIndex = 0;
+    }
+    this.applyProviderFields();
+  }
+
+  // 加载当前使用中的 API 配置 (无 profile 时用旧版单配置降级)
+  private async loadCurrentProfile(context: common.UIAbilityContext): Promise<ApiProfile> {
+    let profiles: ApiProfile[] = await StorageManager.loadApiProfiles(context);
+    if (profiles.length === 0) {
+      let api: ApiConfig | null = await StorageManager.loadApiConfig(context);
+      let legacyApi: ApiConfig = api !== null ? api : ApiConfig.default();
+      let legacyMm: MultimodalConfig = await StorageManager.loadMultimodalConfig(context);
+      return ApiProfile.fromLegacy('默认配置', legacyApi, legacyMm);
+    }
+    let savedId: string = await StorageManager.loadString(
+      context, Constants.LS_KEY_CURRENT_API_PROFILE_ID, '');
+    for (let i: number = 0; i < profiles.length; i++) {
+      if (profiles[i].id === savedId) {
+        return profiles[i];
+      }
+    }
+    return profiles[0];
+  }
+
+  // 智谱 → 多模态解析引擎配置; 火山方舟 → 支持原生多模态的主模型配置
+  private applyProviderFields(): void {
+    if (this.providerIndex === 1) {
+      let api: ApiConfig = this.currentProfile.apiConfig;
+      this.modelText = api.model;
+      this.apiKeyText = api.apiKey;
+    } else {
+      let mm: MultimodalConfig = this.currentProfile.multimodalConfig;
+      this.modelText = mm.model;
+      this.apiKeyText = mm.apiKey;
+    }
+    this.keySavedHint = '';
   }
 
   private getPreset(): ProviderPreset {
@@ -90,13 +134,50 @@ struct TableOcrPage {
 
   private async saveSettings(): Promise<void> {
     let preset: ProviderPreset = this.getPreset();
-    this.mmConfig.baseUrl = preset.baseUrl;
-    this.mmConfig.model = this.modelText.trim() === '' ? preset.model : this.modelText.trim();
-    this.mmConfig.apiKey = this.apiKeyText.trim();
     let context: common.UIAbilityContext = getContext(this) as common.UIAbilityContext;
-    await StorageManager.saveMultimodalConfig(context, this.mmConfig);
-    this.keySavedHint = '✓ 已保存 (与设置面板同步)';
+    if (this.providerIndex === 1) {
+      // 火山方舟: 保存到主模型配置
+      let api: ApiConfig = this.currentProfile.apiConfig;
+      api.provider = 'volcano';
+      api.baseUrl = preset.baseUrl;
+      api.model = this.modelText.trim() === '' ? preset.model : this.modelText.trim();
+      api.apiKey = this.apiKeyText.trim();
+      await this.persistCurrentProfile(context);
+      await StorageManager.saveApiConfig(context, api);
+      this.keySavedHint = '✓ 已保存 (与主模型配置同步)';
+    } else {
+      // 智谱: 保存到多模态解析引擎配置
+      let mm: MultimodalConfig = this.currentProfile.multimodalConfig;
+      mm.baseUrl = preset.baseUrl;
+      mm.model = this.modelText.trim() === '' ? preset.model : this.modelText.trim();
+      mm.apiKey = this.apiKeyText.trim();
+      await this.persistCurrentProfile(context);
+      await StorageManager.saveMultimodalConfig(context, mm);
+      this.keySavedHint = '✓ 已保存 (与多模态解析配置同步)';
+    }
     promptAction.showToast({ message: '配置已保存', duration: 1500 });
+  }
+
+  private async persistCurrentProfile(context: common.UIAbilityContext): Promise<void> {
+    let profiles: ApiProfile[] = await StorageManager.loadApiProfiles(context);
+    let found: boolean = false;
+    for (let i: number = 0; i < profiles.length; i++) {
+      if (profiles[i].id === this.currentProfile.id) {
+        profiles[i] = this.currentProfile;
+        found = true;
+        break;
+      }
+    }
+    if (!found) {
+      profiles.push(this.currentProfile);
+    }
+    await StorageManager.saveApiProfiles(context, profiles);
+  }
+
+  private async persistProvider(): Promise<void> {
+    let context: common.UIAbilityContext = getContext(this) as common.UIAbilityContext;
+    await StorageManager.saveString(
+      context, Constants.LS_KEY_TABLE_OCR_PROVIDER, this.providerIndex === 1 ? 'volc' : 'zhipu');
   }
 
   private async pickImage(): Promise<void> {
@@ -395,9 +476,8 @@ struct TableOcrPage {
             return;
           }
           this.providerIndex = index;
-          let preset: ProviderPreset = this.getPreset();
-          this.modelText = preset.model;
-          this.keySavedHint = '';
+          this.applyProviderFields();
+          this.persistProvider();
         })
       Text('平台')
         .fontSize(12)
@@ -455,17 +535,17 @@ struct TableOcrPage {
       .width('100%')
       .margin({ top: 12 })
       .alignItems(VerticalAlign.Center)
-      Text('• 智谱：填 glm-4.6v-flash，Key 从 open.bigmodel.cn 获取')
+      Text('• 智谱：引用「设置 → 多模态解析引擎」的配置，Key 从 open.bigmodel.cn 获取')
         .fontSize(11)
         .fontColor($r('app.color.text_tertiary'))
         .width('100%')
         .margin({ top: 12 })
-      Text('• 火山方舟：模型填 Endpoint ID 或 doubao-seed-2-0-lite-260428，Key 从 console.volcengine.com 获取')
+      Text('• 火山方舟：引用「设置 → 主模型」的配置（需为支持原生多模态的豆包模型），Key 从 console.volcengine.com 获取')
         .fontSize(11)
         .fontColor($r('app.color.text_tertiary'))
         .width('100%')
         .margin({ top: 4 })
-      Text('• 配置与「设置」里的多模态解析共用，保存后两边同步')
+      Text('• 两个平台引用各自的 Key，互不共用；切换平台后自动读取对应配置')
         .fontSize(11)
         .fontColor($r('app.color.text_tertiary'))
         .width('100%')

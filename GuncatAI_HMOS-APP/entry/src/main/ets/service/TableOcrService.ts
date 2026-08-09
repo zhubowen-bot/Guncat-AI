@@ -70,7 +70,7 @@ export class TableOcrService {
   // 调用 VLM 识别表格图片, 返回模型输出的 HTML
   static async recognizeImage(config: MultimodalConfig, imageData: TableOcrImage): Promise<string> {
     if (config.apiKey === '') {
-      throw new Error('请先配置多模态解析 API 的密钥');
+      throw new Error('请先配置 API Key');
     }
     let baseUrl: string = config.baseUrl.replace(/\/+$/, '');
     if (baseUrl === '') {

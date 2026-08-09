@@ -1,7 +1,7 @@
 export class Constants {
   // App info
   static readonly APP_NAME: string = 'Guncat AI';
-  static readonly APP_VERSION: string = '4.3.2';
+  static readonly APP_VERSION: string = '4.4.0';
 
   // LocalStorage keys (统一存放在 Preferences 中, key 名字符串)
   static readonly LS_KEY_CONVERSATIONS: string = 'guncat_conversations';
@@ -14,6 +14,8 @@ export class Constants {
   static readonly LS_KEY_AUTO_READ_ENABLED: string = 'guncat_auto_read_enabled';
   static readonly LS_KEY_CURRENT_AGENT_ID: string = 'guncat_current_agent';
   static readonly LS_KEY_CURRENT_CONV_ID: string = 'guncat_current_conv';
+  // 表格识别页当前选择的平台 ('zhipu' / 'volc'), 决定引用多模态解析还是主模型配置
+  static readonly LS_KEY_TABLE_OCR_PROVIDER: string = 'table_ocr_provider';
 
   // API presets
   static readonly PRESET_DEEPSEEK_BASE_URL: string = 'https://api.deepseek.com';
