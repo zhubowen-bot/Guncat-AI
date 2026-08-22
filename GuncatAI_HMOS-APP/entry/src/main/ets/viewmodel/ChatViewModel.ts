@@ -10,6 +10,7 @@ import { ApiProfile } from '../model/ApiProfile';
 import { FileItem, StreamCallbacks, AbortSignal } from '../common/Types';
 import { AgentLoader } from '../service/AgentLoader';
 import { ChatService } from '../service/ChatService';
+import { FileUploadService } from '../service/FileUploadService';
 import { FileService, PickedFile } from '../service/FileService';
 import { MultimodalService } from '../service/MultimodalService';
 import { StorageManager } from '../data/StorageManager';
@@ -404,13 +405,85 @@ export class ChatViewModel {
   }
 
   // 应用预设
-  applyDeepseekPreset(): ApiConfig {
-    let cfg: ApiConfig = ApiConfig.deepseekPreset();
-    return cfg;
+  applyOpenAICompletionsPreset(): ApiConfig {
+    return ApiConfig.openAICompletionsPreset();
   }
-  applyVolcanoPreset(): ApiConfig {
-    let cfg: ApiConfig = ApiConfig.volcanoPreset();
-    return cfg;
+  applyOpenAIResponsesPreset(): ApiConfig {
+    return ApiConfig.openAIResponsesPreset();
+  }
+  applyAnthropicMessagesPreset(): ApiConfig {
+    return ApiConfig.anthropicMessagesPreset();
+  }
+
+  // 混合附件发送策略：
+  // - 小图继续用 Base64 内联，避免多余上传
+  // - 大图 / OpenAI Responses 文档走 Files API，生成 file_id 后按各协议引用
+  private async prepareAttachmentFileIds(attachments: Attachment[], ready: FileItem[]): Promise<void> {
+    let provider: string = this.apiConfig.provider;
+    if (provider !== 'openai-completions' &&
+      provider !== 'openai-responses' &&
+      provider !== 'anthropic-messages') {
+      return;
+    }
+    let FILE_API_THRESHOLD_BYTES: number = 4 * 1024 * 1024;
+    let uploadCount: number = 0;
+    for (let i: number = 0; i < ready.length; i++) {
+      let att: Attachment = attachments[i];
+      if (att.parsedText !== '' || att.dataUrl === '') {
+        continue;
+      }
+      let buf: ArrayBuffer | undefined = this.fileBuffers.get(ready[i].id);
+      if (buf === undefined) {
+        continue;
+      }
+      let shouldUpload: boolean = false;
+      if (att.type === 'file') {
+        shouldUpload = provider === 'openai-responses';
+      } else {
+        if (provider === 'anthropic-messages') {
+          shouldUpload = buf.byteLength > FILE_API_THRESHOLD_BYTES && this.apiConfig.baseUrl.indexOf('deepseek.com') !== -1;
+        } else {
+          shouldUpload = buf.byteLength > FILE_API_THRESHOLD_BYTES;
+        }
+      }
+      if (shouldUpload) {
+        uploadCount++;
+      }
+    }
+    if (uploadCount === 0) {
+      return;
+    }
+    promptAction.showToast({ message: '正在上传附件...', duration: 2000 });
+    for (let i: number = 0; i < ready.length; i++) {
+      let att: Attachment = attachments[i];
+      if (att.parsedText !== '' || att.dataUrl === '') {
+        continue;
+      }
+      let buf: ArrayBuffer | undefined = this.fileBuffers.get(ready[i].id);
+      if (buf === undefined) {
+        continue;
+      }
+      let shouldUpload: boolean = false;
+      if (att.type === 'file') {
+        shouldUpload = provider === 'openai-responses';
+      } else {
+        if (provider === 'anthropic-messages') {
+          shouldUpload = buf.byteLength > FILE_API_THRESHOLD_BYTES && this.apiConfig.baseUrl.indexOf('deepseek.com') !== -1;
+        } else {
+          shouldUpload = buf.byteLength > FILE_API_THRESHOLD_BYTES;
+        }
+      }
+      if (!shouldUpload) {
+        continue;
+      }
+      try {
+        let mimeType: string = ready[i].type !== '' ? ready[i].type : 'application/octet-stream';
+        att.fileId = await FileUploadService.uploadFile(this.apiConfig, att.name, mimeType, buf);
+      } catch (e) {
+        // 上传失败时保留 dataUrl，回退 Base64 内联发送
+        att.fileId = '';
+      }
+    }
   }
 
   // 文件选择 + 解析
@@ -497,8 +570,11 @@ export class ChatViewModel {
       promptAction.showToast({ message: '请先配置多模态解析 API 密钥', duration: 2000 });
       return false;
     }
-    if (!this.multimodalConfig.preparseEnabled && this.apiConfig.provider !== 'volcano') {
-      promptAction.showToast({ message: '附件直传目前仅支持火山方舟引擎', duration: 2000 });
+    if (!this.multimodalConfig.preparseEnabled &&
+      this.apiConfig.provider !== 'openai-completions' &&
+      this.apiConfig.provider !== 'openai-responses' &&
+      this.apiConfig.provider !== 'anthropic-messages') {
+      promptAction.showToast({ message: '当前接入方式不支持附件直传', duration: 2000 });
       return false;
     }
     return true;
@@ -652,8 +728,10 @@ export class ChatViewModel {
     for (let i: number = 0; i < ready.length; i++) {
       let f: FileItem = ready[i];
       let type: string = f.type.startsWith('image/') ? 'image' : 'file';
-      attachments.push(Attachment.of(f.name, f.parsedText, type, f.thumbnail, f.dataUrl));
+      attachments.push(Attachment.of(f.name, f.parsedText, type, f.thumbnail, f.dataUrl, ''));
     }
+    // 混合发送策略：大图/火山文档优先上传 Files API，上传失败自动回退 Base64
+    await this.prepareAttachmentFileIds(attachments, ready);
     // 添加 user 消息
     let userMsg: Message = Message.ofUser(generateMessageId(), fullText, userText, attachments);
     conv.messages.push(userMsg);
@@ -696,7 +774,7 @@ export class ChatViewModel {
       history,
       fullText,
       this.thinkingEnabled,
-      this.webSearchEnabled && this.apiConfig.provider === 'volcano',
+      this.webSearchEnabled,
       callbacks,
       this.abortSignal
     );
@@ -875,7 +953,7 @@ export class ChatViewModel {
       history,
       regenContent,
       this.thinkingEnabled,
-      this.webSearchEnabled && this.apiConfig.provider === 'volcano',
+      this.webSearchEnabled,
       callbacks,
       this.abortSignal
     );

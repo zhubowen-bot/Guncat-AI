@@ -3,6 +3,7 @@ import { ChatBubbleView } from '../views/ChatBubbleView';
 import { MessageInputView } from '../views/MessageInputView';
 import { ToggleSwitch } from '../components/ToggleSwitch';
 import { AgentDrawerView } from '../views/AgentDrawerView';
+import { FlyInLaunchView } from '../views/FlyInLaunchView';
 import { ToastView } from '../views/ToastView';
 import { ImageLightbox } from '../views/ImageLightbox';
 import { SettingsPanel } from '../views/SettingsPanel';
@@ -23,6 +24,7 @@ import {
   TextReaderService
 } from '../service/TextReaderService';
 import { abilityAccessCtrl, common, PermissionRequestResult } from '@kit.AbilityKit';
+import { window } from '@kit.ArkUI';
 import { BusinessError } from '@kit.BasicServicesKit';
 import { DocxExporter } from '../export/DocxExporter';
 
@@ -36,6 +38,20 @@ struct ChatPage {
   @State private drawerOpen: boolean = false;
   @State private settingsOpen: boolean = false;
   @State private aboutOpen: boolean = false;
+  @State private launchVisible: boolean = true;
+  @State private inputAreaVisible: boolean = false;
+  // 单一“hero 图标”节点：不依赖共享元素转场，避免交叉淡化导致的发白闪烁
+  @State private heroVisible: boolean = true;
+  @State private heroX: number = 0;
+  @State private heroY: number = 0;
+  @State private heroSize: number = 60;
+  private heroTargetX: number = 0;
+  private heroTargetY: number = 0;
+  private heroTargetSize: number = 96;
+  private emptyStateBaseX: number = 0;
+  private emptyStateBaseY: number = 0;
+  private rootW: number = 360;
+  private rootH: number = 780;
   @State private lightboxVisible: boolean = false;
   @State private lightboxUrl: string = '';
   @State private toastMessage: string = '';
@@ -67,6 +83,7 @@ struct ChatPage {
   aboutToAppear(): void {
     let context: common.UIAbilityContext = getContext(this) as common.UIAbilityContext;
     this.vm.setContext(context);
+    this.initHeroLayout();
     let readerCallbacks: ReaderCallbacks = new ReaderCallbacks();
     readerCallbacks.onChange = (state: ReaderProgress): void => {
       this.readerVisible = state.visible;
@@ -154,6 +171,59 @@ struct ChatPage {
     }
   }
 
+  private async initHeroLayout(): Promise<void> {
+    try {
+      const context = this.getUIContext().getHostContext() as common.UIAbilityContext;
+      const win = await window.getLastWindow(context);
+      const rect = win.getWindowProperties().windowRect;
+      const w: number = this.getUIContext().px2vp(rect.width);
+      const h: number = this.getUIContext().px2vp(rect.height);
+      const startSize: number = 60;
+      const targetSize: number = 96;
+      const headerH: number = 64;
+      const inputH: number = 108;
+      this.heroSize = startSize;
+      this.heroX = w / 2 - startSize / 2;
+      this.heroY = h / 2 - startSize / 2;
+      this.heroTargetX = w / 2 - targetSize / 2;
+      const msgH: number = h - headerH - inputH;
+      this.heroTargetY = headerH + msgH / 2 - targetSize / 2;
+      this.heroTargetSize = targetSize;
+    } catch (error) {
+      const w: number = 360;
+      const h: number = 780;
+      this.heroSize = 60;
+      this.heroX = w / 2 - 30;
+      this.heroY = h / 2 - 30;
+      this.heroTargetX = w / 2 - 48;
+      this.heroTargetY = h / 2 - 48 - 22;
+      this.heroTargetSize = 96;
+    }
+  }
+
+  private updateHeroStart(): void {
+    const startSize: number = 60;
+    this.heroSize = startSize;
+    this.heroX = this.rootW / 2 - startSize / 2;
+    this.heroY = this.rootH / 2 - startSize / 2;
+  }
+
+  private startHeroTransition(): void {
+    animateTo({
+      duration: 360,
+      curve: Curve.EaseOut
+    }, () => {
+      this.heroX = this.heroTargetX;
+      this.heroY = this.heroTargetY;
+      this.heroSize = this.heroTargetSize;
+    });
+    // 等 hero 到位后再关闭启动层、显示底部输入区
+    setTimeout(() => {
+      this.launchVisible = false;
+      this.inputAreaVisible = true;
+    }, 380);
+  }
+
   private showToast(msg: string): void {
     if (this.toastTimer !== -1) {
       clearTimeout(this.toastTimer);
@@ -175,80 +245,111 @@ struct ChatPage {
 
         // 消息区
         if (this.vm.currentMessages.length === 0) {
+          // 空状态始终渲染以测量 hero 图标终点；启动期间被启动层遮挡，不会露出
           this.buildEmptyState();
         } else {
           this.buildMessageList();
         }
 
         // 输入区(工具开关行 + 文件预览 + 输入行, 由 ChatPage 直接组合避免 @Prop 深拷)
-        Column() {
-          // 工具开关行
-          Row() {
-            this.buildModelSelector()
-            ToggleSwitch({
-              isOn: this.vm.thinkingEnabled,
-              label: '深度思考',
-              onChange: (v: boolean) => {
-                this.vm.setThinkingEnabled(v);
-                this.refreshTick++;
+        if (this.inputAreaVisible) {
+          Column() {
+            // 工具开关行
+            Row() {
+              this.buildModelSelector()
+              ToggleSwitch({
+                isOn: this.vm.thinkingEnabled,
+                label: '深度思考',
+                onChange: (v: boolean) => {
+                  this.vm.setThinkingEnabled(v);
+                  this.refreshTick++;
+                }
+              })
+              ToggleSwitch({
+                isOn: this.vm.webSearchEnabled,
+                label: '联网搜索',
+                toggleEnabled: true,
+                onChange: (v: boolean) => {
+                  this.vm.setWebSearchEnabled(v);
+                  this.refreshTick++;
+                }
+              })
+                // 联网搜索胶囊左侧加 10vp 间距, 避免两个胶囊贴在一起
+                .margin({ left: 10 })
+            }
+            .width('100%')
+            .padding({ left: 12, right: 12, top: 8, bottom: 4 })
+            // 文件预览条
+            if (this.vm.pendingFiles.length > 0) {
+              this.buildFilePreview();
+            }
+            // 输入行 + 按钮
+            MessageInputView({
+              inputText: $inputText,
+              isStreaming: this.vm.isStreaming,
+              isParsing: this.vm.isParsing,
+              isListening: this.isListening,
+              onSend: (text: string) => {
+                this.handleSend(text);
+              },
+              onStop: () => {
+                this.handleStop();
+              },
+              onFileUpload: () => {
+                this.handleFileUpload();
+              },
+              onVoiceInput: () => {
+                this.handleVoiceInput();
+              },
+              onCameraCapture: () => {
+                this.handleCameraCapture();
               }
             })
-            ToggleSwitch({
-              isOn: this.vm.webSearchEnabled,
-              label: '联网搜索',
-              onChange: (v: boolean) => {
-                this.vm.setWebSearchEnabled(v);
-                this.refreshTick++;
-              }
-            })
-              // 联网搜索胶囊左侧加 8vp 间距, 避免两个胶囊贴在一起
-              .margin({ left: 8 })
           }
           .width('100%')
-          .padding({ left: 12, right: 12, top: 6, bottom: 4 })
-          // 文件预览条
-          if (this.vm.pendingFiles.length > 0) {
-            this.buildFilePreview();
-          }
-          // 输入行 + 按钮
-          MessageInputView({
-            inputText: $inputText,
-            isStreaming: this.vm.isStreaming,
-            isParsing: this.vm.isParsing,
-            isListening: this.isListening,
-            onSend: (text: string) => {
-              this.handleSend(text);
-            },
-            onStop: () => {
-              this.handleStop();
-            },
-            onFileUpload: () => {
-              this.handleFileUpload();
-            },
-            onVoiceInput: () => {
-              this.handleVoiceInput();
-            },
-            onCameraCapture: () => {
-              this.handleCameraCapture();
-            }
-          })
+          .backgroundColor($r('app.color.surface'))
+          .shadow({ radius: 18, color: '#0D000000', offsetX: 0, offsetY: -2 })
+          // 从屏幕底部外滑入
+          .transition(TransitionEffect.translate({ y: '100%' })
+            .combine(TransitionEffect.OPACITY)
+            .animation({ duration: 360, curve: Curve.EaseOut }))
+          // 底部 surface 色延伸到导航条安全区
+          .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM])
+        } else {
+          // 输入区出现前先用等高的占位保住消息区布局，
+          // 避免空状态头像在 geometryTransition 过程中因布局变化而闪烁。
+          Column()
+            .width('100%')
+            .height(108)
+            .backgroundColor(Color.Transparent)
         }
-        .width('100%')
-        .backgroundColor($r('app.color.surface'))
-        .border({ width: { top: 1 }, color: $r('app.color.border') })
-        // 底部 surface 色延伸到导航条安全区
-        .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM])
       }
       .width('100%')
       .height('100%')
       .backgroundColor($r('app.color.background'))
 
+      // 单一 hero 图标：启动时在屏幕中心，随后移动到空状态中心，全程清晰无交叉淡化。
+      // 保持常驻渲染，但层级低于抽屉/设置浮层，让浮层自然遮盖它，避免主动消失感。
+      if (this.heroVisible && (this.launchVisible || this.vm.currentMessages.length === 0)) {
+        this.buildHeroIcon()
+      }
+
       if (this.readerVisible) {
         this.buildReaderControl()
       }
 
-      // 抽屉 - 从左侧滑入/滑出
+      // 抽屉 - 从左侧滑入/滑出；全屏 scrim 固定覆盖，滑动过程中右侧始终有阴影
       if (this.drawerOpen) {
+        Column()
+          .width('100%')
+          .height('100%')
+          .backgroundColor($r('app.color.modal_backdrop'))
+          .onClick(() => {
+            this.drawerOpen = false;
+          })
+          .transition(
+            TransitionEffect.opacity(0).animation({ duration: 200, curve: Curve.EaseOut })
+          )
         AgentDrawerView({
           agents: this.vm.agents,
           conversations: this.vm.conversations,
@@ -289,6 +390,18 @@ struct ChatPage {
               TransitionEffect.translate({ x: '-100%' }).animation({ duration: 300, curve: Curve.FastOutSlowIn }),
               TransitionEffect.translate({ x: '-100%' }).animation({ duration: 250, curve: Curve.FastOutSlowIn })
             )
+          )
+        // 右侧透明点击层：视觉阴影由全屏 scrim 提供，这里只保证点击右侧空白能关闭
+        Column()
+          .width('18%')
+          .height('100%')
+          .position({ x: '82%', y: 0 })
+          .backgroundColor(Color.Transparent)
+          .onClick(() => {
+            this.drawerOpen = false;
+          })
+          .transition(
+            TransitionEffect.opacity(0).animation({ duration: 200, curve: Curve.EaseOut })
           )
       }
 
@@ -363,10 +476,30 @@ struct ChatPage {
         .padding({ top: 76 })
         .hitTestBehavior(HitTestMode.None)
       }
+
+      // 开屏飞入动效
+      if (this.launchVisible) {
+        FlyInLaunchView({
+          showCenter: false,
+          onFinish: () => {
+            this.startHeroTransition();
+          }
+        })
+      }
+
     }
     .width('100%')
     .height('100%')
     .backgroundColor($r('app.color.background'))
+    .onAreaChange((_old: Area, newArea: Area) => {
+      const wValue = newArea.width;
+      const hValue = newArea.height;
+      this.rootW = wValue === undefined ? this.rootW :
+        (typeof wValue === 'string' ? parseFloat(wValue) : (typeof wValue === 'number' ? wValue : this.rootW));
+      this.rootH = hValue === undefined ? this.rootH :
+        (typeof hValue === 'string' ? parseFloat(hValue) : (typeof hValue === 'number' ? hValue : this.rootH));
+      this.updateHeroStart();
+    })
   }
 
   @Builder
@@ -387,11 +520,12 @@ struct ChatPage {
             .fontSize(16)
             .fontColor($r('app.color.text_secondary'))
         }
-        .width(24)
-        .height(24)
+        .width(32)
+        .height(32)
         .padding(0)
-        .borderRadius(6)
-        .backgroundColor(Color.Transparent)
+        .borderRadius(16)
+        .backgroundColor($r('app.color.raised_surface'))
+        .shadow({ radius: 10, color: '#12000000', offsetX: 0, offsetY: 2 })
         .onClick(() => {
           this.vm.stopReading();
         })
@@ -435,16 +569,16 @@ struct ChatPage {
       }
       .height(20)
 
-      Row({ space: 5 }) {
+      Row({ space: 8 }) {
         Button(this.readerPaused ? '▶' : 'Ⅱ')
-          .fontSize(10)
+          .fontSize(11)
           .fontColor($r('app.color.text_primary'))
-          .height(24)
-          .width(30)
+          .height(32)
+          .width(36)
           .padding(0)
-          .borderRadius(6)
-          .border({ width: 1, color: $r('app.color.border') })
-          .backgroundColor($r('app.color.surface_secondary'))
+          .borderRadius(16)
+          .backgroundColor($r('app.color.raised_surface'))
+          .shadow({ radius: 10, color: '#12000000', offsetX: 0, offsetY: 2 })
           .onClick((): void => {
             if (this.readerPaused) {
               TextReaderService.resume();
@@ -454,38 +588,38 @@ struct ChatPage {
           })
 
         Button(this.getReaderSpeedLabel())
-          .fontSize(10)
+          .fontSize(11)
           .fontColor($r('app.color.text_primary'))
-          .height(24)
-          .width(43)
+          .height(32)
+          .width(48)
           .padding(0)
-          .borderRadius(6)
-          .border({ width: 1, color: $r('app.color.border') })
-          .backgroundColor($r('app.color.surface_secondary'))
+          .borderRadius(16)
+          .backgroundColor($r('app.color.raised_surface'))
+          .shadow({ radius: 10, color: '#12000000', offsetX: 0, offsetY: 2 })
           .onClick((): void => {
             let nextSpeed: number = this.readerSpeed >= 1.75 ? 0.75 : this.readerSpeed + 0.25;
             TextReaderService.setSpeed(nextSpeed);
           })
 
         Button(this.getReaderVoiceLabel())
-          .fontSize(10)
+          .fontSize(11)
           .fontColor($r('app.color.text_primary'))
-          .width(118)
-          .height(24)
-          .padding({ left: 6, right: 6 })
-          .borderRadius(6)
-          .border({ width: 1, color: $r('app.color.border') })
-          .backgroundColor($r('app.color.surface_secondary'))
+          .width(128)
+          .height(32)
+          .padding({ left: 10, right: 10 })
+          .borderRadius(16)
+          .backgroundColor($r('app.color.raised_surface'))
+          .shadow({ radius: 10, color: '#12000000', offsetX: 0, offsetY: 2 })
           .bindMenu(this.buildReaderVoiceMenu(), { placement: Placement.Bottom })
       }
       .width('100%')
     }
-    .width('80%')
-    .padding({ left: 9, right: 7, top: 6, bottom: 7 })
+    .width('82%')
+    .padding({ left: 14, right: 12, top: 12, bottom: 12 })
     .backgroundColor($r('app.color.surface'))
-    .borderRadius(13)
-    .shadow({ radius: 12, color: '#26000000', offsetX: 0, offsetY: 4 })
-    .position({ x: '10%', y: 68 })
+    .borderRadius(24)
+    .shadow({ radius: 18, color: '#1F000000', offsetX: 0, offsetY: 6 })
+    .position({ x: '9%', y: 72 })
     .translate({ x: this.readerOffsetX, y: this.readerOffsetY })
     .zIndex(20)
   }
@@ -553,9 +687,9 @@ struct ChatPage {
     Row() {
       if (item.type.startsWith('image/') && item.thumbnail !== '') {
         Image(item.thumbnail)
-          .width(40)
-          .height(40)
-          .borderRadius(6)
+          .width(42)
+          .height(42)
+          .borderRadius(12)
           .objectFit(ImageFit.Cover)
           .backgroundColor(Color.White)
       } else {
@@ -563,12 +697,11 @@ struct ChatPage {
           .fontSize(10)
           .fontWeight(FontWeight.Bold)
           .fontColor($r('app.color.brand'))
-          .width(36)
-          .height(32)
+          .width(40)
+          .height(38)
           .textAlign(TextAlign.Center)
           .backgroundColor($r('app.color.surface'))
-          .border({ width: 1, color: $r('app.color.border') })
-          .borderRadius(6)
+          .borderRadius(12)
       }
       Column() {
         Text(item.name)
@@ -608,15 +741,12 @@ struct ChatPage {
           })
       }
     }
-    .padding({ left: 8, right: 6, top: 6, bottom: 6 })
-    .backgroundColor($r('app.color.surface_secondary'))
-    .border({
-      width: 1,
-      color: item.status === 'error' ? $r('app.color.danger') : $r('app.color.border')
-    })
-    .borderRadius(12)
-    .margin({ right: 8 })
-    .constraintSize({ maxWidth: 240 })
+    .padding({ left: 12, right: 10, top: 8, bottom: 8 })
+    .backgroundColor($r('app.color.raised_surface'))
+    .shadow({ radius: 10, color: '#12000000', offsetX: 0, offsetY: 2 })
+    .borderRadius(18)
+    .margin({ right: 10 })
+    .constraintSize({ maxWidth: 250 })
   }
 
   @Builder
@@ -628,9 +758,9 @@ struct ChatPage {
           .fontSize(22)
           .fontColor($r('app.color.text_secondary'))
       }
-      .width(40)
-      .height(40)
-      .borderRadius(10)
+      .width(44)
+      .height(44)
+      .borderRadius(22)
       .backgroundColor(Color.Transparent)
       .onClick(() => {
         this.drawerOpen = true;
@@ -638,24 +768,17 @@ struct ChatPage {
 
       // 与右侧两个按钮保持等宽，让标题仍处于屏幕正中。
       Blank()
-        .width(40)
+        .width(44)
 
-      // 标题 (头像 + 智能体名, 居中显示)
+      // 标题 (智能体名, 居中显示)
       Row() {
-        Image($r('app.media.cat_avatar'))
-          .width(28)
-          .height(28)
-          .borderRadius(14)
-          .objectFit(ImageFit.Cover)
-          .backgroundColor($r('app.color.brand_light'))
         if (this.vm.currentAgent !== null) {
           Text(this.vm.currentAgent.name)
-            .fontSize(16)
+            .fontSize(17)
             .fontWeight(FontWeight.Bold)
             .fontColor($r('app.color.text_primary'))
             .maxLines(1)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
-            .margin({ left: 8 })
             .constraintSize({ maxWidth: 200 })
         }
       }
@@ -675,9 +798,9 @@ struct ChatPage {
             .fontColor([$r('app.color.text_secondary')])
         }
       }
-      .width(34)
-      .height(34)
-      .borderRadius(9)
+      .width(44)
+      .height(44)
+      .borderRadius(22)
       .backgroundColor(this.vm.autoReadEnabled ? $r('app.color.brand_light') : Color.Transparent)
       .margin({ right: 3 })
       .onClick(() => {
@@ -693,50 +816,86 @@ struct ChatPage {
           .fontSize(20)
           .fontColor([$r('app.color.text_secondary')])
       }
-      .width(40)
-      .height(40)
-      .borderRadius(10)
+      .width(44)
+      .height(44)
+      .borderRadius(22)
       .backgroundColor(Color.Transparent)
       .onClick(() => {
         this.settingsOpen = true;
       })
     }
     .width('100%')
-    .height(56)
-    .padding({ left: 4, right: 4 })
+    .height(64)
+    .padding({ left: 8, right: 8 })
     .backgroundColor($r('app.color.surface'))
-    .border({ width: { bottom: 1 }, color: $r('app.color.border') })
+    .shadow({ radius: 18, color: '#0D000000', offsetX: 0, offsetY: 2 })
     .alignItems(VerticalAlign.Center)
+  }
+
+  @Builder
+  buildHeroIcon() {
+    Column() {
+      Image($r('app.media.cat_avatar'))
+        .width('100%')
+        .height('100%')
+        .objectFit(ImageFit.Cover)
+    }
+    .width(this.heroSize)
+    .height(this.heroSize)
+    .borderRadius(this.heroSize / 2)
+    .backgroundColor($r('app.color.brand_light'))
+    .shadow({ radius: 24, color: '#1A000000', offsetX: 0, offsetY: 8 })
+    .clip(true)
+    .position({ x: this.heroX, y: this.heroY })
+    .hitTestBehavior(HitTestMode.None)
+    .zIndex(this.launchVisible ? 101 : 0)
   }
 
   @Builder
   buildEmptyState() {
     Column() {
       Blank()
-      Image($r('app.media.cat_avatar'))
-        .width(80)
-        .height(80)
-        .borderRadius(40)
-        .objectFit(ImageFit.Cover)
-        .backgroundColor($r('app.color.brand_light'))
-        .opacity(0.9)
-        .margin({ bottom: 16 })
+      // 图标由 ChatPage 根部的 heroIcon 单节点负责，这里只留等高空位，避免重复渲染
+      Column()
+        .width(96)
+        .height(96)
+        .margin({ bottom: 20 })
+        .id('emptyStateIconAnchor')
+        .onAreaChange((_old: Area, newArea: Area) => {
+          const px = newArea.position.x;
+          const py = newArea.position.y;
+          const localX: number = px === undefined ? 0 :
+            (typeof px === 'string' ? parseFloat(px) : (typeof px === 'number' ? px : 0));
+          const localY: number = py === undefined ? 0 :
+            (typeof py === 'string' ? parseFloat(py) : (typeof py === 'number' ? py : 0));
+          this.heroTargetX = this.emptyStateBaseX + localX;
+          this.heroTargetY = this.emptyStateBaseY + localY;
+          this.heroTargetSize = 96;
+        })
       Text(this.vm.currentAgent !== null ? this.vm.currentAgent.name : 'Guncat AI')
-        .fontSize(20)
+        .fontSize(22)
         .fontWeight(FontWeight.Bold)
         .fontColor($r('app.color.text_primary'))
-        .margin({ bottom: 8 })
+        .margin({ bottom: 10 })
       Text(this.vm.currentAgent !== null ? this.vm.currentAgent.description : '选择一个智能体开始对话')
         .fontSize(14)
         .fontColor($r('app.color.text_secondary'))
         .textAlign(TextAlign.Center)
         .lineHeight(22)
-        .padding({ left: 24, right: 24 })
+        .padding({ left: 32, right: 32 })
       Blank()
     }
     .layoutWeight(1)
     .width('100%')
     .justifyContent(FlexAlign.Center)
+    .onAreaChange((_old: Area, newArea: Area) => {
+      const bx = newArea.position.x;
+      const by = newArea.position.y;
+      this.emptyStateBaseX = bx === undefined ? 0 :
+        (typeof bx === 'string' ? parseFloat(bx) : (typeof bx === 'number' ? bx : 0));
+      this.emptyStateBaseY = by === undefined ? 0 :
+        (typeof by === 'string' ? parseFloat(by) : (typeof by === 'number' ? by : 0));
+    })
   }
 
   @Builder
@@ -779,7 +938,7 @@ struct ChatPage {
         Blank().height(8)
       }
       .width('100%')
-      .padding({ top: 8, bottom: 8 })
+      .padding({ top: 16, bottom: 16, left: 12, right: 12 })
     }
     .layoutWeight(1)
     .width('100%')
@@ -858,12 +1017,13 @@ struct ChatPage {
         .width('100%')
         .textAlign(TextAlign.Center)
     }
-    .width(146)
-    .height(30)
-    .padding({ left: 8, right: 7 })
-    .borderRadius(16)
-    .border({ width: 1, color: $r('app.color.border') })
-    .backgroundColor($r('app.color.surface'))
+    .layoutWeight(1)
+    .height(34)
+    .padding({ left: 10, right: 10 })
+    .constraintSize({ minWidth: 108 })
+    .borderRadius(17)
+    .backgroundColor($r('app.color.raised_surface'))
+    .shadow({ radius: 12, color: '#14000000', offsetX: 0, offsetY: 3 })
     .margin({ right: 8 })
     .enabled(!this.vm.isStreaming && !this.vm.isParsing && !this.isListening)
     .bindMenu(this.buildModelProfileMenu(), { placement: Placement.Top })
@@ -871,16 +1031,34 @@ struct ChatPage {
 
   @Builder
   private buildModelProfileMenu() {
-    Column() {
+    Menu() {
       ForEach(this.vm.apiProfiles, (profile: ApiProfile) => {
-        MenuItem({ content: profile.name })
-          .selected(profile.id === this.vm.currentApiProfileId)
-          .onChange(() => {
-            this.vm.selectApiProfile(profile.id);
-            this.refreshTick++;
-          })
+        MenuItem() {
+          Row() {
+            Text(profile.name)
+              .fontSize(14)
+              .fontColor($r('app.color.text_primary'))
+              .maxLines(1)
+              .textOverflow({ overflow: TextOverflow.Ellipsis })
+          }
+          .width('100%')
+          .height('100%')
+          .justifyContent(FlexAlign.Center)
+        }
+        .width('100%')
+        .height(48)
+        .selected(profile.id === this.vm.currentApiProfileId)
+        .onChange(() => {
+          this.vm.selectApiProfile(profile.id);
+          this.refreshTick++;
+        })
       }, (profile: ApiProfile) => profile.id)
     }
+    .width(240)
+    .borderRadius(18)
+    .backgroundColor($r('app.color.surface'))
+    .padding(6)
+    .shadow({ radius: 16, color: '#1A000000', offsetX: 0, offsetY: 6 })
   }
 
   private getApiProfileOptions(): SelectOption[] {

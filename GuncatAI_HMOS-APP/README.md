@@ -4,25 +4,27 @@
 
 Guncat AI 是使用 ArkTS 与 ArkUI 开发的原生 HarmonyOS AI 对话客户端，不使用 WebView 承载主界面。
 
-当前应用版本：`4.4.0`
+当前应用版本：`5.0.0`
 
 ## 主要功能
 
 ### 原生流式对话
 
 - 基于 `@kit.NetworkKit` 和 `http.requestInStream` 处理 SSE 流式响应。
-- 支持 OpenAI Chat Completions（`/chat/completions`）和火山方舟 Responses API（`/responses`）。
-- 支持 DeepSeek、火山方舟及兼容接口的自定义服务。
+- 支持三种主流接入方式：OpenAI Completions（`/chat/completions`）、OpenAI Responses（`/responses`，DeepSeek / 火山方舟等兼容服务）、Anthropic Messages（`/messages`）。
+- 三种接入方式均支持图片直传；OpenAI Responses 额外支持 Files API 混合上传大图/文档。
+- DeepSeek 已统一使用最新 Responses API，支持原生联网搜索与识图版图片直传。
 - 支持停止生成、重新生成、对话历史管理和多套 API 配置。
 - 流式输出采用节流刷新与自动滚动，减少频繁重绘。
 
 ### 深度思考与联网搜索
 
-- 深度思考按钮会显式控制火山方舟请求：
-  - 关闭：`thinking.type = disabled`
-  - 开启：`thinking.type = enabled`
+- 深度思考按钮会显式控制 OpenAI Responses 请求：
+  - 火山方舟：`thinking.type = enabled / disabled`
+  - DeepSeek / OpenAI Responses：开启时发送 `reasoning.effort = high`
 - 按钮状态优先于额外请求参数，避免界面状态与实际请求不一致。
-- 火山方舟配置支持 Web Search 工具。
+- OpenAI Responses 配置（DeepSeek / 火山方舟）支持原生 Web Search 工具。
+- OpenAI Completions / Anthropic Messages 也会按各自格式发送联网搜索工具（是否生效取决于服务商支持）。
 - 深度思考和联网搜索状态会持久化保存。
 
 ### 原生 Markdown
@@ -40,7 +42,8 @@ Guncat AI 是使用 ArkTS 与 ArkUI 开发的原生 HarmonyOS AI 对话客户端
 
 - 支持从系统图片选择器或文件选择器添加附件。
 - 支持图片预览、文本提取、Office 文档与 PDF 解析。
-- 可选择预解析附件，或通过 Responses API 直接传递多模态内容。
+- 可选择预解析附件，或通过 OpenAI Responses / Anthropic Messages 直接传递多模态内容。
+- OpenAI Responses 附件采用混合策略：小图 Base64 内联，大图/火山方舟文档优先走 Files API 上传 `file_id`。
 - 文件解析带状态提示、失败重试和并发节流。
 - 图片附件自动生成 256px 缩略图渲染，点击查看原图，降低大图内存占用。
 
@@ -96,6 +99,14 @@ Guncat AI 是使用 ArkTS 与 ArkUI 开发的原生 HarmonyOS AI 对话客户端
 - 对话、当前智能体、API 配置、功能开关及朗读配置均保存在本地。
 - 支持新建、切换和删除对话。
 - 跟随系统切换深色/浅色主题，并同步状态栏、导航栏和 Markdown 样式。
+
+### UI 与动效（5.0.0）
+
+- 全新柔和现代 UI：低饱和配色、大圆角、白色轻立体按钮、柔和阴影，去除复杂描边与发光装饰。
+- 开屏飞入动效：启动页图标从中心向外依次弹性飞入，全程清晰，无模糊渐变或交叉淡化闪烁。
+- 一镜到底中央图标：启动页中央图标使用单一 hero 节点平滑移动、放大到页面空状态中央，无“变白再清晰”的闪变。
+- 底部输入区从屏幕下方外侧平滑滑入，无回弹、无从上掉落的生硬感。
+- 侧边栏、设置弹层、关于弹层等浮层自然遮盖底层 hero 图标，不会出现图标悬浮在浮层之上的问题。
 
 ## 内置智能体
 
@@ -228,18 +239,19 @@ hvigorw --mode module -p product=default -p module=entry@default -p buildMode=de
 
 应用设置中可保存并切换多套 API 配置：
 
-1. Provider
+1. 接入方式（`openai-completions` / `openai-responses` / `anthropic-messages`）
 2. Base URL
 3. API Key
 4. Model
 5. Temperature、Top P、最大输出 Token 等可选参数
 6. 额外请求参数
 
-火山方舟默认地址：
+常用兼容地址：
 
-```text
-https://ark.cn-beijing.volces.com/api/v3
-```
+- DeepSeek Responses：`https://api.deepseek.com`
+- DeepSeek Anthropic：`https://api.deepseek.com/anthropic`，也可直接填 `https://api.deepseek.com`（应用自动补全 `/anthropic/v1/messages`）
+- 火山方舟 Responses：`https://ark.cn-beijing.volces.com/api/v3`
+- Anthropic Messages：`https://api.anthropic.com/v1`
 
 多模态预解析可单独配置模型、地址和 API Key。
 
@@ -248,7 +260,7 @@ https://ark.cn-beijing.volces.com/api/v3
 ### 基本对话
 
 1. 首次启动后打开设置。
-2. 新建或选择 API 配置，填写 Provider、Base URL、API Key 和模型名称。
+2. 新建或选择 API 配置，填写接入方式、Base URL、API Key 和模型名称。
 3. 从侧边栏选择智能体。
 4. 输入消息并发送。
 
@@ -261,11 +273,22 @@ https://ark.cn-beijing.volces.com/api/v3
 
 也可以在图库或文件管理器中选择内容，通过系统“分享”选择 Guncat AI。应用只会把内容放入待发送附件，不会自动提交请求。
 
+#### 附件直传策略
+
+- OpenAI Completions：小图使用 `image_url` 内联，大图自动上传 Files API 后使用 `file` + `file_id`；文档使用 `file_url`。
+- Anthropic Messages：小图使用 base64 `image` 内容块内联，大图自动上传 Files API 后使用 `source.type = file` + `file_id`；文档会发送 `document` 块。
+- OpenAI Responses：
+  - 小图（≤4MB）：Base64 内联发送。
+  - 大图（>4MB）：自动上传 Files API，使用 `input_image.file_id`。
+  - 文档：自动上传 Files API 后使用 `input_file.file_id`，或内联 `input_file.file_data`。
+  - 上传失败会自动回退 Base64。
+- 如果服务商不支持某种文档/图片块，服务端会返回错误；应用会原样展示错误，不会在客户端擅自丢弃。
+
 ### 深度思考
 
-- 关闭按钮会显式发送 `thinking: { "type": "disabled" }`。
-- 打开按钮会显式发送 `thinking: { "type": "enabled" }`。
-- 适用于支持该参数的火山方舟 Responses API 模型。
+- 火山方舟：关闭发送 `thinking: { "type": "disabled" }`，打开发送 `thinking: { "type": "enabled" }`。
+- DeepSeek / OpenAI Responses：打开时发送 `reasoning: { "effort": "high" }`。
+- 适用于支持对应参数的 OpenAI Responses API 模型。
 
 ### 朗读
 
@@ -300,6 +323,15 @@ https://ark.cn-beijing.volces.com/api/v3
 - 从系统分享接收的内容不会自动发送，必须由用户主动点击发送。
 - 原始附件不会作为永久文件复制到应用数据中。
 - 网络请求使用 HTTPS，实际数据处理政策以所配置的模型服务商为准。
+
+## 5.0.0 更新
+
+- API 接入方式统一为三种主流协议：OpenAI Completions、OpenAI Responses、Anthropic Messages；移除 DeepSeek / 火山方舟独立预设，旧配置自动迁移。
+- DeepSeek 接入升级为最新 Responses API，支持原生联网搜索、识图版图片直传与 Files API `file_id` 混合上传。
+- 新增 Anthropic Messages 支持，兼容 DeepSeek Anthropic 端点（`https://api.deepseek.com/anthropic`），支持图片直传与联网搜索。
+- 表格识别页改为动态展示所有 API Profile 的主模型与多模态解析模型，去重后可直接选择；兼容 DeepSeek 视觉模型输出（关闭思考模式、全角尖括号归一化、Markdown 表格兜底）。
+- 优化模型切换菜单：选项统一宽度、文字居中、菜单圆角与轻阴影。
+- 优化侧边栏抽屉阴影：全屏 scrim 固定覆盖，滑动过程中右侧始终有阴影，点击空白可关闭。
 
 ## 4.4.0 更新
 
@@ -341,7 +373,7 @@ https://ark.cn-beijing.volces.com/api/v3
 ### API Key 无效
 
 - 检查是否带有多余空格。
-- 确认模型、Provider 与 Base URL 匹配。
+- 确认模型、接入方式与 Base URL 匹配。
 - 检查账户额度、接口权限和网络连接。
 
 ### 文件解析失败

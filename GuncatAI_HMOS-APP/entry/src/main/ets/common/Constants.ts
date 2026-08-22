@@ -1,7 +1,7 @@
 export class Constants {
   // App info
   static readonly APP_NAME: string = 'Guncat AI';
-  static readonly APP_VERSION: string = '4.4.0';
+  static readonly APP_VERSION: string = '5.0.0';
 
   // LocalStorage keys (统一存放在 Preferences 中, key 名字符串)
   static readonly LS_KEY_CONVERSATIONS: string = 'guncat_conversations';
@@ -14,14 +14,13 @@ export class Constants {
   static readonly LS_KEY_AUTO_READ_ENABLED: string = 'guncat_auto_read_enabled';
   static readonly LS_KEY_CURRENT_AGENT_ID: string = 'guncat_current_agent';
   static readonly LS_KEY_CURRENT_CONV_ID: string = 'guncat_current_conv';
-  // 表格识别页当前选择的平台 ('zhipu' / 'volc'), 决定引用多模态解析还是主模型配置
+  // 表格识别页当前选择的配置 ('multimodal' / 'main'), 决定引用多模态解析还是主模型配置
   static readonly LS_KEY_TABLE_OCR_PROVIDER: string = 'table_ocr_provider';
 
   // API presets
-  static readonly PRESET_DEEPSEEK_BASE_URL: string = 'https://api.deepseek.com';
-  static readonly PRESET_DEEPSEEK_MODEL: string = 'deepseek-chat';
-  static readonly PRESET_VOLCANO_BASE_URL: string = 'https://ark.cn-beijing.volces.com/api/v3';
-  static readonly PRESET_VOLCANO_MODEL: string = '';
+  static readonly PRESET_OPENAI_COMPLETIONS_BASE_URL: string = 'https://api.openai.com/v1';
+  static readonly PRESET_OPENAI_RESPONSES_BASE_URL: string = 'https://api.openai.com/v1';
+  static readonly PRESET_ANTHROPIC_BASE_URL: string = 'https://api.anthropic.com/v1';
 
   // Default multimodal model
   static readonly DEFAULT_MM_BASE_URL: string = 'https://open.bigmodel.cn/api/paas/v4';
@@ -30,6 +29,9 @@ export class Constants {
   // API endpoints
   static readonly CHAT_COMPLETIONS_PATH: string = '/chat/completions';
   static readonly RESPONSES_PATH: string = '/responses';
+  static readonly MESSAGES_PATH: string = '/messages';
+  static readonly ANTHROPIC_V1_MESSAGES_PATH: string = '/v1/messages';
+  static readonly ANTHROPIC_DEEPSEEK_MESSAGES_PATH: string = '/anthropic/v1/messages';
 
   // SSE
   static readonly SSE_DONE_TOKEN: string = '[DONE]';

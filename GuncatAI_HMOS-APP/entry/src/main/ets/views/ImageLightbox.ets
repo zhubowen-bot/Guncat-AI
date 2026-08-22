@@ -21,9 +21,9 @@ export struct ImageLightbox {
         Image(this.imageUrl)
           .objectFit(ImageFit.Contain)
           .constraintSize({ maxWidth: '90%', maxHeight: '80%' })
-          .borderRadius(12)
+          .borderRadius(24)
           .backgroundColor(Color.Black)
-          .shadow({ radius: 20, color: '#66000000', offsetX: 0, offsetY: 4 })
+          .shadow({ radius: 24, color: '#4D000000', offsetX: 0, offsetY: 8 })
           .onClick(() => {
             this.onClose();
           })

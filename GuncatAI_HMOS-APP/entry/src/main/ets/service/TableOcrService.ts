@@ -84,7 +84,8 @@ export class TableOcrService {
 
     let dataUrl: string = 'data:' + imageData.mimeType + ';base64,' +
       arrayBufferToBase64(imageData.bytes);
-    let textPart: Record<string, string> = { type: 'text', text: TABLE_OCR_PROMPT };
+    let systemMsg: Record<string, string> = { role: 'system', content: TABLE_OCR_PROMPT };
+    let textPart: Record<string, string> = { type: 'text', text: '请识别图片中的表格，并严格按照系统要求只输出 HTML <table>。' };
     let imagePart: Record<string, Object> = {
       type: 'image_url',
       image_url: { url: dataUrl }
@@ -92,10 +93,14 @@ export class TableOcrService {
     let userMsg: Record<string, Object> = { role: 'user', content: [textPart, imagePart] };
     let body: Record<string, Object> = {
       model: model,
-      messages: [userMsg],
+      messages: [systemMsg, userMsg],
       temperature: 0.1,
       max_tokens: 4096
     };
+    // DeepSeek 视觉模型默认可能进入思考模式，导致 content 为空；表格识别不需要深度思考。
+    if (model.toLowerCase().indexOf('deepseek') !== -1 || baseUrl.indexOf('deepseek.com') !== -1) {
+      body['thinking'] = { type: 'disabled' };
+    }
     let bodyStr: string = JSON.stringify(body);
 
     let httpRequest: http.HttpRequest = http.createHttp();
@@ -146,6 +151,10 @@ export class TableOcrService {
       if (typeof content !== 'string') {
         throw new Error('API 返回内容为空');
       }
+      if (content.trim() === '') {
+        let snippet: string = responseStr.length > 500 ? responseStr.substring(0, 500) : responseStr;
+        throw new Error('模型返回内容为空，原始响应：' + snippet);
+      }
       return content;
     } finally {
       try {
@@ -160,9 +169,16 @@ export class TableOcrService {
   static cleanHtml(raw: string): string {
     let s: string = raw.trim();
     s = s.replace(/^```(?:html)?\s*\n?/i, '').replace(/\n?```\s*$/i, '');
+    // 兼容模型输出全角尖括号（＜ ＞）的情况
+    s = s.replace(/＜/g, '<').replace(/＞/g, '>');
     let match: RegExpMatchArray | null = s.match(/<table[\s\S]*<\/table>/i);
     if (match !== null) {
-      s = match[0];
+      return match[0].trim();
+    }
+    // 兼容输出被截断、缺少 </table> 的情况：从 <table 开始尽量保留后续内容
+    let openIndex: number = s.search(/<table/i);
+    if (openIndex !== -1) {
+      return s.substring(openIndex).trim();
     }
     return s.trim();
   }

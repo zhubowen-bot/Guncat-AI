@@ -58,7 +58,7 @@ export struct MessageInputView {
       this.buildSendButton()
     }
     .width('100%')
-    .padding({ left: 14, right: 8, top: 4, bottom: 8 })
+    .padding({ left: 14, right: 10, top: 2, bottom: 10 })
     .alignItems(VerticalAlign.Bottom)
   }
 
@@ -66,15 +66,16 @@ export struct MessageInputView {
   buildVoiceButton() {
     Button() {
       SymbolGlyph($r('sys.symbol.mic_fill'))
-        .fontSize(20)
+        .fontSize(19)
         .fontColor([this.isListening ? Color.White : $r('app.color.text_secondary')])
     }
-    .width(32)
-    .height(32)
-    .borderRadius(16)
-    .backgroundColor(this.isListening ? $r('app.color.brand') : Color.Transparent)
-    // 底部对齐的 Row 中 32 高按钮中心偏低 4vp, 用 bottom margin 上移与 40 高的右侧按钮对齐
-    .margin({ right: 2, bottom: 4 })
+    .width(38)
+    .height(38)
+    .borderRadius(19)
+    .backgroundColor(this.isListening ? $r('app.color.brand') : $r('app.color.raised_surface'))
+    .shadow({ radius: 12, color: '#14000000', offsetX: 0, offsetY: 3 })
+    // 底部对齐的 Row 中 38 高按钮中心偏低 4vp, 用 bottom margin 上移与 42 高的右侧按钮对齐
+    .margin({ right: 6, bottom: 2 })
     .onClick(() => {
       if (!this.isStreaming && !this.isParsing) {
         this.onVoiceInput();
@@ -86,14 +87,15 @@ export struct MessageInputView {
   buildCameraButton() {
     Button() {
       SymbolGlyph($r('sys.symbol.camera_fill'))
-        .fontSize(20)
+        .fontSize(19)
         .fontColor([$r('app.color.text_secondary')])
     }
-    .width(32)
-    .height(32)
-    .borderRadius(16)
-    .backgroundColor(Color.Transparent)
-    .margin({ left: 2, right: 10, bottom: 4 })
+    .width(38)
+    .height(38)
+    .borderRadius(19)
+    .backgroundColor($r('app.color.raised_surface'))
+    .shadow({ radius: 12, color: '#14000000', offsetX: 0, offsetY: 3 })
+    .margin({ left: 0, right: 8, bottom: 2 })
     .onClick(() => {
       if (!this.isStreaming && !this.isParsing && !this.isListening) {
         this.onCameraCapture();
@@ -122,7 +124,6 @@ export struct MessageInputView {
     .layoutWeight(1)
     .backgroundColor($r('app.color.input_bg'))
     .borderRadius(20)
-    .border({ width: 1, color: $r('app.color.border') })
     .alignItems(VerticalAlign.Center)
   }
 
@@ -140,11 +141,12 @@ export struct MessageInputView {
           .fontColor([$r('app.color.text_secondary')])
       }
     }
-    .width(40)
-    .height(40)
-    .borderRadius(20)
-    .backgroundColor(this.isParsing ? $r('app.color.brand_light') : Color.Transparent)
-    .margin({ left: 4 })
+    .width(42)
+    .height(42)
+    .borderRadius(21)
+    .backgroundColor(this.isParsing ? $r('app.color.brand_light') : $r('app.color.raised_surface'))
+    .shadow({ radius: 12, color: '#14000000', offsetX: 0, offsetY: 3 })
+    .margin({ left: 8 })
     .onClick(() => {
       if (!this.isStreaming && !this.isParsing && !this.isListening) {
         this.onFileUpload();
@@ -166,11 +168,11 @@ export struct MessageInputView {
         .width(20)
         .height(20)
       }
-      .width(40)
-      .height(40)
-      .borderRadius(20)
+      .width(42)
+      .height(42)
+      .borderRadius(21)
       .backgroundColor($r('app.color.stop_btn'))
-      .margin({ left: 4 })
+      .margin({ left: 8 })
       .onClick(() => {
         this.onStop();
       })
@@ -180,12 +182,12 @@ export struct MessageInputView {
           .fontSize(18)
           .fontColor([Color.White])
       }
-      .width(40)
-      .height(40)
-      .borderRadius(20)
+      .width(42)
+      .height(42)
+      .borderRadius(21)
       .backgroundColor((this.inputText.trim() !== '' && !this.isParsing && !this.isListening) ?
         $r('app.color.brand') : $r('app.color.text_tertiary'))
-      .margin({ left: 4 })
+      .margin({ left: 8 })
       .onClick(() => {
         // 只有在非解析中且有文本时,才真正发送并清空
         if (this.isParsing || this.isListening) {

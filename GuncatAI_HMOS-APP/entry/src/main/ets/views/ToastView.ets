@@ -11,7 +11,7 @@ export struct ToastView {
         .padding({ left: 16, right: 16, top: 10, bottom: 10 })
     }
     .backgroundColor($r('app.color.toast_bg'))
-    .borderRadius(20)
-    .shadow({ radius: 8, color: '#33000000', offsetX: 0, offsetY: 4 })
+    .borderRadius(24)
+    .shadow({ radius: 18, color: '#22000000', offsetX: 0, offsetY: 6 })
   }
 }

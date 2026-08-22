@@ -43,7 +43,7 @@ export struct RichTextView {
   // 主题切换时由 onSystemColorModeChange() 调用以强制重新渲染数学公式 (清空旧 pixelMap 缓存)
   private initializeController(): void {
     this.controller = new MarkdownController();
-    // 主题色统一改成蓝色, 与项目 brand (#2563EB / #3B82F6) 一致
+    // 主题色统一改成蓝色, 与项目 brand (#0A7AFF / #409CFF) 一致
     // 必须显式设置正文颜色, 否则库默认黑色, 在深色模式下看不见
     this.controller
       .setTextColor($r('app.color.text_primary'))
@@ -60,8 +60,8 @@ export struct RichTextView {
       .setQuoteBackgroundColor($r('app.color.brand_light'))
       .setQuoteTextColor($r('app.color.text_primary'))
       .setQuoteBorderWidth(3)
-      .setQuoteBorderRadius(6)
-      .setQuotePadding({ left: 12, right: 10, top: 8, bottom: 8 })
+      .setQuoteBorderRadius(12)
+      .setQuotePadding({ left: 14, right: 12, top: 10, bottom: 10 })
       .setHyperlinkTextColor($r('app.color.brand'))
       .setHyperlinkUnderlineState(true)
       .setUlPointColor($r('app.color.brand'))
@@ -78,7 +78,7 @@ export struct RichTextView {
       .setTableTitleTextColor($r('app.color.brand'))
       .setTableOuterBorderColor($r('app.color.border'))
       .setTableInnerBorderColor($r('app.color.border'))
-      .setTableBorderRadius(6);
+      .setTableBorderRadius(14);
 
     // setTableNormalTextColor / setTableInterleaveTextColor 返回 void, 不可链式, 单独调用
     this.controller.setTableNormalTextColor($r('app.color.text_primary'));
@@ -128,20 +128,20 @@ export struct RichTextView {
 
   // setLatexMathTextColor 只接受 number (十六进制), 不能用 $r
   // 库默认 0xFF000000 (黑色), 在深色模式下整段公式看不清
-  // 这里按主题切换, 浅色用 text_primary 的 #1E293B, 深色用 #F1F5F9
+  // 这里按主题切换, 浅色用 text_primary 的 #1B2330, 深色用 #EDF0F5
   private applyLatexMathTextColor(isDark: boolean): void {
-    this.controller.setLatexMathTextColor(isDark ? 0xFFF1F5F9 : 0xFF1E293B);
+    this.controller.setLatexMathTextColor(isDark ? 0xFFEDF0F5 : 0xFF1B2330);
   }
 
   // 浅色模式语法高亮: 暖色调, 适配 #F9FAFB 背景
   private lightHighlight(): CodeHighlight {
     const h = new CodeHighlight();
     h.keyword = '#7C3AED';     // 关键字 (紫)
-    h.method = '#2563EB';      // 方法名 (蓝)
+    h.method = '#0A7AFF';      // 方法名 (蓝)
     h.type = '#0891B2';        // 类型 (青)
     h.modifier = '#7C3AED';    // 修饰符 (紫)
     h.constant = '#EA580C';    // 常量 (橙)
-    h.variable = '#1E293B';    // 变量 (深灰)
+    h.variable = '#1B2330';    // 变量 (深灰)
     h.operator = '#475569';    // 操作符 (灰)
     h.punctuation = '#475569'; // 标点 (灰)
     h.brace = '#475569';       // 小括号 (灰)
@@ -157,20 +157,20 @@ export struct RichTextView {
     h.doctype = '#475569';     // doctype (灰)
     h.comment = '#94A3B8';     // 注释 (浅灰)
     h.decorator = '#7C3AED';   // 装饰器 (紫)
-    h.component = '#2563EB';   // 组件 (蓝)
-    h.normal = '#1E293B';      // 普通文本 (深灰)
+    h.component = '#0A7AFF';   // 组件 (蓝)
+    h.normal = '#1B2330';      // 普通文本 (深灰)
     return h;
   }
 
-  // 深色模式语法高亮: 高饱和暖色, 适配 #181A1F 深背景
+  // 深色模式语法高亮: 高饱和暖色, 适配 #111418 深背景
   private darkHighlight(): CodeHighlight {
     const h = new CodeHighlight();
     h.keyword = '#C4B5FD';     // 关键字 (浅紫)
-    h.method = '#93C5FD';      // 方法名 (浅蓝)
+    h.method = '#409CFF';      // 方法名 (浅蓝)
     h.type = '#67E8F9';        // 类型 (浅青)
     h.modifier = '#C4B5FD';    // 修饰符 (浅紫)
     h.constant = '#FDBA74';    // 常量 (浅橙)
-    h.variable = '#E2E8F0';    // 变量 (浅灰)
+    h.variable = '#EDF0F5';    // 变量 (浅灰)
     h.operator = '#CBD5E1';    // 操作符 (灰)
     h.punctuation = '#CBD5E1'; // 标点 (灰)
     h.brace = '#CBD5E1';       // 小括号 (灰)
@@ -186,8 +186,8 @@ export struct RichTextView {
     h.doctype = '#CBD5E1';     // doctype (灰)
     h.comment = '#64748B';     // 注释 (中灰)
     h.decorator = '#C4B5FD';   // 装饰器 (浅紫)
-    h.component = '#93C5FD';   // 组件 (浅蓝)
-    h.normal = '#E2E8F0';      // 普通文本 (浅灰)
+    h.component = '#409CFF';   // 组件 (浅蓝)
+    h.normal = '#EDF0F5';      // 普通文本 (浅灰)
     return h;
   }
 
@@ -202,7 +202,7 @@ export struct RichTextView {
           mode: 'text',
         })
           .width('100%')
-          .padding({ left: 14, right: 14, top: 10, bottom: 10 })
+          .padding({ left: 16, right: 16, top: 14, bottom: 14 })
       } else {
         Markdown({
           controller: this.controller,
@@ -210,7 +210,7 @@ export struct RichTextView {
           mode: 'text',
         })
           .width('100%')
-          .padding({ left: 14, right: 14, top: 10, bottom: 10 })
+          .padding({ left: 16, right: 16, top: 14, bottom: 14 })
       }
     }
     .width('100%')

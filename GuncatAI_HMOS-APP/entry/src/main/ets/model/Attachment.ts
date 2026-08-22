@@ -5,15 +5,18 @@ export class Attachment {
   type: string = 'file';
   thumbnail: string = '';
   dataUrl: string = '';
+  // Files API 上传后返回的 file_id；为空时回退到 dataUrl 内联发送
+  fileId: string = '';
 
   static of(name: string, parsedText: string, type: string,
-    thumbnail: string, dataUrl: string): Attachment {
+    thumbnail: string, dataUrl: string, fileId: string): Attachment {
     let att: Attachment = new Attachment();
     att.name = name;
     att.parsedText = parsedText;
     att.type = type;
     att.thumbnail = thumbnail;
     att.dataUrl = dataUrl;
+    att.fileId = fileId;
     return att;
   }
 
@@ -24,6 +27,7 @@ export class Attachment {
     att.type = (json['type'] as string) ?? 'file';
     att.thumbnail = (json['thumbnail'] as string) ?? '';
     att.dataUrl = (json['dataUrl'] as string) ?? '';
+    att.fileId = (json['fileId'] as string) ?? '';
     return att;
   }
 
@@ -33,7 +37,8 @@ export class Attachment {
       'parsedText': this.parsedText,
       'type': this.type,
       'thumbnail': this.thumbnail,
-      'dataUrl': this.dataUrl
+      'dataUrl': this.dataUrl,
+      'fileId': this.fileId
     };
   }
 }

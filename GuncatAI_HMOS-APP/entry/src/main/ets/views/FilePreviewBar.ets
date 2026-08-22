@@ -28,9 +28,9 @@ export struct FilePreviewBar {
     Row() {
       if (file.type.startsWith('image/') && file.thumbnail !== '') {
         Image(file.thumbnail)
-          .width(36)
-          .height(36)
-          .borderRadius(6)
+          .width(38)
+          .height(38)
+          .borderRadius(12)
           .objectFit(ImageFit.Cover)
           .backgroundColor(Color.White)
       } else {
@@ -56,12 +56,12 @@ export struct FilePreviewBar {
         } else if (file.error) {
           Text('解析失败')
             .fontSize(11)
-            .fontColor('#DC2626')
+            .fontColor($r('app.color.danger'))
             .margin({ top: 2 })
         } else {
           Text('已就绪')
             .fontSize(11)
-            .fontColor('#16A34A')
+            .fontColor($r('app.color.success'))
             .margin({ top: 2 })
         }
       }
@@ -78,10 +78,11 @@ export struct FilePreviewBar {
           })
       }
     }
-    .padding({ left: 8, right: 6, top: 6, bottom: 6 })
-    .backgroundColor(file.error ? '#FEE2E2' : $r('app.color.brand_light'))
-    .borderRadius(12)
-    .margin({ right: 8 })
-    .constraintSize({ maxWidth: 220 })
+    .padding({ left: 12, right: 10, top: 8, bottom: 8 })
+    .backgroundColor(file.error ? '#FBE5E5' : $r('app.color.raised_surface'))
+    .shadow({ radius: 10, color: '#12000000', offsetX: 0, offsetY: 2 })
+    .borderRadius(18)
+    .margin({ right: 10 })
+    .constraintSize({ maxWidth: 230 })
   }
 }

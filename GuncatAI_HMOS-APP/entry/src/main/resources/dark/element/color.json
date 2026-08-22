@@ -2,35 +2,39 @@
   "color": [
     {
       "name": "background",
-      "value": "#0F172A"
+      "value": "#111418"
     },
     {
       "name": "surface",
-      "value": "#1E293B"
+      "value": "#1B1F27"
+    },
+    {
+      "name": "raised_surface",
+      "value": "#252B34"
     },
     {
       "name": "surface_secondary",
-      "value": "#334155"
+      "value": "#252B34"
     },
     {
       "name": "text_primary",
-      "value": "#F1F5F9"
+      "value": "#EDF0F5"
     },
     {
       "name": "text_secondary",
-      "value": "#94A3B8"
+      "value": "#9AA3B2"
     },
     {
       "name": "text_tertiary",
-      "value": "#64748B"
+      "value": "#6B7280"
     },
     {
       "name": "brand",
-      "value": "#3B82F6"
+      "value": "#409CFF"
     },
     {
       "name": "brand_pressed",
-      "value": "#2563EB"
+      "value": "#2B7FFF"
     },
     {
       "name": "brand_light",
@@ -38,67 +42,67 @@
     },
     {
       "name": "user_msg",
-      "value": "#3B82F6"
+      "value": "#409CFF"
     },
     {
       "name": "ai_msg",
-      "value": "#1E293B"
+      "value": "#20252E"
     },
     {
       "name": "border",
-      "value": "#334155"
+      "value": "#2C333E"
     },
     {
       "name": "divider",
-      "value": "#334155"
+      "value": "#2C333E"
     },
     {
       "name": "shadow",
-      "value": "#66000000"
+      "value": "#30000000"
     },
     {
       "name": "toast_bg",
-      "value": "#334155"
+      "value": "#343B47"
     },
     {
       "name": "input_bg",
-      "value": "#0F172A"
+      "value": "#20252E"
     },
     {
       "name": "header_bg",
-      "value": "#1E293B"
+      "value": "#1B1F27"
     },
     {
       "name": "frosted_glass",
-      "value": "#1E293B"
+      "value": "#1B1F27"
     },
     {
       "name": "toggle_active",
-      "value": "#22C55E"
+      "value": "#3DBE64"
     },
     {
       "name": "toggle_inactive",
-      "value": "#475569"
+      "value": "#3A414E"
     },
     {
       "name": "danger",
-      "value": "#F87171"
+      "value": "#F0716B"
     },
     {
       "name": "warning",
-      "value": "#FBBF24"
+      "value": "#E8B44C"
     },
     {
       "name": "success",
-      "value": "#34D399"
+      "value": "#6BCB77"
     },
     {
       "name": "code_bg",
-      "value": "#0F172A"
+      "value": "#0F1218"
     },
     {
       "name": "code_text",
-      "value": "#E2E8F0"
+      "value": "#E5E9F0"
     },
     {
       "name": "modal_backdrop",
@@ -106,7 +110,7 @@
     },
     {
       "name": "stop_btn",
-      "value": "#EF4444"
+      "value": "#F0716B"
     }
   ]
 }

@@ -1,6 +1,10 @@
 // API 配置 (对齐 web 版本的 guncat_api_config 结构)
+// 接入方式统一为三种主流协议：
+//   openai-completions: OpenAI Chat Completions  /chat/completions
+//   openai-responses:   OpenAI Responses         /responses（DeepSeek、火山方舟等兼容服务）
+//   anthropic-messages: Anthropic Messages       /messages
 export class ApiConfig {
-  provider: string = 'custom';
+  provider: string = 'openai-completions';
   baseUrl: string = '';
   apiKey: string = '';
   model: string = '';
@@ -13,25 +17,44 @@ export class ApiConfig {
     return new ApiConfig();
   }
 
-  static deepseekPreset(): ApiConfig {
+  static openAICompletionsPreset(): ApiConfig {
     let cfg: ApiConfig = new ApiConfig();
-    cfg.provider = 'deepseek';
-    cfg.baseUrl = 'https://api.deepseek.com';
-    cfg.model = 'deepseek-chat';
-    return cfg;
-  }
-
-  static volcanoPreset(): ApiConfig {
-    let cfg: ApiConfig = new ApiConfig();
-    cfg.provider = 'volcano';
-    cfg.baseUrl = 'https://ark.cn-beijing.volces.com/api/v3';
+    cfg.provider = 'openai-completions';
+    cfg.baseUrl = 'https://api.openai.com/v1';
     cfg.model = '';
     return cfg;
   }
 
+  static openAIResponsesPreset(): ApiConfig {
+    let cfg: ApiConfig = new ApiConfig();
+    cfg.provider = 'openai-responses';
+    cfg.baseUrl = 'https://api.openai.com/v1';
+    cfg.model = '';
+    return cfg;
+  }
+
+  static anthropicMessagesPreset(): ApiConfig {
+    let cfg: ApiConfig = new ApiConfig();
+    cfg.provider = 'anthropic-messages';
+    cfg.baseUrl = 'https://api.anthropic.com/v1';
+    cfg.model = '';
+    return cfg;
+  }
+
+  // 旧版本 provider 迁移：custom/deepseek/volcano 统一映射到三种协议。
+  static normalizeProvider(provider: string): string {
+    if (provider === 'custom' || provider === '') {
+      return 'openai-completions';
+    }
+    if (provider === 'deepseek' || provider === 'volcano') {
+      return 'openai-responses';
+    }
+    return provider;
+  }
+
   static fromJson(json: Record<string, Object>): ApiConfig {
     let cfg: ApiConfig = new ApiConfig();
-    cfg.provider = (json['provider'] as string) ?? 'custom';
+    cfg.provider = ApiConfig.normalizeProvider((json['provider'] as string) ?? '');
     cfg.baseUrl = (json['baseUrl'] as string) ?? '';
     cfg.apiKey = (json['apiKey'] as string) ?? '';
     cfg.model = (json['model'] as string) ?? '';

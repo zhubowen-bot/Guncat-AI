@@ -69,9 +69,9 @@ export struct ChatBubbleView {
           // 文本
           Text(this.message.displayContent !== '' ? this.message.displayContent : this.message.content)
             .fontSize(15)
-            .fontColor(Color.White)
+            .fontColor($r('app.color.text_primary'))
             .lineHeight(22)
-            .padding({ left: 14, right: 14, top: 10, bottom: 10 })
+            .padding({ left: 18, right: 18, top: 12, bottom: 12 })
 
           // 附件
           if (this.message.attachments.length > 0) {
@@ -81,12 +81,13 @@ export struct ChatBubbleView {
         // 显式声明 HorizontalAlign.Start, 确保附件区与文字左对齐,
         // 避免默认行为在某些场景下把子项推到边线
         .alignItems(HorizontalAlign.Start)
-        .backgroundColor($r('app.color.user_msg'))
-        .borderRadius({ topLeft: 16, topRight: 16, bottomLeft: 16, bottomRight: 4 })
+        .backgroundColor($r('app.color.raised_surface'))
+        .borderRadius({ topLeft: 22, topRight: 22, bottomLeft: 22, bottomRight: 8 })
+        .shadow({ radius: 14, color: '#14000000', offsetX: 0, offsetY: 4 })
         .constraintSize({ maxWidth: '82%' })
       }
       .width('100%')
-      .padding({ left: 60, right: 12, top: 6, bottom: 6 })
+      .padding({ left: 60, right: 16, top: 8, bottom: 8 })
     }
     .width('100%')
     .alignItems(HorizontalAlign.End)
@@ -95,18 +96,17 @@ export struct ChatBubbleView {
   @Builder
   buildUserAttachments() {
     // 用 Column 显式包裹 + padding, 不依赖 Flex 自身 width('100%') 的隐式尺寸.
-    // 附件 padding-left 与上面 Text 的 14 一致, 图片不再设 left margin.
+    // 附件 padding-left 与上面 Text 的 18 一致, 图片不再设 left margin.
     Column() {
       Flex({ wrap: FlexWrap.Wrap, direction: FlexDirection.Row, justifyContent: FlexAlign.Start, alignItems: ItemAlign.Start }) {
         ForEach(this.message.attachments, (att: Attachment) => {
           if (att.type === 'image' && att.thumbnail !== '') {
             Image(att.thumbnail !== '' ? att.thumbnail : att.dataUrl)
-              .width(64)
-              .height(64)
+              .width(72)
+              .height(72)
               .objectFit(ImageFit.Cover)
-              .borderRadius(8)
-              .border({ width: 1, color: '#FFFFFF55' })
-              .margin({ top: 6, right: 4 })
+              .borderRadius(14)
+              .margin({ top: 8, right: 6 })
               .onClick(() => {
                 this.onImageTap(att.dataUrl !== '' ? att.dataUrl : att.thumbnail);
               })
@@ -124,11 +124,10 @@ export struct ChatBubbleView {
                 .layoutWeight(1)
                 .margin({ left: 4 })
             }
-            .padding({ left: 10, right: 10, top: 5, bottom: 5 })
-            .backgroundColor($r('app.color.surface'))
-            .border({ width: 1, color: $r('app.color.border') })
-            .borderRadius(10)
-            .margin({ top: 6, right: 4 })
+            .padding({ left: 12, right: 12, top: 7, bottom: 7 })
+            .backgroundColor($r('app.color.input_bg'))
+            .borderRadius(14)
+            .margin({ top: 8, right: 6 })
             .constraintSize({ maxWidth: 200 })
           }
         }, (att: Attachment) => att.name)
@@ -137,7 +136,7 @@ export struct ChatBubbleView {
     }
     .width('100%')
     .alignItems(HorizontalAlign.Start)
-    .padding({ left: 30, right: 30, top: 4, bottom: 15 })
+    .padding({ left: 18, right: 18, top: 4, bottom: 16 })
   }
 
   @Builder
@@ -145,9 +144,9 @@ export struct ChatBubbleView {
     Row() {
       // 头像
       Image($r('app.media.cat_avatar'))
-        .width(34)
-        .height(34)
-        .borderRadius(17)
+        .width(38)
+        .height(38)
+        .borderRadius(19)
         .objectFit(ImageFit.Cover)
         .backgroundColor($r('app.color.brand_light'))
         .margin({ top: 4 })
@@ -201,14 +200,15 @@ export struct ChatBubbleView {
       }
       .layoutWeight(1)
       .backgroundColor($r('app.color.ai_msg'))
-      .borderRadius({ topLeft: 4, topRight: 16, bottomLeft: 16, bottomRight: 16 })
-      .margin({ left: 10 })
-      .constraintSize({ maxWidth: '82%' })
+      .borderRadius({ topLeft: 8, topRight: 22, bottomLeft: 22, bottomRight: 22 })
+      .shadow({ radius: 14, color: '#12000000', offsetX: 0, offsetY: 4 })
+      .margin({ left: 12 })
+      .constraintSize({ maxWidth: '80%' })
 
       Blank()
     }
     .width('100%')
-    .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+    .padding({ left: 4, right: 16, top: 8, bottom: 8 })
     .alignItems(VerticalAlign.Top)
   }
 
@@ -226,7 +226,7 @@ export struct ChatBubbleView {
       this.buildActionChip('重新回答', false, () => this.onRegenerate(this.message.id))
     }
     .width('100%')
-    .padding({ left: 8, right: 8, top: 4, bottom: 8 })
+    .padding({ left: 10, right: 10, top: 6, bottom: 10 })
   }
 
   @Builder
@@ -234,11 +234,11 @@ export struct ChatBubbleView {
     Text(label)
       .fontSize(12)
       .fontColor(copied ? $r('app.color.success') : $r('app.color.text_secondary'))
-      .padding({ left: 10, right: 10, top: 4, bottom: 4 })
-      .borderRadius(12)
-      .border({ width: 1, color: copied ? $r('app.color.success') : $r('app.color.border') })
-      .backgroundColor($r('app.color.surface'))
-      .margin({ right: 6, bottom: 4 })
+      .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+      .borderRadius(16)
+      .backgroundColor($r('app.color.raised_surface'))
+      .shadow({ radius: 10, color: '#10000000', offsetX: 0, offsetY: 2 })
+      .margin({ right: 8, bottom: 6 })
       .onClick(() => {
         onTap();
       })

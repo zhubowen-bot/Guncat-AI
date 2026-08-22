@@ -1,6 +1,5 @@
 import { ApiConfig } from '../model/ApiConfig';
 import { MultimodalConfig } from '../model/MultimodalConfig';
-import { curves } from '@kit.ArkUI';
 
 // API 设置弹层 (对齐 web 版本 .modal / .settings)
 @Component
@@ -15,7 +14,7 @@ export struct SettingsPanel {
   @Prop selectedProfileIndex: number = 0;
   // 父组件传入的初始值 (只读). 父级用 @State vm 传过来,
   // 每次重新打开 SettingsPanel (条件渲染导致组件重建) 时 aboutToAppear 会重新同步
-  @Prop initProvider: string = 'custom';
+  @Prop initProvider: string = 'openai-completions';
   @Prop initBaseUrl: string = '';
   @Prop initApiKey: string = '';
   @Prop initModel: string = '';
@@ -28,7 +27,7 @@ export struct SettingsPanel {
   @Prop initMmModel: string = '';
   @Prop initMmPreparseEnabled: boolean = true;
   // 工作副本 (用户可编辑). 改回 @State, 不再被父级覆盖
-  @State provider: string = 'custom';
+  @State provider: string = 'openai-completions';
   @State profileName: string = '默认配置';
   @State baseUrl: string = '';
   @State apiKey: string = '';
@@ -115,16 +114,17 @@ export struct SettingsPanel {
                 .fontSize(16)
                 .fontColor($r('app.color.text_secondary'))
             }
-            .width(32)
-            .height(32)
-            .borderRadius(8)
-            .backgroundColor($r('app.color.surface_secondary'))
+            .width(36)
+            .height(36)
+            .borderRadius(18)
+            .backgroundColor($r('app.color.raised_surface'))
+            .shadow({ radius: 10, color: '#12000000', offsetX: 0, offsetY: 2 })
             .onClick(() => {
               this.onClose();
             })
           }
           .width('100%')
-          .padding({ left: 16, right: 16, top: 16, bottom: 12 })
+          .padding({ left: 20, right: 20, top: 18, bottom: 14 })
           .alignItems(VerticalAlign.Center)
 
           // 主体 (可滚动)
@@ -141,8 +141,8 @@ export struct SettingsPanel {
                   .optionBgColor($r('app.color.surface'))
                   .optionFontColor($r('app.color.text_primary'))
                   .layoutWeight(1)
-                  .height(40)
-                  .borderRadius(10)
+                  .height(44)
+                  .borderRadius(14)
                   .backgroundColor($r('app.color.surface_secondary'))
                   .onSelect((index: number) => {
                     this.onSelectProfile(index);
@@ -153,9 +153,9 @@ export struct SettingsPanel {
                     .fontSize(18)
                     .fontColor([$r('app.color.brand')])
                 }
-                .width(40)
-                .height(40)
-                .borderRadius(10)
+                .width(44)
+                .height(44)
+                .borderRadius(14)
                 .backgroundColor($r('app.color.brand_light'))
                 .margin({ left: 8 })
                 .onClick(() => {
@@ -165,10 +165,10 @@ export struct SettingsPanel {
               .width('100%')
 
               this.buildSectionHeader('配置名称')
-              TextInput({ placeholder: '例如：火山豆包 Pro', text: this.profileName })
+              TextInput({ placeholder: '例如：DeepSeek V4', text: this.profileName })
                 .width('100%')
-                .height(40)
-                .borderRadius(10)
+                .height(44)
+                .borderRadius(16)
                 .backgroundColor($r('app.color.surface_secondary'))
                 .padding({ left: 12, right: 12 })
                 .fontSize(14)
@@ -178,40 +178,61 @@ export struct SettingsPanel {
                   this.profileName = value;
                 })
 
-              this.buildSectionHeader('快速选择预设')
+              this.buildSectionHeader('快速选择接入方式')
 
-              // 预设按钮
+              // 三种主流接入方式预设
               Row() {
                 Button() {
-                  Text('Deepseek API')
-                    .fontSize(13)
+                  Text('OpenAI\nCompletions')
+                    .fontSize(11)
                     .fontColor($r('app.color.text_primary'))
+                    .textAlign(TextAlign.Center)
                 }
                 .layoutWeight(1)
-                .height(36)
-                .borderRadius(8)
-                .border({ width: 1, color: $r('app.color.border') })
-                .backgroundColor($r('app.color.surface_secondary'))
+                .height(48)
+                .borderRadius(16)
+                .backgroundColor($r('app.color.raised_surface'))
+                .shadow({ radius: 10, color: '#12000000', offsetX: 0, offsetY: 2 })
                 .onClick(() => {
-                  let cfg: ApiConfig = ApiConfig.deepseekPreset();
+                  let cfg: ApiConfig = ApiConfig.openAICompletionsPreset();
                   this.provider = cfg.provider;
                   this.baseUrl = cfg.baseUrl;
                   this.model = cfg.model;
                 })
 
                 Button() {
-                  Text('火山方舟引擎')
-                    .fontSize(13)
+                  Text('OpenAI\nResponses')
+                    .fontSize(11)
                     .fontColor($r('app.color.text_primary'))
+                    .textAlign(TextAlign.Center)
                 }
                 .layoutWeight(1)
-                .height(36)
-                .borderRadius(8)
-                .border({ width: 1, color: $r('app.color.border') })
-                .backgroundColor($r('app.color.surface_secondary'))
+                .height(48)
+                .borderRadius(16)
+                .backgroundColor($r('app.color.raised_surface'))
+                .shadow({ radius: 10, color: '#12000000', offsetX: 0, offsetY: 2 })
                 .margin({ left: 8 })
                 .onClick(() => {
-                  let cfg: ApiConfig = ApiConfig.volcanoPreset();
+                  let cfg: ApiConfig = ApiConfig.openAIResponsesPreset();
+                  this.provider = cfg.provider;
+                  this.baseUrl = cfg.baseUrl;
+                  this.model = cfg.model;
+                })
+
+                Button() {
+                  Text('Anthropic\nMessages')
+                    .fontSize(11)
+                    .fontColor($r('app.color.text_primary'))
+                    .textAlign(TextAlign.Center)
+                }
+                .layoutWeight(1)
+                .height(48)
+                .borderRadius(16)
+                .backgroundColor($r('app.color.raised_surface'))
+                .shadow({ radius: 10, color: '#12000000', offsetX: 0, offsetY: 2 })
+                .margin({ left: 8 })
+                .onClick(() => {
+                  let cfg: ApiConfig = ApiConfig.anthropicMessagesPreset();
                   this.provider = cfg.provider;
                   this.baseUrl = cfg.baseUrl;
                   this.model = cfg.model;
@@ -221,7 +242,11 @@ export struct SettingsPanel {
               .margin({ top: 12 })
 
               this.buildSectionHeader('接入方式')
-              Select([{ value: 'custom' }, { value: 'deepseek' }, { value: 'volcano' }])
+              Select([
+                { value: 'openai-completions' },
+                { value: 'openai-responses' },
+                { value: 'anthropic-messages' }
+              ])
                 .selected(this.getProviderIndex())
                 .value(this.getProviderLabel())
                 .fontColor($r('app.color.text_primary'))
@@ -230,24 +255,24 @@ export struct SettingsPanel {
                 .optionBgColor($r('app.color.surface'))
                 .optionFontColor($r('app.color.text_primary'))
                 .width('100%')
-                .height(40)
-                .borderRadius(10)
+                .height(44)
+                .borderRadius(16)
                 .backgroundColor($r('app.color.surface_secondary'))
                 .onSelect((index: number) => {
                   if (index === 0) {
-                    this.provider = 'custom';
+                    this.provider = 'openai-completions';
                   } else if (index === 1) {
-                    this.provider = 'deepseek';
+                    this.provider = 'openai-responses';
                   } else if (index === 2) {
-                    this.provider = 'volcano';
+                    this.provider = 'anthropic-messages';
                   }
                 })
 
               this.buildSectionHeader('Base URL')
-              TextInput({ placeholder: 'https://api.example.com/v1', text: this.baseUrl })
+              TextInput({ placeholder: this.getBaseUrlPlaceholder(), text: this.baseUrl })
                 .width('100%')
-                .height(40)
-                .borderRadius(10)
+                .height(44)
+                .borderRadius(16)
                 .backgroundColor($r('app.color.surface_secondary'))
                 .padding({ left: 12, right: 12 })
                 .fontSize(14)
@@ -261,8 +286,8 @@ export struct SettingsPanel {
               TextInput({ placeholder: 'sk-...', text: this.apiKey })
                 .type(InputType.Password)
                 .width('100%')
-                .height(40)
-                .borderRadius(10)
+                .height(44)
+                .borderRadius(16)
                 .backgroundColor($r('app.color.surface_secondary'))
                 .padding({ left: 12, right: 12 })
                 .fontSize(14)
@@ -273,10 +298,10 @@ export struct SettingsPanel {
                 })
 
               this.buildSectionHeader('模型名称 / Endpoint ID')
-              TextInput({ placeholder: 'deepseek-chat', text: this.model })
+              TextInput({ placeholder: this.getModelPlaceholder(), text: this.model })
                 .width('100%')
-                .height(40)
-                .borderRadius(10)
+                .height(44)
+                .borderRadius(16)
                 .backgroundColor($r('app.color.surface_secondary'))
                 .padding({ left: 12, right: 12 })
                 .fontSize(14)
@@ -300,6 +325,13 @@ export struct SettingsPanel {
                 .width('100%')
                 .margin({ top: 8 })
 
+              Text(this.getAutoCompleteHint())
+                .fontSize(12)
+                .fontColor($r('app.color.text_tertiary'))
+                .lineHeight(18)
+                .width('100%')
+                .margin({ top: 4 })
+
               // 保存按钮
               Button() {
                 Text('保存配置')
@@ -308,26 +340,28 @@ export struct SettingsPanel {
                   .fontColor(Color.White)
               }
               .width('100%')
-              .height(44)
-              .borderRadius(10)
+              .height(50)
+              .borderRadius(18)
               .backgroundColor($r('app.color.brand'))
-              .margin({ top: 12, bottom: 16 })
+              .margin({ top: 20, bottom: 24 })
               .onClick(() => {
                 this.onSave(this.profileName, this.buildConfig(), this.buildMmConfig());
               })
             }
             .width('100%')
-            .padding({ left: 16, right: 16, top: 4, bottom: 12 })
+            .padding({ left: 20, right: 20, top: 4, bottom: 24 })
           }
           .layoutWeight(1)
       }
       .width('100%')
-      .height('90%')
+      .height('92%')
       .backgroundColor($r('app.color.surface'))
-      .borderRadius({ topLeft: 20, topRight: 20 })
+      .borderRadius({ topLeft: 30, topRight: 30 })
+      .shadow({ radius: 28, color: '#1F000000', offsetX: 0, offsetY: -6 })
       .position({ x: 0, y: '100%' })
       .translate({ y: this.visible ? '-100%' : '0%' })
-      .animation({ curve: curves.responsiveSpringMotion(0.32, 0.92, 0.08) })
+      .opacity(this.visible ? 1 : 0)
+      .animation({ duration: 260, curve: Curve.EaseOut })
     }
     .width('100%')
     .height('100%')
@@ -343,7 +377,7 @@ export struct SettingsPanel {
       .fontWeight(FontWeight.Medium)
       .fontColor($r('app.color.text_secondary'))
       .width('100%')
-      .margin({ top: 12, bottom: 6 })
+      .margin({ top: 18, bottom: 8 })
   }
 
   private getProfileOptions(): SelectOption[] {
@@ -368,9 +402,8 @@ export struct SettingsPanel {
           .fontColor($r('app.color.text_secondary'))
       }
       .width('100%')
-      .padding({ top: 10, bottom: 10 })
-      .border({ width: { top: 1 }, color: $r('app.color.border') })
-      .margin({ top: 8 })
+      .padding({ top: 14, bottom: 14 })
+      .margin({ top: 12 })
       .onClick(() => {
         this.advancedOpen = !this.advancedOpen;
       })
@@ -380,8 +413,8 @@ export struct SettingsPanel {
           this.buildSectionHeader('Temperature')
           TextInput({ placeholder: '例如 0.7', text: this.temperature })
             .width('100%')
-            .height(40)
-            .borderRadius(10)
+            .height(44)
+            .borderRadius(16)
             .backgroundColor($r('app.color.surface_secondary'))
             .padding({ left: 12, right: 12 })
             .fontSize(14)
@@ -399,8 +432,8 @@ export struct SettingsPanel {
           this.buildSectionHeader('Top P')
           TextInput({ placeholder: '0.9', text: this.topP })
             .width('100%')
-            .height(40)
-            .borderRadius(10)
+            .height(44)
+            .borderRadius(16)
             .backgroundColor($r('app.color.surface_secondary'))
             .padding({ left: 12, right: 12 })
             .fontSize(14)
@@ -413,8 +446,8 @@ export struct SettingsPanel {
           this.buildSectionHeader('Max Tokens')
           TextInput({ placeholder: '4096', text: this.maxTokens })
             .width('100%')
-            .height(40)
-            .borderRadius(10)
+            .height(44)
+            .borderRadius(16)
             .backgroundColor($r('app.color.surface_secondary'))
             .padding({ left: 12, right: 12 })
             .fontSize(14)
@@ -428,7 +461,7 @@ export struct SettingsPanel {
           TextArea({ placeholder: '{"presence_penalty": 0, "frequency_penalty": 0}', text: this.extraBody })
             .width('100%')
             .height(80)
-            .borderRadius(10)
+            .borderRadius(16)
             .backgroundColor($r('app.color.surface_secondary'))
             .padding({ left: 12, right: 12, top: 8, bottom: 8 })
             .fontSize(13)
@@ -467,9 +500,8 @@ export struct SettingsPanel {
           .fontColor($r('app.color.text_secondary'))
       }
       .width('100%')
-      .padding({ top: 10, bottom: 10 })
-      .border({ width: { top: 1 }, color: $r('app.color.border') })
-      .margin({ top: 4 })
+      .padding({ top: 14, bottom: 14 })
+      .margin({ top: 12 })
       .onClick(() => {
         this.multimodalOpen = !this.multimodalOpen;
       })
@@ -485,7 +517,7 @@ export struct SettingsPanel {
                 .width('100%')
               Text(this.mmPreparseEnabled ?
                 '开启后先由下方独立 API 解析，再将文本交给主模型。' :
-                '关闭后图片和文档将直接传给火山主模型。')
+                '关闭后图片和文档将直接传给当前接入方式的主模型。')
                 .fontSize(11)
                 .fontColor($r('app.color.text_secondary'))
                 .width('100%')
@@ -505,7 +537,7 @@ export struct SettingsPanel {
           .alignItems(VerticalAlign.Center)
           .margin({ bottom: 12, top: 4 })
 
-          Text('默认使用智谱 GLM-4.6V-Flash。直传模式仅适用于支持图片/文档输入的火山方舟 Responses API 主模型。')
+          Text('默认使用 GLM-4.6V-Flash（免费API调用，请在智谱官网获取API Key），推荐使用 Doubao-Seed-2.0-mini 等轻量多模态模型。')
             .fontSize(11)
             .fontColor($r('app.color.text_secondary'))
             .width('100%')
@@ -516,8 +548,8 @@ export struct SettingsPanel {
             this.buildSectionHeader('Base URL')
             TextInput({ placeholder: 'https://open.bigmodel.cn/api/paas/v4', text: this.mmBaseUrl })
               .width('100%')
-              .height(40)
-              .borderRadius(10)
+              .height(44)
+              .borderRadius(16)
               .backgroundColor($r('app.color.surface_secondary'))
               .padding({ left: 12, right: 12 })
               .fontSize(14)
@@ -531,8 +563,8 @@ export struct SettingsPanel {
             TextInput({ placeholder: '...', text: this.mmApiKey })
               .type(InputType.Password)
               .width('100%')
-              .height(40)
-              .borderRadius(10)
+              .height(44)
+              .borderRadius(16)
               .backgroundColor($r('app.color.surface_secondary'))
               .padding({ left: 12, right: 12 })
               .fontSize(14)
@@ -545,8 +577,8 @@ export struct SettingsPanel {
             this.buildSectionHeader('模型名称')
             TextInput({ placeholder: 'glm-4.6v-flash', text: this.mmModel })
               .width('100%')
-              .height(40)
-              .borderRadius(10)
+              .height(44)
+              .borderRadius(16)
               .backgroundColor($r('app.color.surface_secondary'))
               .padding({ left: 12, right: 12 })
               .fontSize(14)
@@ -567,39 +599,81 @@ export struct SettingsPanel {
   }
 
   private getProviderIndex(): number {
-    if (this.provider === 'custom') {
+    if (this.provider === 'openai-completions') {
       return 0;
     }
-    if (this.provider === 'deepseek') {
+    if (this.provider === 'openai-responses') {
       return 1;
     }
-    if (this.provider === 'volcano') {
+    if (this.provider === 'anthropic-messages') {
       return 2;
     }
     return 0;
   }
 
   private getProviderLabel(): string {
-    if (this.provider === 'custom') {
-      return 'custom';
+    if (this.provider === 'openai-completions') {
+      return 'openai-completions';
     }
-    if (this.provider === 'deepseek') {
-      return 'deepseek';
+    if (this.provider === 'openai-responses') {
+      return 'openai-responses';
     }
-    if (this.provider === 'volcano') {
-      return 'volcano';
+    if (this.provider === 'anthropic-messages') {
+      return 'anthropic-messages';
     }
     return '';
   }
 
+  private getBaseUrlPlaceholder(): string {
+    if (this.provider === 'openai-completions') {
+      return 'https://api.openai.com/v1 或 https://api.deepseek.com';
+    }
+    if (this.provider === 'openai-responses') {
+      return 'https://api.deepseek.com 或 https://ark.cn-beijing.volces.com/api/v3';
+    }
+    if (this.provider === 'anthropic-messages') {
+      return 'https://api.anthropic.com/v1 或 https://api.deepseek.com';
+    }
+    return 'https://api.example.com/v1';
+  }
+
+  private getModelPlaceholder(): string {
+    if (this.provider === 'openai-completions') {
+      return 'deepseek-chat / deepseek-reasoner / gpt-...';
+    }
+    if (this.provider === 'openai-responses') {
+      return 'deepseek-v4-flash / deepseek-v4-pro / ep-xxx';
+    }
+    if (this.provider === 'anthropic-messages') {
+      return 'deepseek-v4-pro / deepseek-v4-flash / claude-...';
+    }
+    return 'model-name';
+  }
+
   private getHint(): string {
-    if (this.provider === 'deepseek') {
-      return 'Deepseek API: Base URL 通常为 https://api.deepseek.com, 模型可填 deepseek-chat 或 deepseek-reasoner。';
+    if (this.provider === 'openai-completions') {
+      return '当前接入方式：OpenAI Completions，通用API接入方式，兼容大部分模型。若需要原生图片直传、联网搜索等能力，建议切换 Responses API 或 Anthropic API 选项（需查询模型支持的方式）';
     }
-    if (this.provider === 'volcano') {
-      return '火山方舟引擎: Base URL 通常为 https://ark.cn-beijing.volces.com/api/v3, 模型需填写 Endpoint ID (如 ep-xxx)。';
+    if (this.provider === 'openai-responses') {
+      return '当前接入方式：OpenAI Responses， 建议支持 Responses API 的模型优先选择此选项，以获得原生图片直传、联网搜索等能力';
     }
-    return '自定义 OpenAI 兼容接口: 填写完整的 Base URL、API Key 与模型名称。';
+    if (this.provider === 'anthropic-messages') {
+      return '当前接入方式：Anthropic Messages，建议支持 Anthropic API 的模型优先选择此选项，以获得原生图片直传、联网搜索等能力';
+    }
+    return 'OpenAI Completions: 填写完整的 Base URL、API Key 与模型名称。';
+  }
+
+  private getAutoCompleteHint(): string {
+    if (this.provider === 'openai-completions') {
+      return '自动补全 /chat/completions';
+    }
+    if (this.provider === 'openai-responses') {
+      return '自动补全 /responses';
+    }
+    if (this.provider === 'anthropic-messages') {
+      return '自动补全 /v1/messages 。DeepSeek 可填 https://api.deepseek.com（自动补 /anthropic/v1/messages）';
+    }
+    return '填写完整的 Base URL、API Key 与模型名称。';
   }
 
   private buildConfig(): ApiConfig {

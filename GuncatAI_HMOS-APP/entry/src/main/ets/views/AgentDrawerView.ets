@@ -20,28 +20,14 @@ export struct AgentDrawerView {
 
   build() {
     Stack() {
-      // 遮罩 + 阴影: 仅覆盖右侧 20% 露出区域, 从抽屉右边缘 (深) 渐变到屏幕右边缘 (浅)
-      // 这样整个右边剩余部分都有阴影变暗效果, 而不是在右边缘一条窄带
-      Column()
-        .width('20%')
-        .height('100%')
-        .position({ x: '80%', y: 0 })
-        .linearGradient({
-          angle: 90,
-          colors: [['#60000000', 0.0], ['#20000000', 1.0]]
-        })
-        .onClick(() => {
-          this.onClose();
-        })
-
-      // 抽屉主体
+      // 抽屉主体；遮罩/阴影由 ChatPage 的全屏 scrim 负责，避免阴影跟随抽屉滑动
       Column() {
         // 头部
         Row() {
           Image($r('app.media.cat_avatar'))
-            .width(28)
-            .height(28)
-            .borderRadius(14)
+            .width(32)
+            .height(32)
+            .borderRadius(16)
             .objectFit(ImageFit.Cover)
             .backgroundColor($r('app.color.brand_light'))
           Text('Guncat AI')
@@ -55,19 +41,20 @@ export struct AgentDrawerView {
               .fontSize(18)
               .fontColor([$r('app.color.text_secondary')])
           }
-          .width(32)
-          .height(32)
-          .borderRadius(8)
-          .backgroundColor(Color.Transparent)
+          .width(38)
+          .height(38)
+          .borderRadius(19)
+          .backgroundColor($r('app.color.raised_surface'))
+          .shadow({ radius: 10, color: '#12000000', offsetX: 0, offsetY: 2 })
           .onClick(() => {
             this.onAbout();
           })
         }
         .width('100%')
-        .height(56)
-        .padding({ left: 14, right: 14 })
+        .height(64)
+        .padding({ left: 16, right: 16 })
         .backgroundColor($r('app.color.surface'))
-        .border({ width: { bottom: 1 }, color: $r('app.color.border') })
+        .shadow({ radius: 16, color: '#0C000000', offsetX: 0, offsetY: 2 })
         .alignItems(VerticalAlign.Center)
 
         // 新建对话
@@ -85,17 +72,16 @@ export struct AgentDrawerView {
             .justifyContent(FlexAlign.Center)
           }
           .width('100%')
-          .height(40)
-          .borderRadius(10)
-          .border({ width: 1, style: BorderStyle.Dashed, color: $r('app.color.border') })
-          .backgroundColor($r('app.color.background'))
+          .height(46)
+          .borderRadius(18)
+          .backgroundColor($r('app.color.brand_light'))
           .onClick(() => {
             this.onNewConversation();
           })
         }
         .width('100%')
-        .padding({ left: 12, right: 12 })
-        .margin({ top: 12, bottom: 14 })
+        .padding({ left: 14, right: 14 })
+        .margin({ top: 14, bottom: 18 })
 
         // 工具: 表格提取
         Column() {
@@ -115,17 +101,17 @@ export struct AgentDrawerView {
             .justifyContent(FlexAlign.Center)
           }
           .width('100%')
-          .height(40)
-          .borderRadius(10)
-          .border({ width: 1, style: BorderStyle.Dashed, color: $r('app.color.border') })
-          .backgroundColor($r('app.color.background'))
+          .height(46)
+          .borderRadius(18)
+          .backgroundColor($r('app.color.raised_surface'))
+          .shadow({ radius: 12, color: '#12000000', offsetX: 0, offsetY: 3 })
           .onClick(() => {
             router.pushUrl({ url: 'pages/TableOcrPage' });
           })
         }
         .width('100%')
-        .padding({ left: 12, right: 12 })
-        .margin({ bottom: 14 })
+        .padding({ left: 14, right: 14 })
+        .margin({ bottom: 18 })
 
         // 智能体列表
         Column() {
@@ -135,7 +121,7 @@ export struct AgentDrawerView {
             .fontColor($r('app.color.text_secondary'))
             .letterSpacing(0.5)
             .width('100%')
-            .padding({ left: 18, right: 18, top: 4, bottom: 8 })
+            .padding({ left: 20, right: 20, top: 4, bottom: 10 })
           List() {
             ForEach(this.agents, (agent: Agent) => {
               ListItem() {
@@ -147,13 +133,13 @@ export struct AgentDrawerView {
           .layoutWeight(1)
           .listDirection(Axis.Vertical)
           .divider({ strokeWidth: 0 })
-          .padding({ left: 8, right: 8 })
+          .padding({ left: 14, right: 14 })
         }
         .width('100%')
         .layoutWeight(1)
 
         // 分割
-        Divider().color($r('app.color.border')).margin({ top: 8 })
+        Divider().color($r('app.color.divider')).margin({ top: 8, left: 20, right: 20 })
 
         // 对话列表
         Column() {
@@ -163,7 +149,7 @@ export struct AgentDrawerView {
             .fontColor($r('app.color.text_secondary'))
             .letterSpacing(0.5)
             .width('100%')
-            .padding({ left: 18, right: 18, top: 10, bottom: 8 })
+            .padding({ left: 20, right: 20, top: 12, bottom: 10 })
           List() {
             ForEach(this.conversations, (conv: Conversation) => {
               ListItem() {
@@ -175,24 +161,27 @@ export struct AgentDrawerView {
           .layoutWeight(1)
           .listDirection(Axis.Vertical)
           .divider({ strokeWidth: 0 })
-          .padding({ left: 8, right: 8, bottom: 12 })
+          .padding({ left: 14, right: 14, bottom: 12 })
         }
         .width('100%')
         .layoutWeight(1)
       }
-      .width('80%')
+      .width('82%')
       .height('100%')
       .backgroundColor($r('app.color.surface'))
+      .borderRadius({ topRight: 28, bottomRight: 28 })
       .alignItems(HorizontalAlign.Start)
       // 移除原 .shadow: 它的 radius 会向四个方向扩散, 导致顶部边线也出现阴影
       // 仅让抽屉 Column 向下延伸到底部系统安全区 (导航条), 不影响上侧
       .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM])
-      // 阴影改在 Stack 第一层 (遮罩层) 实现, 覆盖整个右侧 20% 露出区域, 不影响抽屉顶部
+      // 阴影改在 Stack 第一层 (遮罩层) 实现, 覆盖整个右侧 18% 露出区域, 不影响抽屉顶部
     }
     .width('100%')
     .height('100%')
     // Stack 默认居中, 改成左对齐让抽屉靠左
     .alignContent(Alignment.Start)
+    // 空白区域不拦截点击，让下方的全屏 scrim 能响应关闭
+    .hitTestBehavior(HitTestMode.Transparent)
   }
 
   @Builder
@@ -225,9 +214,10 @@ export struct AgentDrawerView {
       .alignItems(HorizontalAlign.Start)
     }
     .width('100%')
-    .padding({ left: 10, right: 10, top: 10, bottom: 10 })
-    .borderRadius(10)
+    .padding({ left: 14, right: 14, top: 14, bottom: 14 })
+    .borderRadius(18)
     .backgroundColor(this.currentAgentId === agent.id ? $r('app.color.brand_light') : Color.Transparent)
+    .margin({ bottom: 6 })
     .onClick(() => {
       this.onSelectAgent(agent.id);
     })
@@ -246,16 +236,17 @@ export struct AgentDrawerView {
       SymbolGlyph($r('sys.symbol.trash'))
         .fontSize(14)
         .fontColor([$r('app.color.text_secondary')])
-        .padding({ left: 6, right: 6, top: 4, bottom: 4 })
-        .borderRadius(6)
+        .padding({ left: 8, right: 8, top: 6, bottom: 6 })
+        .borderRadius(12)
         .onClick(() => {
           this.onDeleteConversation(conv.id);
         })
     }
     .width('100%')
-    .padding({ left: 10, right: 10, top: 10, bottom: 10 })
-    .borderRadius(10)
+    .padding({ left: 12, right: 12, top: 8, bottom: 8 })
+    .borderRadius(16)
     .backgroundColor(this.currentConversationId === conv.id ? $r('app.color.brand_light') : Color.Transparent)
+    .margin({ bottom: 4 })
     .onClick(() => {
       this.onSelectConversation(conv.id);
     })

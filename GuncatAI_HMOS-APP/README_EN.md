@@ -4,25 +4,27 @@
 
 Guncat AI is a native HarmonyOS AI chat client built with ArkTS and ArkUI. Its primary interface is not hosted in a WebView.
 
-Current app version: `4.4.0`
+Current app version: `5.0.0`
 
 ## Features
 
 ### Native streaming chat
 
 - Processes SSE streams with `@kit.NetworkKit` and `http.requestInStream`.
-- Supports OpenAI Chat Completions (`/chat/completions`) and the Volcengine Ark Responses API (`/responses`).
-- Works with DeepSeek, Volcengine Ark, and compatible custom endpoints.
+- Supports three mainstream integration modes: OpenAI Completions (`/chat/completions`), OpenAI Responses (`/responses`, including DeepSeek and Volcengine Ark compatible services), and Anthropic Messages (`/messages`).
+- All three integration modes support direct image input; OpenAI Responses additionally uses a hybrid Files API strategy for large images/documents.
+- DeepSeek now uses the latest Responses API with native web search and vision-model image input.
 - Supports stopping generation, regenerating responses, conversation history, and multiple API profiles.
 - Uses throttled UI updates and automatic scrolling during streaming.
 
 ### Deep thinking and web search
 
-- The deep-thinking toggle explicitly controls Volcengine Ark requests:
-  - Off: `thinking.type = disabled`
-  - On: `thinking.type = enabled`
+- The deep-thinking toggle explicitly controls OpenAI Responses requests:
+  - Volcengine Ark: `thinking.type = enabled / disabled`
+  - DeepSeek / OpenAI Responses: sends `reasoning.effort = high` when enabled
 - The visible toggle takes precedence over extra request-body fields, preventing UI/request mismatches.
-- Volcengine Ark profiles can use the Web Search tool.
+- OpenAI Responses profiles (DeepSeek / Volcengine Ark) can use the native Web Search tool.
+- OpenAI Completions / Anthropic Messages also send their corresponding web-search tool; whether it works depends on provider support.
 - Deep-thinking and web-search preferences persist across app restarts.
 
 ### Native Markdown
@@ -40,7 +42,8 @@ Rendered with the native `@luvi/lv-markdown-in` component, with support for:
 
 - Adds attachments through the system photo picker or document picker.
 - Supports image previews, text extraction, Office documents, and PDFs.
-- Attachments can be pre-parsed or sent directly as multimodal Responses API input.
+- Attachments can be pre-parsed or sent directly as multimodal OpenAI Responses / Anthropic Messages input.
+- OpenAI Responses attachments use a hybrid strategy: small images are inlined as Base64, while large images and Volcengine Ark documents prefer Files API `file_id` uploads.
 - Parsing includes status feedback, retries, and concurrency throttling.
 - Image attachments render as auto-generated 256px thumbnails; tap to view the full image, keeping memory usage low.
 
@@ -96,6 +99,14 @@ The final read-aloud implementation uses HarmonyOS CoreSpeechKit `textToSpeech`.
 - Conversations, selected agent, API profiles, feature toggles, and reader preferences are stored locally.
 - Supports creating, switching, and deleting conversations.
 - Follows the system light/dark theme, including system bars and Markdown styles.
+
+### UI and motion (5.0.0)
+
+- A refreshed, soft modern UI: low-saturation palette, large rounded corners, white soft-elevated buttons, gentle shadows, and no heavy outlines or glow effects.
+- Launch fly-in animation: icons fly out from the center in sequence, staying sharp throughout with no blur fade or cross-fade flicker.
+- One-shot central icon transition: the launch icon uses a single hero node to smoothly move and scale into the empty-state icon at the page center, avoiding "white flash then clear" artifacts.
+- The bottom input area slides in from below the screen edge with no bounce or unnatural top-down drop.
+- Side drawers, settings sheets, and about overlays naturally cover the underlying hero icon instead of leaving it floating above overlays.
 
 ## Built-in agents
 
@@ -228,18 +239,19 @@ hvigorw --mode module -p product=default -p module=entry@default -p buildMode=de
 
 Multiple API profiles can be saved and switched in the app:
 
-1. Provider
+1. Integration mode (`openai-completions` / `openai-responses` / `anthropic-messages`)
 2. Base URL
 3. API Key
 4. Model
 5. Optional temperature, Top P, and maximum output tokens
 6. Extra request-body fields
 
-Default Volcengine Ark endpoint:
+Common compatible endpoints:
 
-```text
-https://ark.cn-beijing.volces.com/api/v3
-```
+- DeepSeek Responses: `https://api.deepseek.com`
+- DeepSeek Anthropic: `https://api.deepseek.com/anthropic`, or simply `https://api.deepseek.com` (the app appends `/anthropic/v1/messages` automatically)
+- Volcengine Ark Responses: `https://ark.cn-beijing.volces.com/api/v3`
+- Anthropic Messages: `https://api.anthropic.com/v1`
 
 Multimodal pre-parsing has a separate model, endpoint, and API key configuration.
 
@@ -248,7 +260,7 @@ Multimodal pre-parsing has a separate model, endpoint, and API key configuration
 ### Basic chat
 
 1. Open Settings after the first launch.
-2. Create or select an API profile and enter the provider, Base URL, API key, and model.
+2. Create or select an API profile and enter the integration mode, Base URL, API key, and model.
 3. Select an agent from the drawer.
 4. Enter and send a message.
 
@@ -261,11 +273,22 @@ Multimodal pre-parsing has a separate model, endpoint, and API key configuration
 
 You can also select content in Gallery or a file manager and choose Guncat AI from the system share sheet. The app only stages the items as attachments and does not submit a request automatically.
 
+#### Attachment strategy
+
+- OpenAI Completions: small images are inlined with `image_url`; large images are uploaded through the Files API and referenced as `file` + `file_id`; documents use `file_url`.
+- Anthropic Messages: small images are inlined as base64 `image` content blocks; large images are uploaded through the Files API and referenced as `source.type = file` + `file_id`; documents are sent as `document` blocks.
+- OpenAI Responses:
+  - Small images (≤4MB): sent inline as Base64.
+  - Large images (>4MB): uploaded through the Files API and referenced as `input_image.file_id`.
+  - Documents: uploaded through the Files API and referenced as `input_file.file_id`, or inlined with `input_file.file_data`.
+  - If an upload fails, the app automatically falls back to Base64.
+- If a provider does not support a particular image/document block, the server returns an error; the app displays it instead of silently dropping the attachment.
+
 ### Deep thinking
 
-- Off explicitly sends `thinking: { "type": "disabled" }`.
-- On explicitly sends `thinking: { "type": "enabled" }`.
-- This applies to compatible Volcengine Ark Responses API models.
+- Volcengine Ark: off sends `thinking: { "type": "disabled" }`, on sends `thinking: { "type": "enabled" }`.
+- DeepSeek / OpenAI Responses: when enabled, sends `reasoning: { "effort": "high" }`.
+- This applies to compatible OpenAI Responses API models.
 
 ### Read-aloud
 
@@ -300,6 +323,15 @@ You can also select content in Gallery or a file manager and choose Guncat AI fr
 - Items received from the system share sheet are never sent automatically; the user must tap Send.
 - Original attachments are not copied into permanent app storage.
 - Requests use HTTPS. Data-processing policies still depend on the configured model provider.
+
+## Version 5.0.0
+
+- Unified API integration into three mainstream protocols: OpenAI Completions, OpenAI Responses, and Anthropic Messages; removed standalone DeepSeek / Volcengine Ark presets with automatic migration for old configs.
+- Upgraded DeepSeek to the latest Responses API, including native web search, vision-model image input, and hybrid Files API `file_id` uploads.
+- Added Anthropic Messages support, compatible with the DeepSeek Anthropic endpoint (`https://api.deepseek.com/anthropic`), including image input and web search.
+- Table recognition now lists all main and multimodal models from every API profile (deduplicated) for direct selection; improved DeepSeek vision output handling (thinking disabled, full-width angle bracket normalization, Markdown table fallback).
+- Improved the model-switch menu: equal item widths, centered text, rounded corners, and a softer shadow.
+- Improved the drawer shadow: a fixed full-screen scrim keeps the right side shaded during the slide, and tapping the blank area closes the drawer.
 
 ## Version 4.4.0
 
@@ -341,7 +373,7 @@ You can also select content in Gallery or a file manager and choose Guncat AI fr
 ### Invalid API key
 
 - Check for leading or trailing whitespace.
-- Confirm that model, provider, and Base URL match.
+- Confirm that model, integration mode, and Base URL match.
 - Check account balance, API access, and network connectivity.
 
 ### File parsing failed

@@ -2,6 +2,7 @@
 @Component
 export struct ToggleSwitch {
   @Prop isOn: boolean = false;
+  @Prop toggleEnabled: boolean = true;
   private label: string = '';
   private onChange: (value: boolean) => void = (_v: boolean): void => {};
 
@@ -9,27 +10,28 @@ export struct ToggleSwitch {
     Row() {
       // 圆点
       Stack()
-        .width(8)
-        .height(8)
-        .borderRadius(4)
+        .width(7)
+        .height(7)
+        .borderRadius(3.5)
         .backgroundColor(this.isOn ? $r('app.color.brand') : $r('app.color.text_tertiary'))
-        .opacity(this.isOn ? 1 : 0.4)
+        .opacity(this.isOn ? 1 : 0.45)
 
       Text(this.label)
-        .fontSize(13)
+        .fontSize(12)
         .fontColor(this.isOn ? $r('app.color.brand') : $r('app.color.text_secondary'))
         .fontWeight(this.isOn ? FontWeight.Medium : FontWeight.Normal)
-        .margin({ left: 6 })
+        .margin({ left: 5 })
     }
-    .padding({ left: 10, right: 10, top: 6, bottom: 6 })
-    .borderRadius(16)
-    .border({
-      width: 1,
-      color: this.isOn ? $r('app.color.brand') : $r('app.color.border')
-    })
-    .backgroundColor(this.isOn ? $r('app.color.brand_light') : $r('app.color.surface'))
+    .padding({ left: 10, right: 10, top: 8, bottom: 8 })
+    .borderRadius(17)
+    .backgroundColor(this.isOn ? $r('app.color.brand_light') : $r('app.color.raised_surface'))
+    .shadow({ radius: 10, color: '#12000000', offsetX: 0, offsetY: 2 })
+    .opacity(this.toggleEnabled ? 1 : 0.45)
+    .enabled(this.toggleEnabled)
     .onClick(() => {
-      this.onChange(!this.isOn);
+      if (this.toggleEnabled) {
+        this.onChange(!this.isOn);
+      }
     })
   }
 }

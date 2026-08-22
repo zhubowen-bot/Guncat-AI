@@ -1,6 +1,7 @@
-// ChatService: 真正的 SSE 流式双协议, 对齐 web 版本 streamChat
-//  - provider !== 'volcano' → Chat Completions (/chat/completions)
-//  - provider === 'volcano' → Responses API    (/responses)
+// ChatService: 真正的 SSE 流式三协议, 对齐 web 版本 streamChat
+//  - openai-completions → Chat Completions (/chat/completions)
+//  - openai-responses   → Responses API    (/responses)
+//  - anthropic-messages → Anthropic Messages (/messages)
 import { http } from '@kit.NetworkKit';
 import { ApiConfig } from '../model/ApiConfig';
 import { Agent } from '../model/Agent';
@@ -27,10 +28,20 @@ class StreamAccumulator {
   }
 }
 
+function getProtocol(provider: string): string {
+  if (provider === 'openai-responses') {
+    return 'responses';
+  }
+  if (provider === 'anthropic-messages') {
+    return 'anthropic';
+  }
+  return 'completions';
+}
+
 function buildChatCompletionsBody(config: ApiConfig, agent: Agent | null,
   history: Message[], userText: string,
-  thinkingEnabled: boolean): Record<string, Object> {
-  let messages: Record<string, string>[] = [];
+  thinkingEnabled: boolean, webSearchEnabled: boolean): Record<string, Object> {
+  let messages: Record<string, Object>[] = [];
   if (agent !== null && agent.systemPrompt !== '') {
     messages.push({ role: 'system', content: agent.systemPrompt });
   }
@@ -39,9 +50,57 @@ function buildChatCompletionsBody(config: ApiConfig, agent: Agent | null,
     if (m.content === '') {
       continue;
     }
+    if (m.role !== 'user' && m.role !== 'assistant') {
+      continue;
+    }
+    if (m.role === 'user' && m.attachments.length > 0) {
+      let contentParts: Record<string, Object>[] = [];
+      if (m.content !== '') {
+        contentParts.push({ type: 'text', text: m.content });
+      }
+      for (let j: number = 0; j < m.attachments.length; j++) {
+        let attachment: Attachment = m.attachments[j];
+        if (attachment.parsedText !== '' || attachment.dataUrl === '') {
+          continue;
+        }
+        if (attachment.type === 'image') {
+          if (attachment.fileId !== '') {
+            contentParts.push({
+              type: 'file',
+              file_id: attachment.fileId
+            });
+          } else {
+            contentParts.push({
+              type: 'image_url',
+              image_url: { url: attachment.dataUrl }
+            });
+          }
+        } else {
+          if (attachment.fileId !== '') {
+            contentParts.push({
+              type: 'file',
+              file_id: attachment.fileId
+            });
+          } else {
+            // 兼容支持 file_url 的 OpenAI 兼容接口；不支持的提供商会忽略或报错。
+            contentParts.push({
+              type: 'file_url',
+              file_url: { url: attachment.dataUrl }
+            });
+          }
+        }
+      }
+      if (contentParts.length > 0) {
+        messages.push({ role: 'user', content: contentParts });
+        continue;
+      }
+    }
     messages.push({ role: m.role, content: m.content });
   }
-  messages.push({ role: 'user', content: userText });
+  let lastHistory: Message | null = history.length > 0 ? history[history.length - 1] : null;
+  if (lastHistory === null || lastHistory.role !== 'user' || lastHistory.content !== userText) {
+    messages.push({ role: 'user', content: userText });
+  }
 
   let body: Record<string, Object> = {
     model: config.model,
@@ -51,6 +110,11 @@ function buildChatCompletionsBody(config: ApiConfig, agent: Agent | null,
 
   if (thinkingEnabled) {
     body['reasoning_effort'] = 'high';
+  }
+  if (webSearchEnabled) {
+    // OpenAI 兼容 Chat Completions 服务若支持服务端搜索，可识别该工具。
+    let tool: Record<string, Object> = { type: 'web_search' };
+    body['tools'] = [tool];
   }
   if (config.temperature !== null) {
     body['temperature'] = config.temperature;
@@ -98,16 +162,31 @@ function buildResponsesBody(config: ApiConfig, agent: Agent | null,
           continue;
         }
         if (attachment.type === 'image') {
-          contentParts.push({
-            type: 'input_image',
-            image_url: attachment.dataUrl
-          });
+          if (attachment.fileId !== '') {
+            contentParts.push({
+              type: 'input_image',
+              file_id: attachment.fileId
+            });
+          } else {
+            contentParts.push({
+              type: 'input_image',
+              image_url: attachment.dataUrl
+            });
+          }
         } else {
-          contentParts.push({
-            type: 'input_file',
-            filename: attachment.name,
-            file_data: attachment.dataUrl
-          });
+          // 统一发送 input_file；若服务商不支持会由服务端返回错误。
+          if (attachment.fileId !== '') {
+            contentParts.push({
+              type: 'input_file',
+              file_id: attachment.fileId
+            });
+          } else {
+            contentParts.push({
+              type: 'input_file',
+              filename: attachment.name,
+              file_data: attachment.dataUrl
+            });
+          }
         }
       }
       input.push({ role: m.role, content: contentParts });
@@ -131,7 +210,8 @@ function buildResponsesBody(config: ApiConfig, agent: Agent | null,
     body['instructions'] = agent.systemPrompt;
   }
   if (webSearchEnabled) {
-    let tool: Record<string, Object> = { type: 'web_search', max_keyword: 5 };
+    // OpenAI Responses 兼容格式；DeepSeek 与火山方舟均支持该工具。
+    let tool: Record<string, Object> = { type: 'web_search' };
     body['tools'] = [tool];
   }
   if (config.temperature !== null) {
@@ -156,9 +236,172 @@ function buildResponsesBody(config: ApiConfig, agent: Agent | null,
       // ignore
     }
   }
-  // 深度思考按钮必须显式控制方舟 Responses API，不能省略后交给模型默认决定。
+  // 深度思考按钮必须显式控制，不能省略后交给模型默认决定。
   // 放在 extraBody 合并之后，确保界面上的开关状态拥有最高优先级。
-  body['thinking'] = { type: thinkingEnabled ? 'enabled' : 'disabled' };
+  // OpenAI Responses 标准使用 reasoning；火山方舟保留 thinking 扩展以兼容现有行为。
+  if (config.baseUrl.indexOf('volces.com') !== -1) {
+    body['thinking'] = { type: thinkingEnabled ? 'enabled' : 'disabled' };
+  } else if (thinkingEnabled) {
+    body['reasoning'] = { effort: 'high' };
+  }
+  return body;
+}
+
+function appendAnthropicMessage(messages: Record<string, Object>[], role: string, content: Object): void {
+  let last: Record<string, Object> | null = messages.length > 0 ? messages[messages.length - 1] : null;
+  let lastRole: Object = last !== null ? last['role'] : null;
+  if (typeof lastRole === 'string' && lastRole === role) {
+    let prevContent: Object = last['content'];
+    if (typeof prevContent === 'string' && typeof content === 'string') {
+      last['content'] = prevContent + '\n\n' + content;
+      return;
+    }
+    if (prevContent instanceof Array && content instanceof Array) {
+      let prevArr: Object[] = prevContent as Object[];
+      let addArr: Object[] = content as Object[];
+      for (let i: number = 0; i < addArr.length; i++) {
+        prevArr.push(addArr[i]);
+      }
+      return;
+    }
+    if (prevContent instanceof Array && typeof content === 'string') {
+      let prevArr: Object[] = prevContent as Object[];
+      prevArr.push({ type: 'text', text: content });
+      return;
+    }
+    if (typeof prevContent === 'string' && content instanceof Array) {
+      let merged: Object[] = [{ type: 'text', text: prevContent }];
+      let addArr: Object[] = content as Object[];
+      for (let i: number = 0; i < addArr.length; i++) {
+        merged.push(addArr[i]);
+      }
+      last['content'] = merged;
+      return;
+    }
+  }
+  messages.push({ role: role, content: content });
+}
+
+function buildAnthropicBody(config: ApiConfig, agent: Agent | null,
+  history: Message[], userText: string,
+  thinkingEnabled: boolean, webSearchEnabled: boolean): Record<string, Object> {
+  let messages: Record<string, Object>[] = [];
+  for (let i: number = 0; i < history.length; i++) {
+    let m: Message = history[i];
+    if (m.content === '') {
+      continue;
+    }
+    if (m.role !== 'user' && m.role !== 'assistant') {
+      continue;
+    }
+    if (m.role === 'user' && m.attachments.length > 0) {
+      let contentParts: Record<string, Object>[] = [];
+      if (m.content !== '') {
+        contentParts.push({ type: 'text', text: m.content });
+      }
+      for (let j: number = 0; j < m.attachments.length; j++) {
+        let attachment: Attachment = m.attachments[j];
+        if (attachment.parsedText !== '' || attachment.dataUrl === '') {
+          continue;
+        }
+        if (attachment.type === 'image') {
+          if (attachment.fileId !== '') {
+            contentParts.push({
+              type: 'image',
+              source: { type: 'file', file_id: attachment.fileId }
+            });
+          } else if (attachment.dataUrl.startsWith('http://') || attachment.dataUrl.startsWith('https://')) {
+            contentParts.push({
+              type: 'image',
+              source: { type: 'url', url: attachment.dataUrl }
+            });
+          } else {
+            let dataUrl: string = attachment.dataUrl;
+            let comma: number = dataUrl.indexOf(';base64,');
+            if (comma > 0) {
+              let mediaType: string = dataUrl.substring(5, comma);
+              let data: string = dataUrl.substring(comma + 8);
+              contentParts.push({
+                type: 'image',
+                source: { type: 'base64', media_type: mediaType, data: data }
+              });
+            }
+          }
+        } else {
+          // 统一发送 document 块；若服务商不支持会由服务端返回错误。
+          if (attachment.fileId !== '') {
+            contentParts.push({
+              type: 'document',
+              source: { type: 'file', file_id: attachment.fileId }
+            });
+          } else if (attachment.dataUrl.startsWith('http://') || attachment.dataUrl.startsWith('https://')) {
+            contentParts.push({
+              type: 'document',
+              source: { type: 'url', url: attachment.dataUrl }
+            });
+          } else {
+            let dataUrl: string = attachment.dataUrl;
+            let comma: number = dataUrl.indexOf(';base64,');
+            if (comma > 0) {
+              let mediaType: string = dataUrl.substring(5, comma);
+              let data: string = dataUrl.substring(comma + 8);
+              contentParts.push({
+                type: 'document',
+                source: { type: 'base64', media_type: mediaType, data: data }
+              });
+            }
+          }
+        }
+      }
+      if (contentParts.length > 0) {
+        appendAnthropicMessage(messages, 'user', contentParts);
+        continue;
+      }
+    }
+    appendAnthropicMessage(messages, m.role, m.content);
+  }
+  let lastHistory: Message | null = history.length > 0 ? history[history.length - 1] : null;
+  if (lastHistory === null || lastHistory.role !== 'user' || lastHistory.content !== userText) {
+    appendAnthropicMessage(messages, 'user', userText);
+  }
+
+  let maxTokens: number = config.maxTokens !== null ? config.maxTokens : 4096;
+  let body: Record<string, Object> = {
+    model: config.model,
+    messages: messages,
+    stream: true,
+    max_tokens: maxTokens
+  };
+  if (agent !== null && agent.systemPrompt !== '') {
+    body['system'] = agent.systemPrompt;
+  }
+  if (webSearchEnabled) {
+    let tool: Record<string, Object> = {
+      type: 'web_search_20250305',
+      name: 'web_search',
+      max_uses: 5
+    };
+    body['tools'] = [tool];
+  }
+  if (config.temperature !== null) {
+    body['temperature'] = config.temperature;
+  }
+  if (config.topP !== null) {
+    body['top_p'] = config.topP;
+  }
+  if (config.extraBody !== '') {
+    try {
+      let extra: Object = JSON.parse(config.extraBody);
+      if (typeof extra === 'object' && extra !== null) {
+        let keys: string[] = Object.keys(extra);
+        for (let i: number = 0; i < keys.length; i++) {
+          body[keys[i]] = (extra as Record<string, Object>)[keys[i]];
+        }
+      }
+    } catch (e) {
+      // ignore
+    }
+  }
   return body;
 }
 
@@ -237,6 +480,57 @@ function extractResponsesFailure(sseData: string): string {
   }
 }
 
+function extractAnthropicDelta(sseData: string): string {
+  try {
+    let json: Object = JSON.parse(sseData);
+    if (typeof json !== 'object' || json === null) {
+      return '';
+    }
+    let type: Object = (json as Record<string, Object>)['type'];
+    if (typeof type !== 'string' || type !== 'content_block_delta') {
+      return '';
+    }
+    let delta: Object = (json as Record<string, Object>)['delta'];
+    if (typeof delta !== 'object' || delta === null) {
+      return '';
+    }
+    let deltaType: Object = (delta as Record<string, Object>)['type'];
+    if (typeof deltaType !== 'string' || deltaType !== 'text_delta') {
+      return '';
+    }
+    let text: Object = (delta as Record<string, Object>)['text'];
+    if (typeof text === 'string') {
+      return text;
+    }
+    return '';
+  } catch (e) {
+    return '';
+  }
+}
+
+function extractAnthropicFailure(sseData: string): string {
+  try {
+    let json: Object = JSON.parse(sseData);
+    if (typeof json !== 'object' || json === null) {
+      return '';
+    }
+    let type: Object = (json as Record<string, Object>)['type'];
+    if (typeof type !== 'string' || type !== 'error') {
+      return '';
+    }
+    let err: Object = (json as Record<string, Object>)['error'];
+    if (typeof err === 'object' && err !== null) {
+      let msg: Object = (err as Record<string, Object>)['message'];
+      if (typeof msg === 'string') {
+        return msg;
+      }
+    }
+    return 'Anthropic Messages API 返回失败';
+  } catch (e) {
+    return '';
+  }
+}
+
 export class ChatService {
   private static activeRequest: http.HttpRequest | null = null;
 
@@ -250,15 +544,32 @@ export class ChatService {
     callbacks: StreamCallbacks,
     abortSignal: AbortSignal
   ): Promise<void> {
-    let isResponses: boolean = config.provider === 'volcano';
-    let path: string = isResponses ? Constants.RESPONSES_PATH : Constants.CHAT_COMPLETIONS_PATH;
+    let protocol: string = getProtocol(config.provider);
+    let path: string;
+    if (protocol === 'responses') {
+      path = Constants.RESPONSES_PATH;
+    } else if (protocol === 'anthropic') {
+      let trimmedBase: string = config.baseUrl.replace(/\/+$/, '');
+      if (trimmedBase.endsWith('/v1') || trimmedBase.endsWith('/anthropic/v1')) {
+        path = Constants.MESSAGES_PATH;
+      } else if (trimmedBase === 'https://api.deepseek.com' || trimmedBase === 'http://api.deepseek.com') {
+        // 兼容用户直接填 DeepSeek 主域名时自动切到 Anthropic 兼容端点
+        path = Constants.ANTHROPIC_DEEPSEEK_MESSAGES_PATH;
+      } else {
+        path = Constants.ANTHROPIC_V1_MESSAGES_PATH;
+      }
+    } else {
+      path = Constants.CHAT_COMPLETIONS_PATH;
+    }
     let url: string = config.baseUrl.replace(/\/+$/, '') + path;
 
     let body: Record<string, Object>;
-    if (isResponses) {
+    if (protocol === 'responses') {
       body = buildResponsesBody(config, agent, history, userText, thinkingEnabled, webSearchEnabled);
+    } else if (protocol === 'anthropic') {
+      body = buildAnthropicBody(config, agent, history, userText, thinkingEnabled, webSearchEnabled);
     } else {
-      body = buildChatCompletionsBody(config, agent, history, userText, thinkingEnabled);
+      body = buildChatCompletionsBody(config, agent, history, userText, thinkingEnabled, webSearchEnabled);
     }
     let bodyStr: string = JSON.stringify(body);
 
@@ -274,6 +585,9 @@ export class ChatService {
 
     try {
       await new Promise<void>((resolve: () => void, reject: (e: Error) => void) => {
+        let statusCode: number = 0;
+        let dataEnded: boolean = false;
+        let settled: boolean = false;
         httpRequest.on('dataReceive', (data: ArrayBuffer) => {
           if (abortSignal.aborted) {
             return;
@@ -297,7 +611,7 @@ export class ChatService {
               continue;
             }
             let sseData: string = trimmed.substring(Constants.SSE_DATA_PREFIX.length);
-            if (isResponses) {
+            if (protocol === 'responses') {
               let fail: string = extractResponsesFailure(sseData);
               if (fail !== '') {
                 failedMsg = fail;
@@ -305,6 +619,18 @@ export class ChatService {
                 return;
               }
               let delta: string = extractResponsesDelta(sseData);
+              if (delta !== '') {
+                acc.fullContent += delta;
+                callbacks.onToken(delta);
+              }
+            } else if (protocol === 'anthropic') {
+              let fail: string = extractAnthropicFailure(sseData);
+              if (fail !== '') {
+                failedMsg = fail;
+                reject(new Error(fail));
+                return;
+              }
+              let delta: string = extractAnthropicDelta(sseData);
               if (delta !== '') {
                 acc.fullContent += delta;
                 callbacks.onToken(delta);
@@ -325,8 +651,14 @@ export class ChatService {
             if (trimmed.startsWith(Constants.SSE_DATA_PREFIX)) {
               let sseData: string = trimmed.substring(Constants.SSE_DATA_PREFIX.length);
               if (sseData !== Constants.SSE_DONE_TOKEN) {
-                if (isResponses) {
+                if (protocol === 'responses') {
                   let delta: string = extractResponsesDelta(sseData);
+                  if (delta !== '') {
+                    acc.fullContent += delta;
+                    callbacks.onToken(delta);
+                  }
+                } else if (protocol === 'anthropic') {
+                  let delta: string = extractAnthropicDelta(sseData);
                   if (delta !== '') {
                     acc.fullContent += delta;
                     callbacks.onToken(delta);
@@ -342,45 +674,85 @@ export class ChatService {
             }
             lineBuffer = '';
           }
-          resolve();
+          dataEnded = true;
+          if (statusCode !== 0 && statusCode >= 200 && statusCode < 300 && !settled) {
+            settled = true;
+            resolve();
+          }
         });
 
+        let headers: Record<string, string> = {
+          'Content-Type': 'application/json'
+        };
+        if (protocol === 'anthropic') {
+          let needsAnthropicBeta: boolean = false;
+          for (let hi: number = 0; hi < history.length; hi++) {
+            let hm: Message = history[hi];
+            for (let hj: number = 0; hj < hm.attachments.length; hj++) {
+              if (hm.attachments[hj].fileId !== '') {
+                needsAnthropicBeta = true;
+                break;
+              }
+            }
+            if (needsAnthropicBeta) {
+              break;
+            }
+          }
+          headers['x-api-key'] = config.apiKey;
+          headers['anthropic-version'] = '2023-06-01';
+          headers['Accept'] = 'text/event-stream';
+          if (needsAnthropicBeta) {
+            headers['anthropic-beta'] = 'files-api-2025-04-14';
+          }
+        } else {
+          headers['Authorization'] = 'Bearer ' + config.apiKey;
+        }
         httpRequest.requestInStream(url, {
           method: http.RequestMethod.POST,
-          header: {
-            'Content-Type': 'application/json',
-            'Authorization': 'Bearer ' + config.apiKey
-          },
+          header: headers,
           extraData: bodyStr,
           connectTimeout: 30000,
           readTimeout: 180000,
           usingProtocol: http.HttpProtocol.HTTP1_1
         }).then((code: number) => {
+          statusCode = code;
           if (abortSignal.aborted) {
             return;
           }
           if (code < 200 || code >= 300) {
-            let msg: string = '';
-            if (code === 401) {
-              msg = 'API Key 无效，请检查设置';
-            } else if (code === 429) {
-              msg = '请求过于频繁，请稍后再试';
-            } else if (code >= 400 && code < 500) {
-              msg = 'API 请求错误 (' + code + ')，请检查配置';
-            } else if (code >= 500) {
-              msg = '服务器错误 (' + code + ')，请稍后再试';
-            } else {
-              msg = '请求失败，状态码: ' + code;
+            if (!settled) {
+              settled = true;
+              let msg: string = '';
+              if (code === 401) {
+                msg = 'API Key 无效，请检查设置';
+              } else if (code === 429) {
+                msg = '请求过于频繁，请稍后再试';
+              } else if (code >= 400 && code < 500) {
+                msg = 'API 请求错误 (' + code + ')，请检查配置';
+              } else if (code >= 500) {
+                msg = '服务器错误 (' + code + ')，请稍后再试';
+              } else {
+                msg = '请求失败，状态码: ' + code;
+              }
+              reject(new Error(msg));
             }
-            reject(new Error(msg));
+            return;
+          }
+          if (dataEnded && !settled) {
+            settled = true;
+            resolve();
           }
         }).catch((err: Error) => {
           if (abortSignal.aborted) {
             // 当 abort 导致 requestInStream 抛错时 resolve, 让 promise 得以完成, finally 得以执行
-            resolve();
+            if (!settled) {
+              settled = true;
+              resolve();
+            }
             return;
           }
-          if (!receivedAnyData) {
+          if (!settled) {
+            settled = true;
             reject(err);
           }
         });

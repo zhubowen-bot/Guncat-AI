@@ -18,6 +18,9 @@ export struct AboutPanel {
           .onClick(() => {
             this.onClose();
           })
+          .transition(
+            TransitionEffect.opacity(0).animation({ duration: 200, curve: Curve.EaseOut })
+          )
 
         Column() {
           // 标题
@@ -32,16 +35,17 @@ export struct AboutPanel {
                 .fontSize(16)
                 .fontColor($r('app.color.text_secondary'))
             }
-            .width(32)
-            .height(32)
-            .borderRadius(8)
-            .backgroundColor($r('app.color.surface_secondary'))
+            .width(36)
+            .height(36)
+            .borderRadius(18)
+            .backgroundColor($r('app.color.raised_surface'))
+            .shadow({ radius: 10, color: '#12000000', offsetX: 0, offsetY: 2 })
             .onClick(() => {
               this.onClose();
             })
           }
           .width('100%')
-          .padding({ left: 16, right: 16, top: 16, bottom: 12 })
+          .padding({ left: 20, right: 20, top: 18, bottom: 14 })
 
           // 主体
           Column() {
@@ -57,7 +61,7 @@ export struct AboutPanel {
               .fontWeight(FontWeight.Bold)
               .fontColor($r('app.color.text_primary'))
               .margin({ bottom: 4 })
-            Text('version 4.4.0')
+            Text('version 5.0.0')
               .fontSize(14)
               .fontColor($r('app.color.text_secondary'))
               .margin({ bottom: 20 })
@@ -73,11 +77,11 @@ export struct AboutPanel {
                 .fontColor($r('app.color.text_primary'))
                 .margin({ left: 8 })
             }
-            .padding({ left: 16, right: 16, top: 8, bottom: 8 })
-            .borderRadius(10)
-            .backgroundColor($r('app.color.surface_secondary'))
-            .border({ width: 1, color: $r('app.color.border') })
-            .margin({ bottom: 20 })
+            .padding({ left: 18, right: 18, top: 10, bottom: 10 })
+            .borderRadius(16)
+            .backgroundColor($r('app.color.raised_surface'))
+            .shadow({ radius: 10, color: '#12000000', offsetX: 0, offsetY: 2 })
+            .margin({ bottom: 24 })
             .onClick(() => {
               let context: common.UIAbilityContext = getContext(this) as common.UIAbilityContext;
               context.openLink(REPO_URL);
@@ -93,22 +97,23 @@ export struct AboutPanel {
           .alignItems(HorizontalAlign.Center)
         }
         .width('90%')
-        .constraintSize({ maxWidth: 360 })
+        .constraintSize({ maxWidth: 380 })
         .backgroundColor($r('app.color.surface'))
-        .borderRadius(16)
+        .borderRadius(28)
+        .shadow({ radius: 28, color: '#26000000', offsetX: 0, offsetY: 10 })
         .alignItems(HorizontalAlign.Center)
+        .transition(
+          TransitionEffect.asymmetric(
+            TransitionEffect.scale({ x: 0.95, y: 0.95 }).combine(TransitionEffect.opacity(0))
+              .animation({ duration: 250, curve: Curve.FastOutLinearIn }),
+            TransitionEffect.scale({ x: 0.95, y: 0.95 }).combine(TransitionEffect.opacity(0))
+              .animation({ duration: 200, curve: Curve.FastOutLinearIn })
+          )
+        )
       }
       .width('100%')
       .height('100%')
       .position({ x: 0, y: 0 })
-      .transition(
-        TransitionEffect.asymmetric(
-          TransitionEffect.scale({ x: 0.95, y: 0.95 }).combine(TransitionEffect.opacity(0))
-            .animation({ duration: 250, curve: Curve.FastOutLinearIn }),
-          TransitionEffect.scale({ x: 0.95, y: 0.95 }).combine(TransitionEffect.opacity(0))
-            .animation({ duration: 200, curve: Curve.FastOutLinearIn })
-        )
-      )
     }
   }
 }

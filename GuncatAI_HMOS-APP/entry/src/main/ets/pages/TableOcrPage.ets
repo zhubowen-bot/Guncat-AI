@@ -13,19 +13,6 @@ import { HtmlTableParser, TableGridInfo, TableCellInfo, TableRowInfo } from '../
 import { XlsxExporter } from '../export/XlsxExporter';
 import { XmlUtil } from '../export/XmlUtil';
 
-// 平台预设 (对齐 web 版本 PROVIDERS)
-export class ProviderPreset {
-  name: string = '';
-  baseUrl: string = '';
-  model: string = '';
-
-  constructor(name: string, baseUrl: string, model: string) {
-    this.name = name;
-    this.baseUrl = baseUrl;
-    this.model = model;
-  }
-}
-
 // 预览用单元格 (带网格坐标)
 export class PreviewCell {
   r: number = 0;
@@ -37,10 +24,27 @@ export class PreviewCell {
   height: number = 36;
 }
 
-const PRESETS: ProviderPreset[] = [
-  new ProviderPreset('智谱 GLM', 'https://open.bigmodel.cn/api/paas/v4', 'glm-4.6v-flash'),
-  new ProviderPreset('火山方舟 (豆包)', 'https://ark.cn-beijing.volces.com/api/v3', 'doubao-seed-2-0-lite-260428')
-];
+// 表格识别可选的模型项：来自所有 API Profile 的主模型 + 多模态解析模型
+export class OcrModelOption {
+  key: string = '';
+  label: string = '';
+  model: string = '';
+  baseUrl: string = '';
+  apiKey: string = '';
+  configType: string = 'main';
+  profileName: string = '';
+
+  constructor(key: string, label: string, model: string, baseUrl: string, apiKey: string,
+    configType: string, profileName: string) {
+    this.key = key;
+    this.label = label;
+    this.model = model;
+    this.baseUrl = baseUrl;
+    this.apiKey = apiKey;
+    this.configType = configType;
+    this.profileName = profileName;
+  }
+}
 
 const COLUMN_WIDTH: number = 90;
 const BASE_ROW_HEIGHT: number = 36;
@@ -50,9 +54,6 @@ const LINE_VP: number = 18;
 @Component
 struct TableOcrPage {
   @State providerIndex: number = 0;
-  @State modelText: string = '';
-  @State apiKeyText: string = '';
-  @State keySavedHint: string = '';
   @State selectedUri: string = '';
   @State converting: boolean = false;
   @State statusText: string = '';
@@ -66,7 +67,8 @@ struct TableOcrPage {
   @State debugText: string = '';
   @State previewCells: PreviewCell[] = [];
   @State gridTotalHeight: number = 120;
-  private currentProfile: ApiProfile = ApiProfile.create('默认配置');
+  private profiles: ApiProfile[] = [];
+  @State modelOptions: OcrModelOption[] = [];
   private selectedBytes: ArrayBuffer | null = null;
   private selectedMime: string = 'image/jpeg';
 
@@ -77,107 +79,125 @@ struct TableOcrPage {
   private async loadConfig(): Promise<void> {
     let context: common.UIAbilityContext = getContext(this) as common.UIAbilityContext;
     try {
-      this.currentProfile = await this.loadCurrentProfile(context);
+      this.profiles = await this.loadProfiles(context);
     } catch (e) {
-      this.currentProfile = ApiProfile.fromLegacy('默认配置', ApiConfig.default(), MultimodalConfig.default());
+      this.profiles = [ApiProfile.fromLegacy('默认配置', ApiConfig.default(), MultimodalConfig.default())];
     }
+    this.modelOptions = this.buildModelOptions(this.profiles);
     let savedProvider: string = await StorageManager.loadString(
       context, Constants.LS_KEY_TABLE_OCR_PROVIDER, '');
-    if (savedProvider === 'volc') {
-      this.providerIndex = 1;
-    } else if (savedProvider !== 'zhipu' &&
-      this.currentProfile.multimodalConfig.baseUrl.indexOf('volces.com') !== -1) {
-      // 兼容旧版本: 火山配置以前直接写在多模态配置里
-      this.providerIndex = 1;
-    } else {
-      this.providerIndex = 0;
-    }
-    this.applyProviderFields();
+    let savedIndex: number = this.findSavedModelIndex(savedProvider);
+    this.providerIndex = savedIndex >= 0 ? savedIndex : 0;
   }
 
-  // 加载当前使用中的 API 配置 (无 profile 时用旧版单配置降级)
-  private async loadCurrentProfile(context: common.UIAbilityContext): Promise<ApiProfile> {
+  // 加载所有 API Profile；无 profile 时用旧版单配置降级
+  private async loadProfiles(context: common.UIAbilityContext): Promise<ApiProfile[]> {
     let profiles: ApiProfile[] = await StorageManager.loadApiProfiles(context);
     if (profiles.length === 0) {
       let api: ApiConfig | null = await StorageManager.loadApiConfig(context);
       let legacyApi: ApiConfig = api !== null ? api : ApiConfig.default();
       let legacyMm: MultimodalConfig = await StorageManager.loadMultimodalConfig(context);
-      return ApiProfile.fromLegacy('默认配置', legacyApi, legacyMm);
+      return [ApiProfile.fromLegacy('默认配置', legacyApi, legacyMm)];
     }
-    let savedId: string = await StorageManager.loadString(
-      context, Constants.LS_KEY_CURRENT_API_PROFILE_ID, '');
+    return profiles;
+  }
+
+  // 把所有 Profile 的主模型 + 多模态解析模型拍平成下拉选项
+  private buildModelOptions(profiles: ApiProfile[]): OcrModelOption[] {
+    let options: OcrModelOption[] = [];
+    let seenModels: string[] = [];
     for (let i: number = 0; i < profiles.length; i++) {
-      if (profiles[i].id === savedId) {
-        return profiles[i];
+      let profile: ApiProfile = profiles[i];
+      if (profile.apiConfig.model !== '' && seenModels.indexOf(profile.apiConfig.model) === -1) {
+        seenModels.push(profile.apiConfig.model);
+        options.push(new OcrModelOption(
+          profile.id + '|main',
+          profile.apiConfig.model,
+          profile.apiConfig.model,
+          profile.apiConfig.baseUrl,
+          profile.apiConfig.apiKey,
+          'main',
+          profile.name
+        ));
+      }
+      if (profile.multimodalConfig.model !== '' && seenModels.indexOf(profile.multimodalConfig.model) === -1) {
+        seenModels.push(profile.multimodalConfig.model);
+        options.push(new OcrModelOption(
+          profile.id + '|multimodal',
+          profile.multimodalConfig.model,
+          profile.multimodalConfig.model,
+          profile.multimodalConfig.baseUrl,
+          profile.multimodalConfig.apiKey,
+          'multimodal',
+          profile.name
+        ));
       }
     }
-    return profiles[0];
+    return options;
   }
 
-  // 智谱 → 多模态解析引擎配置; 火山方舟 → 支持原生多模态的主模型配置
-  private applyProviderFields(): void {
-    if (this.providerIndex === 1) {
-      let api: ApiConfig = this.currentProfile.apiConfig;
-      this.modelText = api.model;
-      this.apiKeyText = api.apiKey;
-    } else {
-      let mm: MultimodalConfig = this.currentProfile.multimodalConfig;
-      this.modelText = mm.model;
-      this.apiKeyText = mm.apiKey;
+  private findSavedModelIndex(saved: string): number {
+    if (saved.indexOf('|') !== -1) {
+      for (let i: number = 0; i < this.modelOptions.length; i++) {
+        if (this.modelOptions[i].key === saved) {
+          return i;
+        }
+      }
+      return -1;
     }
-    this.keySavedHint = '';
-  }
-
-  private getPreset(): ProviderPreset {
-    return PRESETS[this.providerIndex];
-  }
-
-  private async saveSettings(): Promise<void> {
-    let preset: ProviderPreset = this.getPreset();
-    let context: common.UIAbilityContext = getContext(this) as common.UIAbilityContext;
-    if (this.providerIndex === 1) {
-      // 火山方舟: 保存到主模型配置
-      let api: ApiConfig = this.currentProfile.apiConfig;
-      api.provider = 'volcano';
-      api.baseUrl = preset.baseUrl;
-      api.model = this.modelText.trim() === '' ? preset.model : this.modelText.trim();
-      api.apiKey = this.apiKeyText.trim();
-      await this.persistCurrentProfile(context);
-      await StorageManager.saveApiConfig(context, api);
-      this.keySavedHint = '✓ 已保存 (与主模型配置同步)';
-    } else {
-      // 智谱: 保存到多模态解析引擎配置
-      let mm: MultimodalConfig = this.currentProfile.multimodalConfig;
-      mm.baseUrl = preset.baseUrl;
-      mm.model = this.modelText.trim() === '' ? preset.model : this.modelText.trim();
-      mm.apiKey = this.apiKeyText.trim();
-      await this.persistCurrentProfile(context);
-      await StorageManager.saveMultimodalConfig(context, mm);
-      this.keySavedHint = '✓ 已保存 (与多模态解析配置同步)';
+    let type: string = '';
+    if (saved === 'main' || saved === 'volc') {
+      type = 'main';
+    } else if (saved === 'multimodal' || saved === 'zhipu') {
+      type = 'multimodal';
     }
-    promptAction.showToast({ message: '配置已保存', duration: 1500 });
-  }
-
-  private async persistCurrentProfile(context: common.UIAbilityContext): Promise<void> {
-    let profiles: ApiProfile[] = await StorageManager.loadApiProfiles(context);
-    let found: boolean = false;
-    for (let i: number = 0; i < profiles.length; i++) {
-      if (profiles[i].id === this.currentProfile.id) {
-        profiles[i] = this.currentProfile;
-        found = true;
-        break;
+    if (type === '') {
+      return -1;
+    }
+    for (let i: number = 0; i < this.modelOptions.length; i++) {
+      if (this.modelOptions[i].configType === type) {
+        return i;
       }
     }
-    if (!found) {
-      profiles.push(this.currentProfile);
+    return -1;
+  }
+
+  private getModelSelectOptions(): SelectOption[] {
+    let options: SelectOption[] = [];
+    for (let i: number = 0; i < this.modelOptions.length; i++) {
+      options.push({ value: this.modelOptions[i].label });
     }
-    await StorageManager.saveApiProfiles(context, profiles);
+    if (options.length === 0) {
+      options.push({ value: '未配置模型' });
+    }
+    return options;
+  }
+
+  private getSelectedConfigName(): string {
+    if (this.providerIndex >= 0 && this.providerIndex < this.modelOptions.length) {
+      return this.modelOptions[this.providerIndex].label;
+    }
+    return '未配置模型';
+  }
+
+  private buildOcrConfig(): MultimodalConfig {
+    let config: MultimodalConfig = new MultimodalConfig();
+    if (this.providerIndex >= 0 && this.providerIndex < this.modelOptions.length) {
+      let option: OcrModelOption = this.modelOptions[this.providerIndex];
+      config.baseUrl = option.baseUrl;
+      config.model = option.model;
+      config.apiKey = option.apiKey;
+    }
+    return config;
   }
 
   private async persistProvider(): Promise<void> {
     let context: common.UIAbilityContext = getContext(this) as common.UIAbilityContext;
-    await StorageManager.saveString(
-      context, Constants.LS_KEY_TABLE_OCR_PROVIDER, this.providerIndex === 1 ? 'volc' : 'zhipu');
+    let key: string = '';
+    if (this.providerIndex >= 0 && this.providerIndex < this.modelOptions.length) {
+      key = this.modelOptions[this.providerIndex].key;
+    }
+    await StorageManager.saveString(context, Constants.LS_KEY_TABLE_OCR_PROVIDER, key);
   }
 
   private async pickImage(): Promise<void> {
@@ -221,21 +241,23 @@ struct TableOcrPage {
     if (this.selectedBytes === null) {
       return;
     }
-    if (this.apiKeyText.trim() === '') {
+    if (this.modelOptions.length === 0) {
+      this.errorMsg = '请先在设置中配置主模型或多模态解析模型';
+      return;
+    }
+    let configName: string = this.getSelectedConfigName();
+    let config: MultimodalConfig = this.buildOcrConfig();
+    if (config.apiKey === '') {
       this.errorMsg = '请先填写 API Key';
       return;
     }
-    let preset: ProviderPreset = this.getPreset();
     this.errorMsg = '';
     this.converting = true;
-    this.statusText = '正在调用 ' + preset.name + '...';
+    this.statusText = '正在调用 ' + configName + ' (' + (config.model !== '' ? config.model : '未命名模型') + ')...';
+    let raw: string = '';
     try {
-      let config: MultimodalConfig = new MultimodalConfig();
-      config.baseUrl = preset.baseUrl;
-      config.model = this.modelText.trim() === '' ? preset.model : this.modelText.trim();
-      config.apiKey = this.apiKeyText.trim();
       let compressed = await TableOcrService.compressImage(this.selectedBytes);
-      let raw: string = await TableOcrService.recognizeImage(config, compressed);
+      raw = await TableOcrService.recognizeImage(config, compressed);
       let html: string = TableOcrService.cleanHtml(raw);
       let parsed: TableGridInfo = HtmlTableParser.parse(html);
       this.currentHtml = html;
@@ -248,7 +270,9 @@ struct TableOcrPage {
       this.statusText = '✓ 识别完成';
     } catch (e) {
       let err: Error = e as Error;
-      this.errorMsg = err.message;
+      let detail: string = raw !== '' ? raw.substring(0, 1200) : '';
+      this.errorMsg = err.message + (detail !== '' ? '\n原始输出：' + detail : '');
+      this.debugText = raw;
       this.statusText = '✗ 失败';
     } finally {
       this.converting = false;
@@ -430,9 +454,9 @@ struct TableOcrPage {
             .fontColor($r('app.color.text_secondary'))
             .margin({ top: -4 })
         }
-        .width(40)
-        .height(40)
-        .borderRadius(10)
+        .width(44)
+        .height(44)
+        .borderRadius(22)
         .backgroundColor(Color.Transparent)
         .onClick(() => {
           router.back();
@@ -441,34 +465,34 @@ struct TableOcrPage {
           .fontSize(18)
           .fontWeight(FontWeight.Bold)
           .fontColor($r('app.color.text_primary'))
-          .margin({ left: 4 })
+          .margin({ left: 8 })
         Blank()
       }
       .width('100%')
-      .height(52)
-      .padding({ left: 6, right: 12 })
+      .height(58)
+      .padding({ left: 8, right: 16 })
       .alignItems(VerticalAlign.Center)
       Text('图片 → HTML 表格 → Excel（保留合并单元格 + 行高）')
         .fontSize(12)
         .fontColor($r('app.color.text_secondary'))
         .width('100%')
-        .padding({ left: 18, right: 18, bottom: 10 })
+        .padding({ left: 20, right: 20, bottom: 12 })
     }
     .width('100%')
     .backgroundColor($r('app.color.surface'))
-    .border({ width: { bottom: 1 }, color: $r('app.color.border') })
+    .shadow({ radius: 16, color: '#0D000000', offsetX: 0, offsetY: 2 })
   }
 
   // ============ 1. API 设置 ============
   @Builder
   buildApiSection() {
     Column() {
-      this.buildStepTitle('1', 'API 设置')
-      Select([{ value: PRESETS[0].name }, { value: PRESETS[1].name }])
+      this.buildStepTitle('1', '模型选择')
+      Select(this.getModelSelectOptions())
         .selected(this.providerIndex)
         .width('100%')
-        .height(40)
-        .borderRadius(8)
+        .height(44)
+        .borderRadius(16)
         .backgroundColor($r('app.color.surface_secondary'))
         .font({ size: 14 })
         .onSelect((index: number) => {
@@ -476,85 +500,33 @@ struct TableOcrPage {
             return;
           }
           this.providerIndex = index;
-          this.applyProviderFields();
           this.persistProvider();
         })
-      Text('平台')
+      Text('请选择具有多模态能力的识别模型')
         .fontSize(12)
         .fontColor($r('app.color.text_secondary'))
         .margin({ top: 10, bottom: 4 })
-      TextInput({ placeholder: '模型名称或 Endpoint ID', text: this.modelText })
-        .width('100%')
-        .height(40)
-        .fontSize(14)
-        .fontColor($r('app.color.text_primary'))
-        .backgroundColor($r('app.color.surface_secondary'))
-        .placeholderColor($r('app.color.text_tertiary'))
-        .borderRadius(8)
-        .onChange((value: string) => {
-          this.modelText = value;
-          this.keySavedHint = '';
-        })
-      Text('模型')
-        .fontSize(12)
-        .fontColor($r('app.color.text_secondary'))
-        .margin({ top: 10, bottom: 4 })
-      TextInput({ placeholder: 'sk-...', text: this.apiKeyText })
-        .type(InputType.Password)
-        .width('100%')
-        .height(40)
-        .fontSize(14)
-        .fontColor($r('app.color.text_primary'))
-        .backgroundColor($r('app.color.surface_secondary'))
-        .placeholderColor($r('app.color.text_tertiary'))
-        .borderRadius(8)
-        .onChange((value: string) => {
-          this.apiKeyText = value;
-          this.keySavedHint = '';
-        })
-      Text('API Key')
-        .fontSize(12)
-        .fontColor($r('app.color.text_secondary'))
-        .margin({ top: 10, bottom: 4 })
-      Row() {
-        Button('保存到本地')
-          .fontSize(13)
-          .height(32)
-          .padding({ left: 14, right: 14 })
-          .backgroundColor($r('app.color.surface_secondary'))
-          .fontColor($r('app.color.text_primary'))
-          .borderRadius(8)
-          .onClick(() => {
-            this.saveSettings();
-          })
-        Text(this.keySavedHint)
-          .fontSize(11)
-          .fontColor($r('app.color.success'))
-          .margin({ left: 10 })
-      }
-      .width('100%')
-      .margin({ top: 12 })
-      .alignItems(VerticalAlign.Center)
-      Text('• 智谱：引用「设置 → 多模态解析引擎」的配置，Key 从 open.bigmodel.cn 获取')
+      Text('• 下拉框包含所有 API Profile 的主模型和多模态解析模型')
         .fontSize(11)
         .fontColor($r('app.color.text_tertiary'))
         .width('100%')
         .margin({ top: 12 })
-      Text('• 火山方舟：引用「设置 → 主模型」的配置（需为支持原生多模态的豆包模型），Key 从 console.volcengine.com 获取')
+      Text('• 识别时直接使用所选模型对应的 Base URL / API Key')
         .fontSize(11)
         .fontColor($r('app.color.text_tertiary'))
         .width('100%')
         .margin({ top: 4 })
-      Text('• 两个平台引用各自的 Key，互不共用；切换平台后自动读取对应配置')
+      Text('• 不需要在这里填写 API Key')
         .fontSize(11)
         .fontColor($r('app.color.text_tertiary'))
         .width('100%')
         .margin({ top: 4 })
     }
     .width('100%')
-    .padding(16)
+    .padding(20)
     .backgroundColor($r('app.color.surface'))
-    .borderRadius(14)
+    .borderRadius(24)
+    .shadow({ radius: 18, color: '#0D000000', offsetX: 0, offsetY: 4 })
     .margin({ top: 12 })
     .alignItems(HorizontalAlign.Start)
   }
@@ -587,13 +559,13 @@ struct TableOcrPage {
             .width('100%')
             .height(200)
             .objectFit(ImageFit.Contain)
-            .borderRadius(10)
+            .borderRadius(16)
             .backgroundColor($r('app.color.background'))
         }
       }
       .width('100%')
       .border({ width: 1.5, style: BorderStyle.Dashed, color: $r('app.color.border') })
-      .borderRadius(12)
+      .borderRadius(20)
       .backgroundColor($r('app.color.background'))
       .onClick(() => {
         this.pickImage();
@@ -601,23 +573,25 @@ struct TableOcrPage {
       Row() {
         Button(this.converting ? '识别中...' : '识别表格')
           .fontSize(14)
-          .height(38)
+          .height(44)
           .padding({ left: 20, right: 20 })
           .backgroundColor(this.converting || this.selectedUri === '' ?
             $r('app.color.text_tertiary') : $r('app.color.brand'))
           .fontColor(Color.White)
-          .borderRadius(10)
+          .borderRadius(16)
           .enabled(!this.converting && this.selectedUri !== '')
           .onClick(() => {
             this.startRecognize();
           })
         Button('清除')
           .fontSize(13)
-          .height(38)
-          .padding({ left: 16, right: 16 })
-          .backgroundColor(Color.Transparent)
+          .height(44)
+          .padding({ left: 18, right: 18 })
+          .backgroundColor($r('app.color.raised_surface'))
           .fontColor($r('app.color.text_secondary'))
-          .borderRadius(10)
+          .borderRadius(16)
+          .shadow({ radius: 12, color: '#14000000', offsetX: 0, offsetY: 3 })
+          .margin({ left: 12 })
           .enabled(!this.converting)
           .onClick(() => {
             this.clearAll();
@@ -625,7 +599,7 @@ struct TableOcrPage {
         Text(this.statusText)
           .fontSize(12)
           .fontColor($r('app.color.text_secondary'))
-          .margin({ left: 8 })
+          .margin({ left: 12 })
           .layoutWeight(1)
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
@@ -635,9 +609,10 @@ struct TableOcrPage {
       .alignItems(VerticalAlign.Center)
     }
     .width('100%')
-    .padding(16)
+    .padding(20)
     .backgroundColor($r('app.color.surface'))
-    .borderRadius(14)
+    .borderRadius(24)
+    .shadow({ radius: 18, color: '#0D000000', offsetX: 0, offsetY: 4 })
     .margin({ top: 12 })
     .alignItems(HorizontalAlign.Start)
   }
@@ -669,11 +644,11 @@ struct TableOcrPage {
       Row() {
         Button('下载 Excel (.xlsx)')
           .fontSize(14)
-          .height(38)
+          .height(44)
           .padding({ left: 20, right: 20 })
           .backgroundColor($r('app.color.success'))
           .fontColor(Color.White)
-          .borderRadius(10)
+          .borderRadius(16)
           .onClick(() => {
             this.downloadExcel();
           })
@@ -687,9 +662,10 @@ struct TableOcrPage {
       .alignItems(VerticalAlign.Center)
     }
     .width('100%')
-    .padding(16)
+    .padding(20)
     .backgroundColor($r('app.color.surface'))
-    .borderRadius(14)
+    .borderRadius(24)
+    .shadow({ radius: 18, color: '#0D000000', offsetX: 0, offsetY: 4 })
     .margin({ top: 12 })
     .alignItems(HorizontalAlign.Start)
   }
@@ -738,21 +714,23 @@ struct TableOcrPage {
       Row() {
         Button('复制 HTML')
           .fontSize(12)
-          .height(30)
-          .padding({ left: 12, right: 12 })
-          .backgroundColor($r('app.color.surface_secondary'))
+          .height(36)
+          .padding({ left: 14, right: 14 })
+          .backgroundColor($r('app.color.raised_surface'))
           .fontColor($r('app.color.text_primary'))
-          .borderRadius(8)
+          .borderRadius(16)
+          .shadow({ radius: 10, color: '#12000000', offsetX: 0, offsetY: 2 })
           .onClick(() => {
             this.copyHtml();
           })
         Button('下载 .html')
           .fontSize(12)
-          .height(30)
-          .padding({ left: 12, right: 12 })
-          .backgroundColor($r('app.color.surface_secondary'))
+          .height(36)
+          .padding({ left: 14, right: 14 })
+          .backgroundColor($r('app.color.raised_surface'))
           .fontColor($r('app.color.text_primary'))
-          .borderRadius(8)
+          .borderRadius(16)
+          .shadow({ radius: 10, color: '#12000000', offsetX: 0, offsetY: 2 })
           .margin({ left: 8 })
           .onClick(() => {
             this.downloadHtml();
@@ -771,7 +749,7 @@ struct TableOcrPage {
       .width('100%')
       .height(260)
       .backgroundColor($r('app.color.code_bg'))
-      .borderRadius(10)
+      .borderRadius(16)
       .scrollable(ScrollDirection.Vertical)
       .scrollBar(BarState.Auto)
       .padding(12)
@@ -822,7 +800,7 @@ struct TableOcrPage {
     .width('100%')
     .height(280)
     .backgroundColor($r('app.color.code_bg'))
-    .borderRadius(10)
+    .borderRadius(16)
     .scrollable(ScrollDirection.Vertical)
     .scrollBar(BarState.Auto)
     .margin({ top: 12 })
@@ -862,7 +840,7 @@ struct TableOcrPage {
     .width(this.grid !== null ? this.grid.maxCols * COLUMN_WIDTH : 1)
     .height(this.gridTotalHeight)
     .backgroundColor($r('app.color.surface'))
-    .borderRadius(10)
+    .borderRadius(16)
     .clip(true)
   }
 
@@ -905,7 +883,7 @@ struct TableOcrPage {
     .width('100%')
     .padding(12)
     .backgroundColor($r('app.color.brand_light'))
-    .borderRadius(10)
+    .borderRadius(16)
     .margin({ top: 12 })
     .alignItems(HorizontalAlign.Start)
   }

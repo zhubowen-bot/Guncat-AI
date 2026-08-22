@@ -9,6 +9,7 @@ export class FileItem {
   parsedText: string = '';
   dataUrl: string = '';
   thumbnail: string = '';
+  fileId: string = '';
   isParsing: boolean = false;
   error: boolean = false;
 
