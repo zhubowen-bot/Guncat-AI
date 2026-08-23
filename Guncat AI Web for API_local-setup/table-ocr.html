@@ -4,162 +4,347 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>表格识别引擎 · 图片 → HTML → Excel</title>
-<script src="https://cdn.tailwindcss.com"></script>
+<link rel="icon" type="image/png" href="cat-avatar(1).png">
 <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
 <style>
-  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; }
-  .drop-zone { transition: all 0.2s; }
-  .drop-zone.dragover { border-color: #3b82f6; background: #eff6ff; }
-  pre { tab-size: 2; }
-  .tab-active { background: #1e40af; color: white; }
+  /* 对齐鸿蒙 5.1.0 柔和现代配色（低饱和、大圆角、白色轻立体、柔和阴影） */
+  :root {
+    --primary: #0A7AFF;
+    --primary-pressed: #0060D6;
+    --primary-light: #E5F1FF;
+    --bg: #F4F5F7;
+    --surface: #FFFFFF;
+    --surface-raised: #FFFFFF;
+    --surface-secondary: #F2F3F7;
+    --text: #1B2330;
+    --text-secondary: #6B7280;
+    --text-tertiary: #B4BAC6;
+    --border: #E5E8EF;
+    --danger: #E05252;
+    --success: #3DBE64;
+    --code-bg: #1F2430;
+    --code-text: #E5E9F0;
+    --shadow: 0 8px 24px rgba(27, 35, 48, .08);
+    --shadow-card: 0 4px 18px rgba(27, 35, 48, .05);
+    --shadow-btn: 0 2px 6px rgba(27, 35, 48, .08);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --primary: #409CFF;
+      --primary-pressed: #2B7FFF;
+      --primary-light: #1E3A5F;
+      --bg: #111418;
+      --surface: #1B1F27;
+      --surface-raised: #252B34;
+      --surface-secondary: #252B34;
+      --text: #EDF0F5;
+      --text-secondary: #9AA3B2;
+      --text-tertiary: #6B7280;
+      --border: #2C333E;
+      --danger: #F0716B;
+      --success: #6BCB77;
+      --code-bg: #0F1218;
+      --code-text: #E5E9F0;
+      --shadow: 0 8px 24px rgba(0, 0, 0, .30);
+      --shadow-card: 0 4px 18px rgba(0, 0, 0, .22);
+      --shadow-btn: 0 2px 6px rgba(0, 0, 0, .28);
+    }
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: var(--bg); color: var(--text); margin: 0; min-height: 100vh;
+  }
+  .wrap { max-width: 960px; margin: 0 auto; padding: 24px 16px 40px; }
+
+  .back-link { display: inline-flex; align-items: center; gap: 6px; color: var(--primary); text-decoration: none; font-size: 14px; margin-bottom: 14px; }
+  .back-link:hover { color: var(--primary-pressed); }
+  h1 { font-size: 26px; font-weight: 700; margin: 0; }
+  .subtitle { color: var(--text-secondary); font-size: 13px; margin: 6px 0 22px; }
+
+  .card { background: var(--surface); border-radius: 24px; box-shadow: var(--shadow-card); padding: 20px; margin-bottom: 16px; }
+  .step-head { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+  .step-num { width: 22px; height: 22px; border-radius: 50%; background: var(--primary); color: #fff; font-size: 12px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .step-title { font-size: 15px; font-weight: 700; margin: 0; }
+
+  select, input[type="password"], input[type="text"] {
+    width: 100%; padding: 11px 14px; border: 1px solid transparent; border-radius: 14px;
+    font-size: 14px; background: var(--surface-secondary); color: var(--text); outline: none;
+    transition: border-color .2s, background .2s; font-family: inherit;
+  }
+  select:focus, input:focus { border-color: var(--primary); background: var(--surface-raised); }
+
+  .hint-lines { margin-top: 12px; font-size: 11px; color: var(--text-tertiary); line-height: 1.8; }
+  .hint-lines p { margin: 0; }
+
+  /* 白色轻立体按钮 */
+  .btn { border: none; cursor: pointer; font-family: inherit; transition: all .2s; }
+  .btn-primary { background: var(--primary); color: #fff; font-weight: 600; font-size: 14px; padding: 11px 22px; border-radius: 16px; box-shadow: var(--shadow-btn); }
+  .btn-primary:hover:not(:disabled) { background: var(--primary-pressed); }
+  .btn-primary:active:not(:disabled) { transform: scale(.97); }
+  .btn-primary:disabled { background: var(--text-tertiary); box-shadow: none; cursor: not-allowed; }
+  .btn-success { background: var(--success); color: #fff; font-weight: 600; font-size: 14px; padding: 11px 22px; border-radius: 16px; box-shadow: var(--shadow-btn); }
+  .btn-soft { background: var(--surface-raised); color: var(--text-secondary); font-size: 13px; padding: 10px 18px; border-radius: 16px; box-shadow: var(--shadow-btn); }
+  .btn-soft:hover { color: var(--primary); }
+  .btn-small { background: var(--surface-raised); color: var(--text); font-size: 12px; padding: 8px 14px; border-radius: 16px; box-shadow: var(--shadow-btn); }
+
+  /* 上传区 */
+  .drop-zone { border: 1.5px dashed var(--border); border-radius: 20px; background: var(--bg); text-align: center; cursor: pointer; transition: border-color .2s, background .2s; padding: 36px 16px; }
+  .drop-zone:hover, .drop-zone.dragover { border-color: var(--primary); background: var(--primary-light); }
+  .drop-zone img.preview-img { max-width: 100%; max-height: 380px; border-radius: 16px; margin: 0 auto; display: block; object-fit: contain; }
+  .drop-zone .dz-title { font-size: 14px; color: var(--text-secondary); margin: 8px 0 4px; }
+  .drop-zone .dz-sub { font-size: 11px; color: var(--text-tertiary); margin: 0; }
+  .drop-zone svg { width: 44px; height: 44px; color: var(--text-tertiary); }
+
+  .action-row { display: flex; align-items: center; gap: 12px; margin-top: 14px; flex-wrap: wrap; }
+  .status-text { font-size: 12px; color: var(--text-secondary); flex: 1; min-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* Tabs（对齐鸿蒙：文字选中色 + 圆角短下划线） */
+  .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin-bottom: 14px; }
+  .tab-btn { position: relative; background: transparent; border: none; cursor: pointer; font-family: inherit; font-size: 13px; color: var(--text-secondary); padding: 9px 12px 7px; }
+  .tab-btn::after { content: ''; position: absolute; left: 8px; right: 8px; bottom: -1px; height: 3px; border-radius: 1.5px; background: transparent; transition: background .2s; }
+  .tab-btn.tab-active { color: var(--primary); font-weight: 600; }
+  .tab-btn.tab-active::after { background: var(--primary); }
+  .tab-content.hidden, .hidden { display: none; }
+
+  pre.code-block { background: var(--code-bg); color: var(--code-text); border-radius: 16px; padding: 14px; overflow-x: auto; font-size: 12px; max-height: 400px; tab-size: 2; }
+  #tablePreview { overflow-x: auto; background: var(--bg); border-radius: 16px; padding: 14px; }
+  #tablePreview table { border-collapse: collapse; font-size: 13px; }
+  #tablePreview th, #tablePreview td { border: 1px solid var(--border); padding: 6px 10px; }
+  #gridTable table { border-collapse: collapse; font-size: 12px; }
+  #gridTable td, #gridTable th { border: 1px solid var(--border); padding: 4px 8px; vertical-align: top; }
+  #gridTable td.merged-hole { background: var(--surface-secondary); color: var(--text-tertiary); text-align: center; min-width: 40px; min-height: 20px; }
+  #gridTable td.cell-header { background: var(--primary-light); }
+  #gridInfo { font-size: 13px; color: var(--text-secondary); margin-bottom: 10px; line-height: 1.7; }
+  #gridInfo .ok { color: var(--success); }
+  #gridInfo .warn { color: var(--danger); }
+
+  .error-box { background: var(--primary-light); border-radius: 16px; padding: 14px; margin-bottom: 16px; color: var(--danger); font-size: 13px; }
+  .error-box p { margin: 0 0 6px; font-weight: 600; }
+  .error-box pre { white-space: pre-wrap; font-size: 12px; margin: 0; }
+  footer { text-align: center; font-size: 12px; color: var(--text-tertiary); margin-top: 32px; }
 </style>
 </head>
-<body class="bg-gray-50 min-h-screen">
+<body>
 
-<div class="max-w-5xl mx-auto p-6">
+<div class="wrap">
 
   <!-- Header -->
-  <header class="mb-8">
-    <a href="index.html" class="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800 text-sm mb-4">← 返回主页</a>
-    <h1 class="text-3xl font-bold text-gray-900">表格识别引擎</h1>
-    <p class="text-gray-500 mt-1">图片 → HTML 表格 → Excel（保留合并单元格 + 行高）</p>
+  <header>
+    <a href="index.html" class="back-link">← 返回主页</a>
+    <h1>表格识别引擎</h1>
+    <p class="subtitle">图片 → HTML 表格 → Excel（保留合并单元格 + 行高）</p>
   </header>
 
-  <!-- Step 1: Settings -->
-  <section class="bg-white rounded-lg shadow-sm p-6 mb-6">
-    <h2 class="text-lg font-semibold mb-4 flex items-center gap-2">
-      <span class="bg-blue-600 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm">1</span>
-      API 设置
-    </h2>
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-      <div>
-        <label class="block text-sm font-medium text-gray-700 mb-1">平台</label>
-        <select id="provider" class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm">
-          <option value="zhipu">智谱 GLM</option>
-          <option value="volc">火山方舟 (豆包)</option>
-        </select>
-      </div>
-      <div>
-        <label class="block text-sm font-medium text-gray-700 mb-1">模型</label>
-        <input id="model" type="text" value="glm-4.6v-flash" class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm" placeholder="模型名称或 Endpoint ID">
-      </div>
-      <div>
-        <label class="block text-sm font-medium text-gray-700 mb-1">API Key</label>
-        <input id="apiKey" type="password" class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm" placeholder="sk-...">
-      </div>
+  <!-- Step 1: 模型选择（动态展示所有 API Profile 的主模型与多模态解析模型） -->
+  <section class="card">
+    <div class="step-head">
+      <span class="step-num">1</span>
+      <h2 class="step-title">模型选择</h2>
     </div>
-    <div class="mt-3 flex items-center gap-3">
-      <button id="saveKey" class="bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm px-3 py-1.5 rounded-md">保存到本地</button>
-      <span id="keyStatus" class="text-xs text-gray-400"></span>
-    </div>
-    <div class="mt-3 text-xs text-gray-400">
-      <p>• 智谱：填 <code class="bg-gray-100 px-1 rounded">glm-4.6v-flash</code>，Key 从 open.bigmodel.cn 获取</p>
-      <p>• 火山方舟：模型填 Endpoint ID（如 <code class="bg-gray-100 px-1 rounded">ep-2024xxxxxx</code>）或 <code class="bg-gray-100 px-1 rounded">doubao-seed-2-0-lite-260428</code>，Key 从 console.volcengine.com 获取</p>
-      <p>• Key 只存在你浏览器的 localStorage，不会上传到任何服务器（除了 API 提供商本身）</p>
+    <select id="modelSelect"></select>
+    <p class="hint-lines" style="margin-top:10px; font-size:12px; color:var(--text-secondary);">
+      请选择具有多模态能力的识别模型
+    </p>
+    <div class="hint-lines">
+      <p>• 下拉框包含主页所有 API 配置方案的主模型和多模态解析模型，相同模型自动去重</p>
+      <p>• 识别时直接使用所选模型对应的 Base URL / API Key</p>
+      <p>• 不需要在这里填写 API Key；如列表为空，请先到主页「API 设置」完成配置</p>
     </div>
   </section>
 
   <!-- Step 2: Upload -->
-  <section class="bg-white rounded-lg shadow-sm p-6 mb-6">
-    <h2 class="text-lg font-semibold mb-4 flex items-center gap-2">
-      <span class="bg-blue-600 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm">2</span>
-      上传表格图片
-    </h2>
-    <div id="dropZone" class="drop-zone border-2 border-dashed border-gray-300 rounded-lg p-8 text-center cursor-pointer hover:border-blue-400">
+  <section class="card">
+    <div class="step-head">
+      <span class="step-num">2</span>
+      <h2 class="step-title">上传表格图片</h2>
+    </div>
+    <div id="dropZone" class="drop-zone">
       <div id="dropHint">
-        <svg class="mx-auto h-12 w-12 text-gray-400 mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.9 5 5 0 019.9-1.49A4.5 4.5 0 1117 16M9 13l3-3 3 3M12 10v9"/></svg>
-        <p class="text-gray-600">点击或拖拽图片到此处</p>
-        <p class="text-xs text-gray-400 mt-1">支持 JPG / PNG / WebP，建议宽度 1000-3000px</p>
+        <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.6" d="M7 16a4 4 0 01-.88-7.9 5 5 0 019.9-1.49A4.5 4.5 0 1117 16M9 13l3-3 3 3M12 10v9"/></svg>
+        <p class="dz-title">点击或拖拽图片到此处</p>
+        <p class="dz-sub">支持 JPG / PNG / WebP，建议宽度 1000-3000px</p>
       </div>
-      <img id="preview" class="max-w-full max-h-96 mx-auto hidden rounded-lg shadow-sm">
+      <img id="preview" class="preview-img hidden" alt="">
       <input id="fileInput" type="file" accept="image/*" class="hidden">
     </div>
-    <div class="mt-4 flex items-center gap-3">
-      <button id="convertBtn" disabled class="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white font-medium px-6 py-2 rounded-md text-sm">
-        识别表格
-      </button>
-      <button id="clearBtn" class="text-gray-500 hover:text-gray-700 text-sm px-3 py-2">清除</button>
-      <span id="convertStatus" class="text-sm text-gray-400"></span>
+    <div class="action-row">
+      <button id="convertBtn" class="btn btn-primary" disabled>识别表格</button>
+      <button id="clearBtn" class="btn btn-soft">清除</button>
+      <span id="convertStatus" class="status-text"></span>
     </div>
   </section>
 
   <!-- Step 3: Results -->
-  <section id="resultSection" class="bg-white rounded-lg shadow-sm p-6 hidden">
-    <h2 class="text-lg font-semibold mb-4 flex items-center gap-2">
-      <span class="bg-blue-600 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm">3</span>
-      结果
-    </h2>
+  <section id="resultSection" class="card hidden">
+    <div class="step-head">
+      <span class="step-num">3</span>
+      <h2 class="step-title">结果</h2>
+    </div>
 
     <!-- Tabs -->
-    <div class="flex gap-2 mb-4 border-b border-gray-200">
-      <button data-tab="preview" class="tab-btn tab-active px-4 py-2 text-sm font-medium rounded-t-md">渲染预览</button>
-      <button data-tab="html" class="tab-btn px-4 py-2 text-sm font-medium rounded-t-md text-gray-600 hover:text-gray-900">HTML 代码</button>
-      <button data-tab="grid" class="tab-btn px-4 py-2 text-sm font-medium rounded-t-md text-gray-600 hover:text-gray-900">网格结构</button>
-      <button data-tab="debug" class="tab-btn px-4 py-2 text-sm font-medium rounded-t-md text-gray-600 hover:text-gray-900">调试信息</button>
+    <div class="tabs">
+      <button data-tab="preview" class="tab-btn tab-active">渲染预览</button>
+      <button data-tab="html" class="tab-btn">HTML 代码</button>
+      <button data-tab="grid" class="tab-btn">网格结构</button>
+      <button data-tab="debug" class="tab-btn">调试信息</button>
     </div>
 
     <!-- Tab: Preview -->
     <div id="tab-preview" class="tab-content">
-      <div id="tablePreview" class="overflow-x-auto border border-gray-200 rounded-lg p-4 bg-gray-50"></div>
+      <div id="tablePreview"></div>
     </div>
 
     <!-- Tab: HTML -->
     <div id="tab-html" class="tab-content hidden">
-      <div class="flex gap-2 mb-3">
-        <button id="copyHtml" class="bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm px-3 py-1.5 rounded-md">复制 HTML</button>
-        <button id="downloadHtml" class="bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm px-3 py-1.5 rounded-md">下载 .html</button>
+      <div class="action-row" style="margin:0 0 10px;">
+        <button id="copyHtml" class="btn btn-small">复制 HTML</button>
+        <button id="downloadHtml" class="btn btn-small">下载 .html</button>
       </div>
-      <pre id="htmlCode" class="bg-gray-900 text-gray-100 p-4 rounded-lg overflow-x-auto text-xs max-h-96"></pre>
+      <pre id="htmlCode" class="code-block"></pre>
     </div>
 
     <!-- Tab: Grid -->
     <div id="tab-grid" class="tab-content hidden">
-      <div id="gridInfo" class="text-sm text-gray-600 mb-3"></div>
-      <div id="gridTable" class="overflow-x-auto"></div>
+      <div id="gridInfo"></div>
+      <div id="gridTable" style="overflow-x:auto;"></div>
     </div>
 
     <!-- Tab: Debug -->
     <div id="tab-debug" class="tab-content hidden">
-      <pre id="debugInfo" class="bg-gray-900 text-gray-100 p-4 rounded-lg overflow-x-auto text-xs max-h-96"></pre>
+      <pre id="debugInfo" class="code-block"></pre>
     </div>
 
     <!-- Download Excel -->
-    <div class="mt-6 pt-4 border-t border-gray-200 flex items-center gap-3">
-      <button id="downloadExcel" class="bg-green-600 hover:bg-green-700 text-white font-medium px-6 py-2 rounded-md text-sm">
-        下载 Excel (.xlsx)
-      </button>
-      <span id="excelInfo" class="text-sm text-gray-400"></span>
+    <div class="action-row" style="margin-top:18px; padding-top:14px; border-top:1px solid var(--border);">
+      <button id="downloadExcel" class="btn btn-success">下载 Excel (.xlsx)</button>
+      <span id="excelInfo" class="status-text"></span>
     </div>
   </section>
 
   <!-- Error display -->
-  <div id="errorBox" class="bg-red-50 border border-red-200 text-red-700 rounded-lg p-4 mb-6 hidden">
-    <p class="font-medium">出错：</p>
-    <pre id="errorDetail" class="text-xs mt-2 whitespace-pre-wrap"></pre>
+  <div id="errorBox" class="error-box hidden">
+    <p>出错：</p>
+    <pre id="errorDetail"></pre>
   </div>
 
-  <footer class="text-center text-xs text-gray-400 mt-12 pb-6">
-    <p>纯前端部署 · API Key 存于浏览器本地 · 可直接拖到 Netlify</p>
-  </footer>
+  <footer>纯前端部署 · API Key 存于浏览器本地 · 可直接拖到 Netlify</footer>
 </div>
 
 <script>
 // ============================================================
-//  配置
+//  模型选项（对齐鸿蒙 5.1.0 TableOcrPage.OcrModelOption）
+//  把所有 Profile 的主模型 + 多模态解析模型拍平成下拉选项，按模型名去重
 // ============================================================
-const PROVIDERS = {
-  zhipu: {
-    name: '智谱 GLM',
-    endpoint: 'https://open.bigmodel.cn/api/paas/v4/chat/completions',
-    defaultModel: 'glm-4.6v-flash'
-  },
-  volc: {
-    name: '火山方舟',
-    endpoint: 'https://ark.cn-beijing.volces.com/api/v3/chat/completions',
-    defaultModel: 'doubao-seed-2-0-lite-260428'
-  }
-};
+const LS_KEY_API_PROFILES = 'guncat_api_profiles';
+const LS_KEY_API_CONFIG = 'guncat_api_config';
+const LS_KEY_MM_CONFIG = 'guncat_mm_config';
+const LS_KEY_TABLE_OCR_PROVIDER = 'table_ocr_provider'; // 对齐鸿蒙 Constants.LS_KEY_TABLE_OCR_PROVIDER
 
+const DEFAULT_MM = { baseUrl: 'https://open.bigmodel.cn/api/paas/v4', apiKey: '', model: 'glm-4.6v-flash' };
+
+let modelOptions = []; // { key, label, model, baseUrl, apiKey, configType, profileName }
+
+function loadJson(key, fallback) {
+  try { return JSON.parse(localStorage.getItem(key)) || fallback; } catch (e) { return fallback; }
+}
+
+// 旧版本 provider 迁移（对齐 ApiConfig.normalizeProvider），保证旧数据可读
+function normalizeProvider(provider) {
+  if (provider === 'custom' || !provider) return 'openai-completions';
+  if (provider === 'deepseek' || provider === 'volcano') return 'openai-responses';
+  return provider;
+}
+
+function loadProfiles() {
+  let profiles = loadJson(LS_KEY_API_PROFILES, []);
+  if (!Array.isArray(profiles)) profiles = [];
+  if (!profiles.length) {
+    // 旧版单配置自动迁移为第一套方案（与主页逻辑一致）
+    const legacyApi = loadJson(LS_KEY_API_CONFIG, {});
+    const legacyMm = Object.assign({}, DEFAULT_MM, loadJson(LS_KEY_MM_CONFIG, {}));
+    profiles = [{ id: 'api-profile-legacy', name: '默认配置', apiConfig: legacyApi, multimodalConfig: legacyMm }];
+  }
+  return profiles.map(p => ({
+    id: p.id || 'profile',
+    name: p.name || '未命名配置',
+    apiConfig: p.apiConfig || {},
+    multimodalConfig: Object.assign({}, DEFAULT_MM, p.multimodalConfig || {})
+  }));
+}
+
+function buildModelOptions(profiles) {
+  const options = [];
+  const seenModels = [];
+  const pushOption = (config, configType, profile) => {
+    if (!config.model || seenModels.includes(config.model)) return;
+    seenModels.push(config.model);
+    options.push({
+      key: profile.id + '|' + configType,
+      label: config.model,
+      model: config.model,
+      baseUrl: config.baseUrl || '',
+      apiKey: config.apiKey || '',
+      configType,
+      profileName: profile.name
+    });
+  };
+  for (const p of profiles) {
+    pushOption({ model: p.apiConfig.model, baseUrl: p.apiConfig.baseUrl, apiKey: p.apiConfig.apiKey }, 'main', p);
+    pushOption(p.multimodalConfig, 'multimodal', p);
+  }
+  return options;
+}
+
+function renderModelSelect() {
+  const sel = document.getElementById('modelSelect');
+  if (!modelOptions.length) {
+    sel.innerHTML = '<option>未配置模型</option>';
+    sel.disabled = true;
+    return;
+  }
+  sel.innerHTML = modelOptions.map((o, i) =>
+    `<option value="${i}">${escapeHtml(o.label)}（${o.configType === 'main' ? '主模型' : '多模态'} · ${escapeHtml(o.profileName)}）</option>`
+  ).join('');
+}
+
+// 兼容旧版保存值：key 精确匹配；否则 main/volc→首个主模型，multimodal/zhipu→首个多模态模型
+function findSavedModelIndex(saved) {
+  if (saved && saved.indexOf('|') !== -1) {
+    return modelOptions.findIndex(o => o.key === saved);
+  }
+  let type = '';
+  if (saved === 'main' || saved === 'volc') type = 'main';
+  else if (saved === 'multimodal' || saved === 'zhipu') type = 'multimodal';
+  if (!type) return -1;
+  return modelOptions.findIndex(o => o.configType === type);
+}
+
+function getSelectedOption() {
+  const idx = parseInt(document.getElementById('modelSelect').value, 10);
+  return modelOptions[idx] || null;
+}
+
+function persistProvider() {
+  const opt = getSelectedOption();
+  localStorage.setItem(LS_KEY_TABLE_OCR_PROVIDER, opt ? opt.key : '');
+}
+
+function initSettings() {
+  const profiles = loadProfiles();
+  modelOptions = buildModelOptions(profiles);
+  renderModelSelect();
+  const savedIndex = findSavedModelIndex(localStorage.getItem(LS_KEY_TABLE_OCR_PROVIDER) || '');
+  const sel = document.getElementById('modelSelect');
+  if (modelOptions.length) {
+    sel.value = String(savedIndex >= 0 ? savedIndex : 0);
+    sel.addEventListener('change', persistProvider);
+  }
+}
+
+// ============================================================
+//  表格识别 Prompt（对齐鸿蒙 TABLE_OCR_PROMPT）
+// ============================================================
 const PROMPT = `你是专业的表格识别引擎。任务：把图片中的表格转换成等价的 HTML <table>，忠实保留合并关系、内容和行高信息。
 
 【输出格式】
@@ -228,6 +413,9 @@ let currentGrid = null;       // { grid, maxCols, rowData }
 // ============================================================
 const $ = id => document.getElementById(id);
 
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
 function showError(msg) {
   $('errorBox').classList.remove('hidden');
   $('errorDetail').textContent = msg;
@@ -238,44 +426,6 @@ function clearError() {
 function setStatus(text) {
   $('convertStatus').textContent = text;
 }
-
-// ============================================================
-//  设置管理
-// ============================================================
-function loadSettings() {
-  const provider = localStorage.getItem('table-ocr-provider') || 'zhipu';
-  $('provider').value = provider;
-  loadProviderSettings(provider, true);
-}
-
-// 加载指定平台的模型与 Key（旧版单一 key 作为兜底迁移）
-function loadProviderSettings(provider, migrated) {
-  const prefix = 'table-ocr-' + provider;
-  const model = localStorage.getItem(prefix + '-model') || PROVIDERS[provider].defaultModel;
-  const apiKey = localStorage.getItem(prefix + '-apikey') || localStorage.getItem('table-ocr-apikey') || '';
-
-  $('model').value = model;
-  $('model').placeholder = provider === 'volc' ? 'ep-2024xxxxxx 或 doubao-seed-2-0-lite-260428' : 'glm-4.6v-flash';
-  $('apiKey').value = apiKey;
-  $('keyStatus').textContent = apiKey ? (migrated ? '✓ 已保存（迁移旧配置）' : '✓ 已保存') : '';
-}
-
-function saveSettings() {
-  const p = $('provider').value;
-  localStorage.setItem('table-ocr-provider', p);
-  localStorage.setItem('table-ocr-' + p + '-model', $('model').value);
-  localStorage.setItem('table-ocr-' + p + '-apikey', $('apiKey').value.trim());
-  // 兼容旧的单一 key（始终同步成当前平台的 key）
-  localStorage.setItem('table-ocr-apikey', $('apiKey').value.trim());
-  $('keyStatus').textContent = '✓ 已保存';
-}
-
-// 平台切换时切换到该平台自己的 Key 和模型
-$('provider').addEventListener('change', (e) => {
-  loadProviderSettings(e.target.value, false);
-});
-
-$('saveKey').addEventListener('click', saveSettings);
 
 // ============================================================
 //  图片上传
@@ -310,7 +460,7 @@ function handleFile(file) {
   reader.onload = (e) => {
     const img = new Image();
     img.onload = () => {
-      // 如果图片太大，缩放到合理尺寸
+      // 如果图片太大，缩放到合理尺寸（对齐鸿蒙 compressImage：最长边 2500px / JPEG 0.9）
       const maxSize = 2500;
       let w = img.width, h = img.height;
       if (w > maxSize || h > maxSize) {
@@ -351,29 +501,27 @@ $('clearBtn').addEventListener('click', () => {
 });
 
 // ============================================================
-//  调用 VLM API
+//  调用 VLM API（使用所选模型自带的 Base URL / API Key）
 // ============================================================
 $('convertBtn').addEventListener('click', async () => {
   if (!currentImage) return;
-  const apiKey = $('apiKey').value.trim();
-  if (!apiKey) {
-    showError('请先填写 API Key');
+  const option = getSelectedOption();
+  if (!option) {
+    showError('请先在主页设置中配置主模型或多模态解析模型');
     return;
   }
-  const provider = $('provider').value;
-  const model = $('model').value.trim();
-  if (!model) {
-    showError('请填写模型名称');
+  if (!option.apiKey) {
+    showError('请先填写 API Key');
     return;
   }
 
   clearError();
   $('convertBtn').disabled = true;
   $('convertBtn').textContent = '识别中...';
-  setStatus('正在调用 ' + PROVIDERS[provider].name + '...');
+  setStatus(`正在调用 ${option.label} (${option.model})...`);
 
   try {
-    const html = await callVLM(provider, model, apiKey, currentImage);
+    const html = await callVLM(option, currentImage);
     currentHtml = cleanHtml(html);
 
     // 解析
@@ -397,10 +545,11 @@ $('convertBtn').addEventListener('click', async () => {
   }
 });
 
-async function callVLM(provider, model, apiKey, image) {
-  const cfg = PROVIDERS[provider];
+async function callVLM(option, image) {
+  const base = (option.baseUrl || DEFAULT_MM.baseUrl).replace(/\/+$/, '');
+  const url = base + '/chat/completions';
   const body = {
-    model: model,
+    model: option.model,
     messages: [{
       role: 'user',
       content: [
@@ -411,11 +560,16 @@ async function callVLM(provider, model, apiKey, image) {
     temperature: 0.1,
     max_tokens: 4096
   };
+  // DeepSeek 视觉模型默认可能进入思考模式导致 content 为空；表格识别不需要深度思考
+  const lowerModel = (option.model || '').toLowerCase();
+  if (lowerModel.includes('deepseek') || base.includes('deepseek.com')) {
+    body.thinking = { type: 'disabled' };
+  }
 
-  const resp = await fetch(cfg.endpoint, {
+  const resp = await fetch(url, {
     method: 'POST',
     headers: {
-      'Authorization': `Bearer ${apiKey}`,
+      'Authorization': `Bearer ${option.apiKey}`,
       'Content-Type': 'application/json'
     },
     body: JSON.stringify(body)
@@ -428,20 +582,23 @@ async function callVLM(provider, model, apiKey, image) {
 
   const data = await resp.json();
   const content = data.choices?.[0]?.message?.content;
-  if (!content) {
-    throw new Error('API 返回为空\n' + JSON.stringify(data, null, 2));
+  if (!content || !String(content).trim()) {
+    throw new Error('API 返回为空\n' + JSON.stringify(data, null, 2).slice(0, 500));
   }
   return content;
 }
 
-// 清理 VLM 输出：去掉 markdown 围栏
+// 清理 VLM 输出（对齐鸿蒙 TableOcrService.cleanHtml）：去围栏、全角尖括号归一化、截断兜底
 function cleanHtml(raw) {
   let s = raw.trim();
-  // 去掉 ```html ... ``` 围栏
   s = s.replace(/^```(?:html)?\s*\n?/i, '').replace(/\n?```\s*$/i, '');
-  // 去掉前后多余文字，只保留 <table>...</table>
+  // 兼容模型输出全角尖括号（＜ ＞）的情况
+  s = s.replace(/＜/g, '<').replace(/＞/g, '>');
   const match = s.match(/<table[\s\S]*<\/table>/i);
-  if (match) s = match[0];
+  if (match) return match[0].trim();
+  // 兼容输出被截断、缺少 </table> 的情况：从 <table 开始尽量保留后续内容
+  const openIndex = s.search(/<table/i);
+  if (openIndex !== -1) return s.substring(openIndex).trim();
   return s.trim();
 }
 
@@ -460,9 +617,6 @@ function parseTable(htmlStr) {
 
   // 处理 caption
   const caption = table.querySelector('caption');
-  if (caption) {
-    // 先算 maxCols 再插入 caption 行
-  }
 
   // 第一遍：收集单元格 + 算 maxCols
   for (const tr of trs) {
@@ -586,32 +740,32 @@ function renderGridInfo() {
     }
   }
   if (issues.length) {
-    html += `<p class="text-red-600 mt-1">⚠️ 列数不一致：${issues.join('；')}</p>`;
+    html += `<p class="warn">⚠️ 列数不一致：${escapeHtml(issues.join('；'))}</p>`;
   } else {
-    html += `<p class="text-green-600 mt-1">✓ 列数一致性校验通过</p>`;
+    html += `<p class="ok">✓ 列数一致性校验通过</p>`;
   }
 
   // 行高信息
   const highRows = rowData.map((r, i) => ({ i, dl: r.dataLines, dh: r.dataH })).filter(x => x.dl > 1 || x.dh);
   if (highRows.length) {
-    html += '<p class="mt-1">高行：' + highRows.map(x => `第${x.i + 1}行(data-lines=${x.dl}${x.dh ? ', data-h=' + x.dh : ''})`).join('，') + '</p>';
+    html += '<p>高行：' + highRows.map(x => `第${x.i + 1}行(data-lines=${x.dl}${x.dh ? ', data-h=' + x.dh : ''})`).join('，') + '</p>';
   }
 
   $('gridInfo').innerHTML = html;
 
   // 网格表格
-  let t = '<table class="border-collapse text-xs"><tbody>';
+  let t = '<table><tbody>';
   for (let r = 0; r < grid.length; r++) {
     t += '<tr>';
     for (let c = 0; c < maxCols; c++) {
       const cell = grid[r][c];
       if (cell === null) {
-        t += '<td class="border border-gray-300 bg-gray-100 p-1 text-gray-400 text-center" style="min-width:40px;min-height:20px">·</td>';
+        t += '<td class="merged-hole">·</td>';
       } else {
-        const bg = cell.isHeader ? 'bg-blue-50' : 'bg-white';
+        const bg = cell.isHeader ? ' class="cell-header"' : '';
         const rs = cell.rowspan > 1 ? ` rowspan="${cell.rowspan}"` : '';
         const cs = cell.colspan > 1 ? ` colspan="${cell.colspan}"` : '';
-        t += `<td class="border border-gray-300 ${bg} p-1 align-top"${rs}${cs}>${escapeHtml(cell.text) || '&nbsp;'}</td>`;
+        t += `<td${bg}${rs}${cs}>${escapeHtml(cell.text) || '&nbsp;'}</td>`;
       }
     }
     t += '</tr>';
@@ -630,19 +784,13 @@ function countMerges() {
   return n;
 }
 
-function escapeHtml(s) {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-}
-
 // ============================================================
 //  Tab 切换
 // ============================================================
 document.querySelectorAll('.tab-btn').forEach(btn => {
   btn.addEventListener('click', () => {
     document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('tab-active'));
-    document.querySelectorAll('.tab-btn').forEach(b => b.classList.add('text-gray-600'));
     btn.classList.add('tab-active');
-    btn.classList.remove('text-gray-600');
     document.querySelectorAll('.tab-content').forEach(c => c.classList.add('hidden'));
     $('tab-' + btn.dataset.tab).classList.remove('hidden');
   });
@@ -759,9 +907,9 @@ function downloadBlob(blob, filename) {
 }
 
 // ============================================================
-//  初始化
+//  初始化（动态加载所有配置方案的模型）
 // ============================================================
-loadSettings();
+initSettings();
 </script>
 </body>
 </html>

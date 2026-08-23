@@ -15,9 +15,12 @@ export struct ChatBubbleView {
   private onImageTap: (url: string) => void = (_url: string): void => {};
   // 复制局部: 点击次数递增, 传给 RichTextView 触发开启文本选择模式
   @State private selectionTick: number = 0;
+  // 深度思考条折叠状态 (默认折叠, 点击头部展开)
+  @State private reasoningExpanded: boolean = false;
   // 流式也走 RichTextView (库内置流式增量渲染 + Worker 子线程解析)
   // visibleText 保留 33ms 节流, 作为 UI 缓冲, 避免每个 token 都触发整块重渲染
   @State visibleText: string = '';
+  @State visibleReasoning: string = '';
   private flushTimer: number = -1;
 
   @Watch('onStreamPropChanged')
@@ -28,17 +31,23 @@ export struct ChatBubbleView {
       clearInterval(this.flushTimer);
       this.flushTimer = -1;
       this.visibleText = this.message.content;
+      this.visibleReasoning = this.message.reasoning;
     }
   }
 
   aboutToAppear(): void {
     this.visibleText = this.message.content;
+    this.visibleReasoning = this.message.reasoning;
     if (this.isStreaming && this.flushTimer === -1) {
       this.flushTimer = setInterval(() => {
         if (this.isStreaming) {
           const current: string = this.message.content;
           if (current !== this.visibleText) {
             this.visibleText = current;
+          }
+          const currentReasoning: string = this.message.reasoning;
+          if (currentReasoning !== this.visibleReasoning) {
+            this.visibleReasoning = currentReasoning;
           }
         }
       }, 33);
@@ -152,56 +161,49 @@ export struct ChatBubbleView {
         .margin({ top: 4 })
 
       Column() {
-        // 消息内容
-        // 流式中与流式结束统一使用 RichTextView
-        // 库内置流式增量渲染 (3.3+ 优化表格/代码块/插件闪烁)
-        // visibleText 在 33ms 节流中持续更新, 同一组件实例贯穿整个生命周期,
-        // Controller / 主题色 / 滚动位置都不会因为 isStreaming 切换而丢失
-        if (this.isStreaming && this.message.content === '') {
-          // 首个 token 到达前显示原生加载动画，避免只有静止光标。
-          Row() {
-            LoadingProgress()
-              .width(18)
-              .height(18)
-              .color($r('app.color.brand'))
-            Text('正在思考…')
-              .fontSize(13)
-              .fontColor($r('app.color.text_secondary'))
-              .margin({ left: 8 })
-          }
-          .height(42)
-          .padding({ left: 14, right: 14 })
-          .alignItems(VerticalAlign.Center)
-        } else {
+        // 深度思考条: 独立卡片置于气泡上方 (对齐 web 版本布局), 统一圆角 + 品牌淡色
+        if (this.isStreaming || this.message.reasoning !== '') {
+          this.buildReasoningBar()
+        }
+
+        // 气泡本体
+        Column() {
+          // 消息内容
+          // 流式中与流式结束统一使用 RichTextView
+          // 库内置流式增量渲染 (3.3+ 优化表格/代码块/插件闪烁)
+          // visibleText 在 33ms 节流中持续更新, 同一组件实例贯穿整个生命周期,
+          // Controller / 主题色 / 滚动位置都不会因为 isStreaming 切换而丢失
           RichTextView({
             content: this.isStreaming ? this.visibleText : this.message.content,
             selectionTrigger: this.selectionTick
           })
-        }
 
-        // 流式光标
-        if (this.isStreaming && this.message.content !== '') {
-          Row() {
-            Stack()
-              .width(2)
-              .height(14)
-              .backgroundColor($r('app.color.brand'))
-              .borderRadius(1)
+          // 流式光标
+          if (this.isStreaming && this.message.content !== '') {
+            Row() {
+              Stack()
+                .width(2)
+                .height(14)
+                .backgroundColor($r('app.color.brand'))
+                .borderRadius(1)
+            }
+            .width('100%')
+            .padding({ left: 12 })
+            .margin({ bottom: 6 })
           }
-          .width('100%')
-          .padding({ left: 12 })
-          .margin({ bottom: 6 })
-        }
 
-        // 操作按钮
-        if (!this.isStreaming && this.message.content !== '') {
-          this.buildAIActions();
+          // 操作按钮
+          if (!this.isStreaming && this.message.content !== '') {
+            this.buildAIActions();
+          }
         }
+        .width('100%')
+        .backgroundColor($r('app.color.ai_msg'))
+        .borderRadius({ topLeft: 8, topRight: 22, bottomLeft: 22, bottomRight: 22 })
+        .shadow({ radius: 14, color: '#12000000', offsetX: 0, offsetY: 4 })
       }
       .layoutWeight(1)
-      .backgroundColor($r('app.color.ai_msg'))
-      .borderRadius({ topLeft: 8, topRight: 22, bottomLeft: 22, bottomRight: 22 })
-      .shadow({ radius: 14, color: '#12000000', offsetX: 0, offsetY: 4 })
+      .alignItems(HorizontalAlign.Start)
       .margin({ left: 12 })
       .constraintSize({ maxWidth: '80%' })
 
@@ -210,6 +212,66 @@ export struct ChatBubbleView {
     .width('100%')
     .padding({ left: 4, right: 16, top: 8, bottom: 8 })
     .alignItems(VerticalAlign.Top)
+  }
+
+  // 深度思考条: 独立卡片置于气泡上方, 四角统一圆角 + 中性浅灰底色(与中间聊天区非有色系协调).
+  // 流式中在"深度思考"文字右侧显示转圈动画 (不再单独显示"思考中…"文字).
+  // 右侧实时显示 token 速度(流式中按已输出字符实时估算, 流式结束后由 API usage 精确替换)
+  // 与缓存命中率(读取 API 返回的缓存 token 数, 无返回值不显示).
+  @Builder
+  buildReasoningBar() {
+    Column() {
+      Row() {
+        Text('深度思考')
+          .fontSize(13)
+          .fontWeight(FontWeight.Medium)
+          .fontColor($r('app.color.brand'))
+        if (this.isStreaming) {
+          LoadingProgress()
+            .width(12)
+            .height(12)
+            .color($r('app.color.brand'))
+            .margin({ left: 6 })
+        }
+        Blank()
+        if (this.message.tokenSpeed > 0) {
+          Text(this.message.tokenSpeed.toFixed(1) + ' tok/s')
+            .fontSize(11)
+            .fontColor($r('app.color.text_secondary'))
+        }
+        if (this.message.cacheHitRate >= 0) {
+          Text('缓存命中 ' + Math.round(this.message.cacheHitRate * 100).toString() + '%')
+            .fontSize(11)
+            .fontColor($r('app.color.text_secondary'))
+            .margin({ left: 8 })
+        }
+        Text(this.reasoningExpanded ? '▴' : '▾')
+          .fontSize(11)
+          .fontColor($r('app.color.text_tertiary'))
+          .margin({ left: 8 })
+      }
+      .width('100%')
+      .padding({ left: 14, right: 14, top: 8, bottom: 8 })
+      .onClick(() => {
+        this.reasoningExpanded = !this.reasoningExpanded;
+      })
+
+      if (this.reasoningExpanded) {
+        Text(this.isStreaming ? this.visibleReasoning : this.message.reasoning)
+          .fontSize(13)
+          .fontColor($r('app.color.text_primary'))
+          .lineHeight(20)
+          .width('100%')
+          .padding({ left: 14, right: 14, bottom: 12, top: 4 })
+      }
+    }
+    .width('100%')
+    // 中间聊天区属于非有色系: 中性浅灰底色, 极细描边(0.5)弱化存在感
+    .backgroundColor($r('app.color.surface_secondary'))
+    .border({ width: 0.5, color: $r('app.color.border') })
+    .borderRadius(14)
+    .shadow({ radius: 10, color: '#12000000', offsetX: 0, offsetY: 2 })
+    .margin({ bottom: 8 })
   }
 
   @Builder

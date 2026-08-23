@@ -265,7 +265,7 @@ The same set of agents can be carried by different clients or platforms. Guncat 
 | ------------------------ | ------------------------------------- | ----------------------- | ---------------------------------------------------------------------------------------------------------------- |
 | **Tencent Yuanqi**       | Guncat 2.0 / 2.5 Series               | Platform-hosted         | Platform-adapted prompts; agents can be created directly on Tencent Yuanqi                                       |
 | **Zhipu Qingyan**        | Guncat Srch / Cnvt Series             | Platform-hosted         | Platform-adapted prompts, deployed on the Zhipu Qingyan platform                                                 |
-| **Guncat Web for API**   | Universal prompts (platform-agnostic) | Web / Windows / Android | "Configuration-as-Agent" architecture; users select their own OpenAI-compatible API                              |
+| **Guncat Web for API**   | Universal prompts (platform-agnostic) | Web / Windows / Android | "Configuration-as-Agent" architecture; three access protocols since 5.0.0 (Completions / Responses / Anthropic Messages) |
 | **Coze Service**         | Guncat 2.5-Pro                        | Cloud API               | Python agent deployed as a Coze API service for external capability provision                                    |
 | **HarmonyOS H5 App**     | Web for API universal prompts         | HarmonyOS H5 wrapper    | Secondary packaging based on Web for API, with HarmonyOS rawfile preloading + resource interception optimization |
 | **HarmonyOS Native App** | Universal prompts (platform-agnostic) | HarmonyOS native app    | Pure ArkTS + ArkUI implementation, native SSE streaming, Markdown rendering, multi-agent system                  |
@@ -281,7 +281,8 @@ The same set of agents can be carried by different clients or platforms. Guncat 
 ### 3. Guncat Web for API
 
 * "Configuration-as-Agent" architecture: The agent list is defined by `agents.json`, with prompts stored as external `.md` files.
-* Users select their own OpenAI-compatible API (OpenAI, Azure, Zhipu, Tongyi Qianwen, DeepSeek, etc.).
+* Users select their own API service (OpenAI, Azure, Zhipu, Tongyi Qianwen, DeepSeek, etc.). Since version 5.0.0, access methods are unified into three mainstream protocols — OpenAI Completions (`/chat/completions`), OpenAI Responses (`/responses`), and Anthropic Messages (`/messages`) — with automatic migration of legacy configs.
+* Aligned with the HarmonyOS Native App 5.1.0: Files API hybrid upload for large attachments, soft modern UI (low-saturation palette, large corner radii, soft shadows), updated icon assets (file names unchanged), and a table extraction tool that dynamically lists models from all saved API profiles.
 * Suitable for: Cross-platform unified entry point, flexible deployment with user's own API.
 
 #### Windows Local HTTP Service Version
@@ -291,7 +292,7 @@ A pre-built `.bat` file is included; simply click to launch the local HTTP servi
 #### HarmonyOS App Version
 
 * A HarmonyOS H5 native application developed based on Web for API.
-* rawfile bundles `agents.json`, all `.md` prompts, and avatars, preventing load failures caused by unstable Netlify access in mainland China.
+* rawfile bundles `agents.json`, all `.md` prompts, avatars, and the web pages themselves (kept in sync with Web for API 5.1.0), preventing load failures caused by unstable Netlify access in mainland China.
 * Optimizations: DNS/TCP preconnect, local resource interception and replacement, async rendering, caching strategy.
 * Suitable for: Native app experience on HarmonyOS devices.
 
@@ -305,6 +306,8 @@ A pre-built `.bat` file is included; simply click to launch the local HTTP servi
 
 * A **pure ArkTS + ArkUI** native HarmonyOS application, **not a WebView wrapper**.
 * Native SSE streaming communication via `@kit.NetworkKit`'s `http.requestInStream`.
+* Version 5.1.0: deep-thinking (reasoning) content display — a collapsible reasoning card (collapsed by default, tap to expand) with live token speed (tok/s) and cache hit rate shown on the reasoning bar, supporting all three protocols; the web settings panel no longer shows the quick-select access-method presets.
+* Version 5.0.0: access methods unified into three mainstream protocols (OpenAI Completions / OpenAI Responses / Anthropic Messages, with DeepSeek upgraded to the Responses API), plus a brand-new soft modern UI and updated icon assets.
 * High-level native Markdown rendering via `@luvi/lv-markdown-in` component (CommonMark + GFM, LaTeX math, code highlighting, Mermaid diagrams).
 * Built-in 9 professional agents managed via `agents.json` + independent Markdown prompt files.
 * Multimodal file parsing via GLM-4.6V-Flash (image, text, Office documents).
@@ -610,7 +613,7 @@ Guncat Eval-LLM 的设计与提示词工程已开源技术报告：[技术报告
 | ---------------------- | --------------------- | ----------------------- | ------------------------------------------------- |
 | **腾讯元器**               | Guncat 2.0 / 2.5 系列   | 平台托管                    | 平台适配提示词，可直接在腾讯元器创建智能体                             |
 | **智谱清言**               | Guncat Srch / Cnvt 系列 | 平台托管                    | 平台适配提示词，部署于智谱清言平台                                 |
-| **Guncat Web for API** | 通用提示词（不绑定平台）          | Web / Windows / Android | 「配置即智能体」架构，用户自选 OpenAI 兼容 API                     |
+| **Guncat Web for API** | 通用提示词（不绑定平台）          | Web / Windows / Android | 「配置即智能体」架构，5.0.0 起统一三种接入协议（Completions / Responses / Anthropic Messages） |
 | **Coze 服务**            | Guncat 2.5-Pro        | 云端 API                  | Python 智能体部署为 Coze API 服务对外提供能力                   |
 | **鸿蒙 H5 应用**           | Web for API 通用提示词     | 鸿蒙 H5 套壳 App            | 基于 Web for API 二次包装，鸿蒙端 rawfile 预加载 + 资源拦截优化      |
 | **鸿蒙原生应用**             | 通用提示词（不绑定平台）          | 鸿蒙原生 App                | 纯 ArkTS + ArkUI 实现，原生 SSE 流式通信、Markdown 渲染、多智能体系统 |
@@ -626,7 +629,8 @@ Guncat Eval-LLM 的设计与提示词工程已开源技术报告：[技术报告
 ### 3. Guncat Web for API
 
 - 「配置即智能体」架构：智能体列表由 `agents.json` 定义，提示词以外部 `.md` 文件存储。
-- 用户自选 OpenAI 兼容 API（OpenAI、Azure、智谱、通义千问、DeepSeek 等）。
+- 用户自选大模型服务（OpenAI、Azure、智谱、通义千问、DeepSeek 等）。5.0.0 起接入方式统一为三种主流协议——OpenAI Completions（`/chat/completions`）、OpenAI Responses（`/responses`）、Anthropic Messages（`/messages`），旧配置自动迁移。
+- 已对齐鸿蒙原生应用 5.1.0：大附件 Files API 混合上传、柔和现代 UI（低饱和配色、大圆角、柔和阴影）、应用图标资源更新（文件名不变），表格识别工具动态展示所有配置方案的模型。
 - 适合：跨平台统一入口、用户自有 API 灵活部署。
 
 #### Windows 本地http服务版本
@@ -636,7 +640,7 @@ Guncat Eval-LLM 的设计与提示词工程已开源技术报告：[技术报告
 #### HarmonyOS 鸿蒙应用版本
 
 * 基于 Web for API 开发的 HarmonyOS H5 原生应用。
-* rawfile 内置 `agents.json`、全部 `.md` 提示词与头像，避免 Netlify 国内访问不稳导致的加载失败。
+* rawfile 内置 `agents.json`、全部 `.md` 提示词、头像及网页本体（与 Web for API 5.1.0 保持同步），避免 Netlify 国内访问不稳导致的加载失败。
 * 优化项：预连接 DNS/TCP、本地资源拦截替换、异步渲染、缓存策略。
 * 适合：鸿蒙设备的原生 App 体验。
 
@@ -650,6 +654,8 @@ Guncat Eval-LLM 的设计与提示词工程已开源技术报告：[技术报告
 
 - **纯 ArkTS + ArkUI** 鸿蒙原生应用，**非 WebView 套壳**。
 - 基于 `@kit.NetworkKit` 的 `http.requestInStream` 实现原生 SSE 流式通信。
+- 5.1.0：新增深度思考（推理过程）展示——推理内容以折叠卡片展示（默认折叠、点击展开），思考条右侧实时显示 token 速度（tok/s）与缓存命中率，兼容三种协议；Web 设置页移除「快速选择接入方式」快捷预设板块。
+- 5.0.0：接入方式统一为三种主流协议（OpenAI Completions / OpenAI Responses / Anthropic Messages，DeepSeek 升级 Responses API），全新柔和现代 UI 与图标资源更新。
 - 使用 `@luvi/lv-markdown-in` 原生组件实现高级 Markdown 渲染（CommonMark + GFM、LaTeX 数学公式、代码高亮、Mermaid 图表）。
 - 内置 9 个专业智能体，通过 `agents.json` + 独立 Markdown 提示词文件管理。
 - 多模态文件解析（图片、文本、Office 文档），基于 GLM-4.6V-Flash。

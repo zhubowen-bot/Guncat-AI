@@ -47,6 +47,8 @@ export class ChatViewModel {
   private streamTimer: number = -1;
   private pendingUIChange: boolean = false;
   private streamTarget: Message | null = null;
+  // 实时 token 速度刷新节流 (500ms, 避免频繁触发 @Observed 重渲染)
+  private lastSpeedUpdateTime: number = 0;
   // 取消信号
   private abortSignal: AbortSignal = new AbortSignal();
   // context
@@ -755,10 +757,26 @@ export class ChatViewModel {
     // 构造 history(不包含 user 占位 assistant)
     let history: Message[] = conv.messages.slice(0, conv.messages.length - 1);
 
+    let streamStartMs: number = Date.now();
     let callbacks: StreamCallbacks = new StreamCallbacks();
     callbacks.onToken = (delta: string): void => {
       assistantMsg.content += delta;
+      this.updateLiveTokenSpeed(assistantMsg, streamStartMs);
       // displayContent 与 content 同步, 但流式中渲染走纯 Text, 避免每 token 双倍 setter 通知
+      this.scheduleStreamUpdate();
+    };
+    callbacks.onReasoning = (text: string): void => {
+      assistantMsg.reasoning = text;
+      this.updateLiveTokenSpeed(assistantMsg, streamStartMs);
+      this.scheduleStreamUpdate();
+    };
+    callbacks.onUsage = (speed: number, hit: number): void => {
+      if (speed > 0) {
+        assistantMsg.tokenSpeed = speed;
+      }
+      if (hit >= 0) {
+        assistantMsg.cacheHitRate = hit;
+      }
       this.scheduleStreamUpdate();
     };
     callbacks.onError = (err: string): void => {
@@ -790,6 +808,21 @@ export class ChatViewModel {
       this.streamTimer = -1;
       this.persistConversations();
     }, Constants.STREAM_THROTTLE_MS);
+  }
+
+  // 流式中按已累积输出字符数实时估算 token 速度 (约 1 字符 ≈ 1 token, 中文场景近似);
+  // 流式结束后由 API 返回的 usage 派生的精确值覆盖.
+  private updateLiveTokenSpeed(msg: Message, startMs: number): void {
+    const now: number = Date.now();
+    if (now - this.lastSpeedUpdateTime < 500) {
+      return;
+    }
+    this.lastSpeedUpdateTime = now;
+    const elapsedSec: number = (now - startMs) / 1000;
+    if (elapsedSec <= 0) {
+      return;
+    }
+    msg.tokenSpeed = (msg.content.length + msg.reasoning.length) / elapsedSec;
   }
 
   private handleStreamError(msg: Message, err: string): void {
@@ -935,9 +968,25 @@ export class ChatViewModel {
     this.streamTimer = -1;
 
     let history: Message[] = conv.messages.slice(0, conv.messages.length - 1);
+    let streamStartMs: number = Date.now();
     let callbacks: StreamCallbacks = new StreamCallbacks();
     callbacks.onToken = (delta: string): void => {
       newAssistant.content += delta;
+      this.updateLiveTokenSpeed(newAssistant, streamStartMs);
+      this.scheduleStreamUpdate();
+    };
+    callbacks.onReasoning = (text: string): void => {
+      newAssistant.reasoning = text;
+      this.updateLiveTokenSpeed(newAssistant, streamStartMs);
+      this.scheduleStreamUpdate();
+    };
+    callbacks.onUsage = (speed: number, hit: number): void => {
+      if (speed > 0) {
+        newAssistant.tokenSpeed = speed;
+      }
+      if (hit >= 0) {
+        newAssistant.cacheHitRate = hit;
+      }
       this.scheduleStreamUpdate();
     };
     callbacks.onError = (err: string): void => {

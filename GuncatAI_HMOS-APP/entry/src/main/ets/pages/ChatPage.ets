@@ -859,7 +859,7 @@ struct ChatPage {
       Column()
         .width(96)
         .height(96)
-        .margin({ bottom: 20 })
+        .margin({ bottom: 12 })
         .id('emptyStateIconAnchor')
         .onAreaChange((_old: Area, newArea: Area) => {
           const px = newArea.position.x;
@@ -876,7 +876,7 @@ struct ChatPage {
         .fontSize(22)
         .fontWeight(FontWeight.Bold)
         .fontColor($r('app.color.text_primary'))
-        .margin({ bottom: 10 })
+        .margin({ bottom: 12 })
       Text(this.vm.currentAgent !== null ? this.vm.currentAgent.description : '选择一个智能体开始对话')
         .fontSize(14)
         .fontColor($r('app.color.text_secondary'))

@@ -4,8 +4,10 @@
 
 ---
 
-Web for API 版本：3.3.0
+Web for API 版本：5.1.0
 
+2026.8.23 同步鸿蒙 APP 5.1.0：新增深度思考（推理过程）展示（OpenAI Completions / OpenAI Responses / Anthropic Messages 三种协议增量解析，默认折叠、点击头部展开，思考条右侧实时显示 token 速度与缓存命中率）；设置页移除「快速选择接入方式」快捷预设板块，接入协议统一通过「接入方式」下拉框选择
+2026.8.23 同步鸿蒙 APP 5.0.0：接入方式统一为三种主流协议（OpenAI Completions / OpenAI Responses / Anthropic Messages），旧配置自动迁移；DeepSeek 升级 Responses API（原生联网搜索、图片直传、Files API `file_id` 混合上传）；表格识别页改为动态展示所有配置方案的主模型与多模态解析模型，兼容 DeepSeek 视觉输出；更新应用图标资源（文件名不变）；全新柔和现代 UI（低饱和配色、大圆角、白色轻立体按钮、柔和阴影），模型切换菜单选项统一宽度居中
 2026.8.8 新增表格提取工具：图片表格识别为 HTML/Excel（保留合并单元格与行高）
 2026.8.6 对齐鸿蒙版新增功能：多套配置方案（自动保存模型切换）、附件直传火山、自动朗读、语音输入
 2026.7.7 修复了重复输入消息和终止对话后报错的Bug
@@ -78,14 +80,14 @@ Guncat AI Web for API 是 Guncat 智能体框架的**自定义配置客户端方
 * **流式输出**：支持 AI 回复的打字机效果流式显示
 * **深度思考 / 联网搜索开关**：界面提供工具开关，用户可手动开启或关闭深度思考、联网搜索等功能
 * **配置方案（自定义切换模型）**：支持保存多套命名 API 配置方案（每套含主模型与多模态配置），可通过输入框上方的模型选择胶囊或设置面板随时切换，旧版单配置自动迁移为默认方案
-* **附件直传**：多模态解析支持"先行解析"与"直传"两种模式，直传模式下图片和文档直接随请求发送给支持多模态的火山方舟主模型
+* **附件直传**：多模态解析支持"先行解析"与"直传"两种模式；直传模式下图片和文档直接随请求发送给当前接入方式的主模型（三种协议均支持），并按鸿蒙 5.1.0 混合策略处理：小图 Base64 内联，大图（>4MB）/ OpenAI Responses 文档自动上传 Files API 后以 `file_id` 引用，上传失败自动回退 Base64
 * **自动朗读**：支持开启自动朗读回复，或点击消息下方的"朗读"按钮播报任意 AI 回复，可暂停、调速（基于浏览器 TTS）
 * **语音输入**：输入框左侧麦克风按钮支持语音转文字输入（基于浏览器语音识别，仅支持 Chrome/Edge 等内核）
 * **新建对话**：支持清空上下文，开始新的对话会话
 * **历史对话**：支持保存历史对话并查看
 * **文件解析**：支持配置专门的多模态API，解析纯文本模型不能解析的文件和图片
-* **API 配置**：用户可在界面中配置自己的 API Key、Base URL 和模型名称，支持Chat API和Response API两种配置方式，支持自定义高级模型参数（长度控制、Top P等），以及自定义json请求体
-* **表格提取**：侧边栏"智能体"分类下的"表格提取"工具入口，基于视觉大模型（智谱 GLM / 火山方舟 豆包）将表格图片识别为可编辑的 HTML 表格并导出 Excel（.xlsx），忠实保留合并单元格（rowspan/colspan）、空白书写行高信息与单元格内换行，支持渲染预览 / HTML 代码 / 网格结构 / 调试信息多视图，API Key 只保存在浏览器 localStorage
+* **API 配置**：用户可在界面中配置自己的 API Key、Base URL 和模型名称。接入方式统一为三种主流协议（对齐鸿蒙 5.1.0）：`openai-completions`（/chat/completions）、`openai-responses`（/responses，DeepSeek / 火山方舟等兼容服务）、`anthropic-messages`（/messages，兼容 DeepSeek Anthropic 端点）；旧 provider 配置（custom/deepseek/volcano）自动迁移。深度思考按协议显式控制（火山 `thinking.enabled/disabled`、OpenAI Responses `reasoning.effort=high`），联网搜索按协议发送对应工具定义；支持自定义高级模型参数（长度控制、Top P等）以及自定义 json 请求体
+* **表格提取**：侧边栏"智能体"分类下的"表格提取"工具入口，基于视觉大模型将表格图片识别为可编辑的 HTML 表格并导出 Excel（.xlsx），忠实保留合并单元格（rowspan/colspan）、空白书写行高信息与单元格内换行，支持渲染预览 / HTML 代码 / 网格结构 / 调试信息多视图。模型下拉框动态展示所有配置方案的主模型和多模态解析模型（去重），识别时直接使用所选模型对应的 Base URL / API Key，无需重复填写；兼容 DeepSeek 视觉输出（自动关闭思考模式、全角尖括号归一化、Markdown 表格兜底）
 
 ### 如何新增智能体
 
@@ -98,4 +100,4 @@ Guncat AI Web for API 是 Guncat 智能体框架的**自定义配置客户端方
 * **前端**：纯 HTML/CSS/JavaScript，无框架依赖
 * **渲染**：Marked.js（Markdown 渲染）+ Highlight.js（代码高亮），新增Latex公式渲染（2.0.0版本后）。
 * **移动端**：WebView 包装为 Android APK
-* **API 协议**：OpenAI 兼容的 `/v1/chat/completions` 接口
+* **API 协议**：OpenAI `/chat/completions`、OpenAI `/responses`、Anthropic `/messages` 三种协议（5.0.0 起）

@@ -178,69 +178,6 @@ export struct SettingsPanel {
                   this.profileName = value;
                 })
 
-              this.buildSectionHeader('快速选择接入方式')
-
-              // 三种主流接入方式预设
-              Row() {
-                Button() {
-                  Text('OpenAI\nCompletions')
-                    .fontSize(11)
-                    .fontColor($r('app.color.text_primary'))
-                    .textAlign(TextAlign.Center)
-                }
-                .layoutWeight(1)
-                .height(48)
-                .borderRadius(16)
-                .backgroundColor($r('app.color.raised_surface'))
-                .shadow({ radius: 10, color: '#12000000', offsetX: 0, offsetY: 2 })
-                .onClick(() => {
-                  let cfg: ApiConfig = ApiConfig.openAICompletionsPreset();
-                  this.provider = cfg.provider;
-                  this.baseUrl = cfg.baseUrl;
-                  this.model = cfg.model;
-                })
-
-                Button() {
-                  Text('OpenAI\nResponses')
-                    .fontSize(11)
-                    .fontColor($r('app.color.text_primary'))
-                    .textAlign(TextAlign.Center)
-                }
-                .layoutWeight(1)
-                .height(48)
-                .borderRadius(16)
-                .backgroundColor($r('app.color.raised_surface'))
-                .shadow({ radius: 10, color: '#12000000', offsetX: 0, offsetY: 2 })
-                .margin({ left: 8 })
-                .onClick(() => {
-                  let cfg: ApiConfig = ApiConfig.openAIResponsesPreset();
-                  this.provider = cfg.provider;
-                  this.baseUrl = cfg.baseUrl;
-                  this.model = cfg.model;
-                })
-
-                Button() {
-                  Text('Anthropic\nMessages')
-                    .fontSize(11)
-                    .fontColor($r('app.color.text_primary'))
-                    .textAlign(TextAlign.Center)
-                }
-                .layoutWeight(1)
-                .height(48)
-                .borderRadius(16)
-                .backgroundColor($r('app.color.raised_surface'))
-                .shadow({ radius: 10, color: '#12000000', offsetX: 0, offsetY: 2 })
-                .margin({ left: 8 })
-                .onClick(() => {
-                  let cfg: ApiConfig = ApiConfig.anthropicMessagesPreset();
-                  this.provider = cfg.provider;
-                  this.baseUrl = cfg.baseUrl;
-                  this.model = cfg.model;
-                })
-              }
-              .width('100%')
-              .margin({ top: 12 })
-
               this.buildSectionHeader('接入方式')
               Select([
                 { value: 'openai-completions' },

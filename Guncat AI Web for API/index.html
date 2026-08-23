@@ -12,30 +12,54 @@
   <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
   <style>
     :root {
-      --primary: #2563eb;
-      --primary-light: #dbeafe;
-      --bg: #f8fafc;
-      --surface: #ffffff;
-      --text: #1e293b;
-      --text-secondary: #64748b;
-      --border: #e2e8f0;
-      --user-msg: #2563eb;
-      --ai-msg: #f1f5f9;
-      --shadow: 0 4px 6px -1px rgba(0,0,0,0.1);
+      /* 对齐鸿蒙 5.1.0 柔和现代配色 (base/element/color.json) */
+      --primary: #0A7AFF;
+      --primary-pressed: #0060D6;
+      --primary-light: #E5F1FF;
+      --bg: #F4F5F7;
+      --surface: #FFFFFF;
+      --surface-raised: #FFFFFF;
+      --surface-secondary: #F2F3F7;
+      --text: #1B2330;
+      --text-secondary: #6B7280;
+      --text-tertiary: #B4BAC6;
+      --border: #E5E8EF;
+      --user-msg: #0A7AFF;
+      --ai-msg: #F3F4F8;
+      --toggle-active: #34C759;
+      --danger: #E05252;
+      --success: #3DBE64;
+      --toast-bg: #2A3140;
+      --toggle-inactive: #D4D9E1;
+      /* 柔和阴影：低透明度大扩散，去除重描边与发光 */
+      --shadow: 0 8px 24px rgba(27, 35, 48, .08);
+      --shadow-soft: 0 2px 8px rgba(27, 35, 48, .07);
+      --shadow-btn: 0 2px 6px rgba(27, 35, 48, .08);
     }
 
     @media (prefers-color-scheme: dark) {
       :root {
-        --primary: #3b82f6;
-        --primary-light: #1e3a5f;
-        --bg: #0f172a;
-        --surface: #1e293b;
-        --text: #f1f5f9;
-        --text-secondary: #94a3b8;
-        --border: #334155;
-        --user-msg: #3b82f6;
-        --ai-msg: #1e293b;
-        --shadow: 0 4px 6px -1px rgba(0,0,0,0.4);
+        --primary: #409CFF;
+        --primary-pressed: #2B7FFF;
+        --primary-light: #1E3A5F;
+        --bg: #111418;
+        --surface: #1B1F27;
+        --surface-raised: #252B34;
+        --surface-secondary: #252B34;
+        --text: #EDF0F5;
+        --text-secondary: #9AA3B2;
+        --text-tertiary: #6B7280;
+        --border: #2C333E;
+        --user-msg: #409CFF;
+        --ai-msg: #20252E;
+        --toggle-active: #3DBE64;
+        --danger: #F0716B;
+        --success: #6BCB77;
+        --toast-bg: #343B47;
+        --toggle-inactive: #3A414E;
+        --shadow: 0 8px 24px rgba(0, 0, 0, .30);
+        --shadow-soft: 0 2px 8px rgba(0, 0, 0, .25);
+        --shadow-btn: 0 2px 6px rgba(0, 0, 0, .28);
       }
     }
 
@@ -46,11 +70,11 @@
     .app { display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
 
     /* Header */
-    .header { height: 56px; background: var(--surface); border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; padding: 0 12px; flex-shrink: 0; z-index: 10; }
+    .header { height: 56px; background: var(--surface); box-shadow: var(--shadow-soft); display: flex; align-items: center; justify-content: space-between; padding: 0 12px; flex-shrink: 0; z-index: 10; }
     .header-left, .header-right { display: flex; align-items: center; gap: 8px; min-width: 80px; }
     .header-right { justify-content: flex-end; }
-    .icon-btn { width: 40px; height: 40px; border-radius: 10px; border: none; background: transparent; color: var(--text-secondary); font-size: 20px; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: background .2s; }
-    .icon-btn:hover, .icon-btn:active { background: var(--bg); color: var(--primary); }
+    .icon-btn { width: 40px; height: 40px; border-radius: 14px; border: none; background: transparent; color: var(--text-secondary); font-size: 20px; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: background .2s; }
+    .icon-btn:hover, .icon-btn:active { background: var(--surface-secondary); color: var(--primary); }
     .header-title { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 16px; min-width: 0; }
     .header-title img { width: 28px; height: 28px; border-radius: 50%; object-fit: cover; flex-shrink: 0; }
     .header-title .brand-text { flex-shrink: 0; }
@@ -71,9 +95,9 @@
     @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
     .message.user { flex-direction: row-reverse; }
     .message .avatar { width: 34px; height: 34px; border-radius: 50%; flex-shrink: 0; object-fit: cover; background: var(--primary-light); }
-    .message .bubble { max-width: min(82%, 680px); padding: 12px 14px; border-radius: 16px; font-size: 15px; line-height: 1.65; word-wrap: break-word; }
-    .message.user .bubble { background: var(--user-msg); color: #fff; border-bottom-right-radius: 4px; }
-    .message.ai .bubble { background: var(--ai-msg); color: var(--text); border-bottom-left-radius: 4px; }
+    .message .bubble { max-width: min(82%, 680px); padding: 12px 16px; border-radius: 20px; font-size: 15px; line-height: 1.65; word-wrap: break-word; }
+    .message.user .bubble { background: var(--user-msg); color: #fff; border-bottom-right-radius: 6px; }
+    .message.ai .bubble { background: var(--ai-msg); color: var(--text); border-bottom-left-radius: 6px; }
     .message.ai.streaming .bubble::after { content: "▋"; animation: blink 1s infinite; margin-left: 2px; }
     @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
 
@@ -82,19 +106,19 @@
     .message.user .message-content { align-items: flex-end; }
     .message-content .bubble { max-width: 100%; }
     .message-actions { display: flex; gap: 8px; margin-top: 6px; align-items: center; flex-wrap: wrap; }
-    .message-actions .msg-action-btn { padding: 4px 10px; border-radius: 12px; border: 1px solid var(--border); background: var(--surface); color: var(--text-secondary); font-size: 12px; cursor: pointer; transition: all .2s; display: inline-flex; align-items: center; gap: 4px; }
-    .message-actions .msg-action-btn:hover { border-color: var(--primary); color: var(--primary); background: var(--bg); }
-    .message-actions .msg-action-btn.copied { border-color: #22c55e; color: #22c55e; background: rgba(34,197,94,.08); }
+    .message-actions .msg-action-btn { padding: 5px 12px; border-radius: 14px; border: none; background: var(--surface-raised); color: var(--text-secondary); font-size: 12px; cursor: pointer; transition: all .2s; display: inline-flex; align-items: center; gap: 4px; box-shadow: var(--shadow-btn); }
+    .message-actions .msg-action-btn:hover { color: var(--primary); background: var(--surface-raised); transform: translateY(-1px); box-shadow: var(--shadow-soft); }
+    .message-actions .msg-action-btn.copied { color: var(--success); background: rgba(61,190,100,.10); box-shadow: none; }
     .message.ai.streaming .message-actions { display: none; }
 
     .bubble pre { margin: 10px 0; border-radius: 10px; overflow-x: auto; }
     .bubble code { font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace; font-size: 13px; }
     .code-block-wrapper { position: relative; }
     .code-block-wrapper pre { margin-top: 0; }
-    .copy-code-btn { position: absolute; top: 6px; right: 6px; padding: 4px 8px; border-radius: 6px; border: none; background: var(--bg); color: var(--text-secondary); font-size: 12px; cursor: pointer; display: flex; align-items: center; gap: 4px; opacity: 0; transition: opacity .2s, background .2s; }
+    .copy-code-btn { position: absolute; top: 6px; right: 6px; padding: 4px 8px; border-radius: 8px; border: none; background: rgba(255,255,255,.14); color: #d7dce4; font-size: 12px; cursor: pointer; display: flex; align-items: center; gap: 4px; opacity: 0; transition: opacity .2s, background .2s; }
     .code-block-wrapper:hover .copy-code-btn { opacity: 1; }
-    .copy-code-btn:hover { background: var(--surface); color: var(--text); }
-    .copy-code-btn.copied { background: rgba(34,197,94,.25); color: #86efac; }
+    .copy-code-btn:hover { background: rgba(255,255,255,.24); color: #fff; }
+    .copy-code-btn.copied { background: rgba(61,190,100,.25); color: #a5e8b8; }
     @media (hover: none) {
       .copy-code-btn { opacity: 1; }
     }
@@ -109,16 +133,18 @@
     .bubble th { background: var(--bg); }
 
     /* Input */
-    .input-area { position: fixed; bottom: 0; left: 0; right: 0; background: var(--surface); border-top: 1px solid var(--border); padding: 10px 12px 14px; display: flex; gap: 10px; align-items: flex-end; z-index: 10; }
-    .input-wrap { flex: 1; background: var(--bg); border: 1px solid var(--border); border-radius: 20px; padding: 10px 14px; display: flex; align-items: flex-end; gap: 8px; max-height: 140px; }
+    .input-area { position: fixed; bottom: 0; left: 0; right: 0; background: var(--surface); box-shadow: 0 -4px 20px rgba(27,35,48,.06); padding: 10px 12px 14px; display: flex; gap: 10px; align-items: flex-end; z-index: 10; }
+    .input-wrap { flex: 1; background: var(--surface-secondary); border: 1px solid transparent; border-radius: 24px; padding: 10px 16px; display: flex; align-items: flex-end; gap: 8px; max-height: 140px; transition: border-color .2s, background .2s; }
     #messageInput { flex: 1; border: none; outline: none; background: transparent; font-size: 15px; line-height: 1.5; resize: none; max-height: 120px; font-family: inherit; color: var(--text); }
-    #messageInput::placeholder { color: var(--text-secondary); }
-    .send-btn { width: 38px; height: 38px; border-radius: 50%; border: none; background: var(--primary); color: #fff; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: opacity .2s, background .2s; flex-shrink: 0; }
-    .send-btn:disabled { opacity: .5; cursor: not-allowed; }
-    .send-btn.stop { background: #ef4444; }
-    .send-btn.stop:hover { background: #dc2626; }
-    .upload-btn { width: 38px; height: 38px; border-radius: 50%; border: none; background: transparent; color: var(--text-secondary); display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all .2s; flex-shrink: 0; }
-    .upload-btn:hover { background: var(--bg); color: var(--primary); }
+    #messageInput::placeholder { color: var(--text-tertiary); }
+    .send-btn { width: 40px; height: 40px; border-radius: 50%; border: none; background: var(--primary); color: #fff; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: opacity .2s, background .2s, transform .15s; flex-shrink: 0; box-shadow: var(--shadow-btn); }
+    .send-btn:hover:not(:disabled) { background: var(--primary-pressed); }
+    .send-btn:active:not(:disabled) { transform: scale(.94); }
+    .send-btn:disabled { opacity: .45; cursor: not-allowed; }
+    .send-btn.stop { background: var(--danger); }
+    .send-btn.stop:hover { background: var(--danger); filter: brightness(.94); }
+    .upload-btn { width: 40px; height: 40px; border-radius: 50%; border: none; background: transparent; color: var(--text-secondary); display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all .2s; flex-shrink: 0; }
+    .upload-btn:hover { background: var(--surface-secondary); color: var(--primary); }
     .upload-btn:disabled { opacity: .5; cursor: not-allowed; }
     .upload-btn.processing { color: var(--primary); animation: spin 1s linear infinite; }
     @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
@@ -137,32 +163,32 @@
     .attachment-thumb { width: 64px; height: 64px; object-fit: cover; border-radius: 8px; border: 1px solid var(--border); background: var(--bg); cursor: pointer; }
     .message.user .attachment-thumb { border-color: rgba(255,255,255,.3); background: rgba(255,255,255,.15); }
 
-    /* Tool toggles (thinking / web search) */
-    .tool-toggle { display: flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 16px; border: 1px solid var(--border); background: var(--surface); cursor: pointer; font-size: 13px; color: var(--text-secondary); transition: all .2s; user-select: none; flex-shrink: 0; }
-    .tool-toggle:hover { border-color: var(--primary); color: var(--primary); }
-    .tool-toggle.active { background: var(--primary-light); border-color: var(--primary); color: var(--primary); font-weight: 600; }
+    /* Tool toggles (thinking / web search, 对齐鸿蒙 ToggleSwitch: 白色轻立体药丸) */
+    .tool-toggle { display: flex; align-items: center; gap: 6px; padding: 7px 12px; border-radius: 17px; border: none; background: var(--surface-raised); box-shadow: var(--shadow-btn); cursor: pointer; font-size: 13px; color: var(--text-secondary); transition: all .2s; user-select: none; flex-shrink: 0; }
+    .tool-toggle:hover { color: var(--primary); }
+    .tool-toggle.active { background: var(--primary-light); color: var(--primary); font-weight: 600; box-shadow: none; }
     .tool-toggle .dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; opacity: .4; transition: opacity .2s; }
     .tool-toggle.active .dot { opacity: 1; box-shadow: 0 0 6px currentColor; }
 
     /* Model selector (配置方案快速切换, 对齐鸿蒙版 buildModelSelector) */
-    .model-selector { display: flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 16px; border: 1px solid var(--border); background: var(--surface); cursor: pointer; font-size: 13px; color: var(--text-secondary); transition: all .2s; user-select: none; flex-shrink: 0; max-width: 150px; }
-    .model-selector:hover:not(.disabled) { border-color: var(--primary); color: var(--primary); }
+    .model-selector { display: flex; align-items: center; gap: 6px; padding: 7px 12px; border-radius: 17px; border: none; background: var(--surface-raised); box-shadow: var(--shadow-btn); cursor: pointer; font-size: 13px; color: var(--text-secondary); transition: all .2s; user-select: none; flex-shrink: 0; max-width: 150px; }
+    .model-selector:hover:not(.disabled) { color: var(--primary); }
     .model-selector.disabled { opacity: .5; cursor: not-allowed; }
     .model-selector .model-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
     .model-selector .caret { font-size: 10px; opacity: .7; flex-shrink: 0; }
-    .model-menu { position: fixed; z-index: 45; min-width: 190px; max-width: 260px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow); padding: 6px; display: none; }
+    /* 对齐鸿蒙 5.1.0：选项统一宽度、文字居中、菜单大圆角轻阴影 */
+    .model-menu { position: fixed; z-index: 45; min-width: 220px; max-width: 280px; background: var(--surface); border: none; border-radius: 16px; box-shadow: var(--shadow); padding: 6px; display: none; }
     .model-menu.show { display: block; animation: fadeIn .15s ease; }
-    .model-menu-item { display: flex; align-items: center; gap: 8px; padding: 9px 12px; border-radius: 8px; font-size: 13px; cursor: pointer; color: var(--text); }
-    .model-menu-item:hover { background: var(--bg); }
+    .model-menu-item { position: relative; display: flex; align-items: center; justify-content: center; width: 100%; padding: 10px 30px; border-radius: 12px; font-size: 13px; cursor: pointer; color: var(--text); text-align: center; box-sizing: border-box; }
+    .model-menu-item:hover { background: var(--surface-secondary); }
     .model-menu-item.active { background: var(--primary-light); color: var(--primary); font-weight: 600; }
-    .model-menu-item .check { margin-left: auto; font-size: 12px; opacity: 0; }
+    .model-menu-item .check { position: absolute; right: 10px; font-size: 12px; opacity: 0; }
     .model-menu-item.active .check { opacity: 1; }
-    .model-menu .menu-add { border-top: 1px solid var(--border); margin-top: 4px; padding-top: 8px; color: var(--primary); }
+    .model-menu .menu-add { border-top: 1px solid var(--border); margin-top: 4px; padding-top: 10px; color: var(--primary); }
 
-    /* Settings: 配置方案 */
     .profile-row { display: flex; gap: 8px; }
     .profile-row select { flex: 1; min-width: 0; }
-    .add-profile-btn { width: 42px; flex-shrink: 0; padding: 0; border-radius: 10px; border: 1px solid var(--border); background: var(--bg); color: var(--primary); font-size: 20px; font-weight: 600; cursor: pointer; line-height: 1; }
+    .add-profile-btn { width: 44px; height: 44px; flex-shrink: 0; padding: 0; border-radius: 14px; border: none; background: var(--surface-raised); color: var(--primary); font-size: 20px; font-weight: 600; cursor: pointer; line-height: 1; box-shadow: var(--shadow-btn); }
     .add-profile-btn:hover { background: var(--primary-light); }
 
     /* Switch (先行解析附件 / 等开关) */
@@ -171,83 +197,82 @@
     .switch-label small { display: block; font-size: 11px; color: var(--text-secondary); margin-top: 2px; line-height: 1.5; }
     .switch { position: relative; width: 42px; height: 24px; flex-shrink: 0; }
     .switch input { opacity: 0; width: 0; height: 0; }
-    .switch .track { position: absolute; inset: 0; background: var(--border); border-radius: 12px; transition: background .2s; cursor: pointer; }
-    .switch .track::after { content: ''; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%; background: #fff; transition: transform .2s; box-shadow: 0 1px 3px rgba(0,0,0,.3); }
-    .switch input:checked + .track { background: var(--primary); }
+    .switch .track { position: absolute; inset: 0; background: var(--toggle-inactive); border-radius: 12px; transition: background .2s; cursor: pointer; }
+    .switch .track::after { content: ''; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%; background: #fff; transition: transform .2s; box-shadow: 0 1px 3px rgba(0,0,0,.25); }
+    .switch input:checked + .track { background: var(--toggle-active); }
     .switch input:checked + .track::after { transform: translateX(18px); }
 
     /* Reader bar (自动朗读控制条) */
-    .reader-bar { position: fixed; top: 64px; left: 50%; transform: translateX(-50%); z-index: 55; display: none; align-items: center; gap: 8px; background: var(--surface); border: 1px solid var(--border); border-radius: 20px; box-shadow: var(--shadow); padding: 6px 10px; font-size: 12px; color: var(--text); }
+    .reader-bar { position: fixed; top: 64px; left: 50%; transform: translateX(-50%); z-index: 55; display: none; align-items: center; gap: 8px; background: var(--surface-raised); border-radius: 22px; box-shadow: var(--shadow); padding: 8px 12px; font-size: 12px; color: var(--text); }
     .reader-bar.show { display: flex; animation: fadeIn .2s ease; }
     .reader-bar .rb-status { white-space: nowrap; }
-    .reader-bar .rb-btn { border: none; background: var(--bg); color: var(--text-secondary); width: 26px; height: 26px; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 12px; flex-shrink: 0; }
+    .reader-bar .rb-btn { border: none; background: var(--surface-secondary); color: var(--text-secondary); width: 26px; height: 26px; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 12px; flex-shrink: 0; }
     .reader-bar .rb-btn:hover { color: var(--primary); }
-    .reader-bar .rb-rate { border: 1px solid var(--border); background: transparent; border-radius: 10px; padding: 2px 8px; font-size: 11px; color: var(--text-secondary); cursor: pointer; flex-shrink: 0; width: auto; height: auto; }
+    .reader-bar .rb-rate { border: none; background: var(--surface-secondary); border-radius: 10px; padding: 2px 8px; font-size: 11px; color: var(--text-secondary); cursor: pointer; flex-shrink: 0; width: auto; height: auto; }
 
     /* Voice input */
-    .mic-btn { width: 38px; height: 38px; border-radius: 50%; border: none; background: transparent; color: var(--text-secondary); display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all .2s; flex-shrink: 0; }
-    .mic-btn:hover { background: var(--bg); color: var(--primary); }
+    .mic-btn { width: 40px; height: 40px; border-radius: 50%; border: none; background: transparent; color: var(--text-secondary); display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all .2s; flex-shrink: 0; }
+    .mic-btn:hover { background: var(--surface-secondary); color: var(--primary); }
     .mic-btn.listening { background: var(--primary); color: #fff; animation: pulse 1.2s ease infinite; }
     .mic-btn:disabled { opacity: .5; cursor: not-allowed; }
-    @keyframes pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(37,99,235,.35); } 50% { box-shadow: 0 0 0 6px rgba(37,99,235,0); } }
+    @keyframes pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(10,122,255,.30); } 50% { box-shadow: 0 0 0 6px rgba(10,122,255,0); } }
 
     .icon-btn.active { color: var(--primary); background: var(--primary-light); }
 
     /* Input toolbar */
     .input-toolbar { display: flex; align-items: center; gap: 8px; padding: 0 14px 6px; margin: -4px -12px 4px; }
 
-    /* Drawer */
-    .drawer { position: fixed; top: 0; left: 0; width: 280px; height: 100%; background: var(--surface); box-shadow: var(--shadow); transform: translateX(-100%); transition: transform .25s ease; z-index: 30; display: flex; flex-direction: column; }
+    /* Drawer (对齐鸿蒙 5.1.0：全屏 scrim + 滑动过程右侧持续阴影) */
+    .drawer { position: fixed; top: 0; left: 0; width: 280px; height: 100%; background: var(--surface); box-shadow: 8px 0 28px rgba(27,35,48,.14); transform: translateX(-100%); transition: transform .25s ease; z-index: 30; display: flex; flex-direction: column; }
     .drawer.open { transform: translateX(0); }
     .drawer-header { height: 56px; border-bottom: 1px solid var(--border); display: flex; align-items: center; padding: 0 14px; font-weight: 700; gap: 8px; }
     .drawer-header img { width: 28px; height: 28px; border-radius: 50%; }
     .drawer-body { flex: 1; overflow-y: auto; padding: 12px; }
     .drawer-section { margin-bottom: 18px; }
     .drawer-section-title { font-size: 12px; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: .5px; margin-bottom: 8px; padding: 0 6px; }
-    .new-chat-btn { width: 100%; padding: 10px; border-radius: 10px; border: 1px dashed var(--border); background: var(--bg); color: var(--primary); font-weight: 600; cursor: pointer; margin-bottom: 14px; }
+    .new-chat-btn { width: 100%; padding: 11px; border-radius: 16px; border: none; background: var(--surface-raised); box-shadow: var(--shadow-btn); color: var(--primary); font-weight: 600; cursor: pointer; margin-bottom: 14px; transition: background .2s, box-shadow .2s; }
     .new-chat-btn:hover { background: var(--primary-light); }
-    .agent-item { display: flex; align-items: center; gap: 10px; padding: 10px; border-radius: 10px; cursor: pointer; transition: background .15s; margin-bottom: 4px; }
-    .agent-item:hover { background: var(--bg); }
+    .agent-item { display: flex; align-items: center; gap: 10px; padding: 10px; border-radius: 14px; cursor: pointer; transition: background .15s; margin-bottom: 4px; }
+    .agent-item:hover { background: var(--surface-secondary); }
     .agent-item.active { background: var(--primary-light); }
     .agent-item img { width: 32px; height: 32px; border-radius: 50%; object-fit: cover; background: var(--primary-light); }
     .agent-info { flex: 1; min-width: 0; }
     .agent-info .name { font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .agent-info .desc { font-size: 12px; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .tool-entry { display: flex; align-items: center; justify-content: center; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); font-size: 13px; color: var(--text-secondary); text-decoration: none; cursor: pointer; transition: background .15s, color .15s, border-color .15s; margin-bottom: 4px; }
-    .tool-entry:hover { background: var(--bg); color: var(--primary); border-color: var(--primary); }
-    .conv-item { display: flex; align-items: center; justify-content: space-between; padding: 10px; border-radius: 10px; cursor: pointer; transition: background .15s; margin-bottom: 4px; }
-    .conv-item:hover { background: var(--bg); }
+    .tool-entry { display: flex; align-items: center; justify-content: center; padding: 9px 10px; border-radius: 14px; border: none; background: var(--surface-raised); box-shadow: var(--shadow-btn); font-size: 13px; color: var(--text-secondary); text-decoration: none; cursor: pointer; transition: background .15s, color .15s, box-shadow .15s; margin-bottom: 4px; }
+    .tool-entry:hover { color: var(--primary); }
+    .conv-item { display: flex; align-items: center; justify-content: space-between; padding: 10px; border-radius: 14px; cursor: pointer; transition: background .15s; margin-bottom: 4px; }
+    .conv-item:hover { background: var(--surface-secondary); }
     .conv-item.active { background: var(--primary-light); }
     .conv-item .title { font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; }
-    .conv-item .del { opacity: 0; color: var(--text-secondary); padding: 4px; border-radius: 6px; }
+    .conv-item .del { opacity: 0; color: var(--text-secondary); padding: 4px; border-radius: 8px; }
     .conv-item:hover .del { opacity: 1; }
-    .conv-item .del:hover { color: #ef4444; background: rgba(239,68,68,.15); }
+    .conv-item .del:hover { color: var(--danger); background: rgba(224,82,82,.12); }
 
     /* Overlay */
-    .overlay { position: fixed; inset: 0; background: rgba(0,0,0,.35); opacity: 0; pointer-events: none; transition: opacity .25s; z-index: 25; }
+    .overlay { position: fixed; inset: 0; background: rgba(15,19,26,.42); opacity: 0; pointer-events: none; transition: opacity .25s; z-index: 25; }
     .overlay.show { opacity: 1; pointer-events: auto; }
 
     /* Settings Modal */
     .modal { position: fixed; inset: 0; display: flex; align-items: flex-end; justify-content: center; z-index: 40; pointer-events: none; }
     .modal.show { pointer-events: auto; }
-    .modal-backdrop { position: absolute; inset: 0; background: rgba(0,0,0,.4); opacity: 0; transition: opacity .25s; }
+    .modal-backdrop { position: absolute; inset: 0; background: rgba(15,19,26,.42); opacity: 0; transition: opacity .25s; }
     .modal.show .modal-backdrop { opacity: 1; }
-    .modal-panel { background: var(--surface); width: 100%; max-width: 560px; max-height: 90vh; border-radius: 20px 20px 0 0; transform: translateY(100%); transition: transform .3s ease; display: flex; flex-direction: column; z-index: 1; }
+    .modal-panel { background: var(--surface); width: 100%; max-width: 560px; max-height: 92vh; border-radius: 28px 28px 0 0; box-shadow: 0 -8px 36px rgba(27,35,48,.16); transform: translateY(100%); transition: transform .3s ease; display: flex; flex-direction: column; z-index: 1; }
     .modal.show .modal-panel { transform: translateY(0); }
-    .modal-header { padding: 16px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
+    .modal-header { padding: 18px 18px 14px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
     .modal-header h3 { margin: 0; font-size: 18px; }
-    .modal-close { width: 32px; height: 32px; border-radius: 8px; border: none; background: var(--bg); color: var(--text-secondary); cursor: pointer; }
-    .modal-body { padding: 16px; overflow-y: auto; }
+    .modal-close { width: 34px; height: 34px; border-radius: 50%; border: none; background: var(--surface-raised); box-shadow: var(--shadow-btn); color: var(--text-secondary); cursor: pointer; }
+    .modal-close:hover { color: var(--text); background: var(--surface-secondary); }
+    .modal-body { padding: 16px 18px 22px; overflow-y: auto; }
     .form-group { margin-bottom: 16px; }
     .form-group label { display: block; font-size: 13px; font-weight: 600; color: var(--text-secondary); margin-bottom: 6px; }
-    .form-group select, .form-group input { width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; font-size: 14px; background: var(--bg); outline: none; color: var(--text); }
-    .form-group input:focus, .form-group select:focus { border-color: var(--primary); }
-    .preset-btns { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
-    .preset-btn { padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font-size: 13px; cursor: pointer; }
-    .preset-btn:hover { border-color: var(--primary); color: var(--primary); }
-    .hint { font-size: 12px; color: var(--text-secondary); margin-top: 6px; line-height: 1.5; }
-    .save-btn { width: 100%; padding: 12px; border-radius: 10px; border: none; background: var(--primary); color: #fff; font-weight: 600; cursor: pointer; margin-top: 8px; }
-    .save-btn:hover { opacity: .9; }
+    .form-group select, .form-group input { width: 100%; padding: 11px 14px; border: 1px solid transparent; border-radius: 14px; font-size: 14px; background: var(--surface-secondary); outline: none; color: var(--text); transition: border-color .2s, background .2s; }
+    .form-group input:focus, .form-group select:focus { border-color: var(--primary); background: var(--surface); }
+    .hint { font-size: 12px; color: var(--text-secondary); margin-top: 6px; line-height: 1.5; white-space: pre-line; }
+    .save-btn { width: 100%; padding: 14px; border-radius: 18px; border: none; background: var(--primary); color: #fff; font-weight: 600; font-size: 15px; cursor: pointer; margin-top: 8px; box-shadow: var(--shadow-btn); transition: background .2s, transform .15s; }
+    .save-btn:hover { background: var(--primary-pressed); }
+    .save-btn:active { transform: scale(.98); }
 
     /* Advanced settings */
     .advanced-toggle { display: flex; align-items: center; justify-content: space-between; padding: 10px 0; border-top: 1px solid var(--border); margin-top: 8px; cursor: pointer; color: var(--text-secondary); font-size: 14px; font-weight: 600; }
@@ -261,19 +286,19 @@
 
     /* About modal */
     .drawer-header { position: relative; }
-    .drawer-header .about-btn { width: 32px; height: 32px; margin-left: auto; border-radius: 8px; font-size: 20px; }
-    .about-panel { max-width: 360px; }
+    .drawer-header .about-btn { width: 32px; height: 32px; margin-left: auto; border-radius: 50%; font-size: 20px; }
+    .about-panel { max-width: 360px; border-radius: 28px 28px 0 0; }
     .about-body { text-align: center; padding: 24px 20px; }
-    .about-logo img { width: 64px; height: 64px; border-radius: 50%; margin-bottom: 12px; }
+    .about-logo img { width: 72px; height: 72px; border-radius: 50%; margin-bottom: 12px; box-shadow: var(--shadow-soft); }
     .about-logo .about-name { font-size: 20px; font-weight: 700; color: var(--text); margin-bottom: 4px; }
     .about-logo .about-version { font-size: 14px; color: var(--text-secondary); margin-bottom: 20px; }
     .about-links { margin-bottom: 20px; }
-    .about-links a { display: inline-flex; align-items: center; gap: 8px; padding: 8px 16px; border-radius: 10px; background: var(--bg); color: var(--text); text-decoration: none; font-size: 14px; transition: background .2s, color .2s; border: 1px solid var(--border); }
-    .about-links a:hover { background: var(--primary-light); color: var(--primary); border-color: var(--primary); }
+    .about-links a { display: inline-flex; align-items: center; gap: 8px; padding: 9px 18px; border-radius: 16px; background: var(--surface-raised); box-shadow: var(--shadow-btn); color: var(--text); text-decoration: none; font-size: 14px; transition: all .2s; border: none; }
+    .about-links a:hover { color: var(--primary); transform: translateY(-1px); box-shadow: var(--shadow-soft); }
     .about-copyright { font-size: 12px; color: var(--text-secondary); margin: 0; }
 
-    /* Toast */
-    .toast { position: fixed; top: 68px; left: 50%; transform: translateX(-50%) translateY(-20px); background: var(--surface); color: var(--text); padding: 10px 16px; border-radius: 20px; font-size: 13px; opacity: 0; pointer-events: none; transition: all .25s; z-index: 50; box-shadow: var(--shadow); }
+    /* Toast (对齐鸿蒙 toast_bg 深色胶囊) */
+    .toast { position: fixed; top: 68px; left: 50%; transform: translateX(-50%) translateY(-20px); background: var(--toast-bg); color: #fff; padding: 10px 18px; border-radius: 22px; font-size: 13px; opacity: 0; pointer-events: none; transition: all .25s; z-index: 70; box-shadow: var(--shadow); max-width: min(86vw, 480px); text-align: center; }
     .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 
     /* Image preview lightbox */
@@ -289,9 +314,10 @@
       .overlay { display: none; }
       .messages { padding-bottom: 16px; }
       .input-area { position: relative; border-top: 1px solid var(--border); }
-      .modal-panel { border-radius: 16px; transform: translateY(20px); opacity: 0; }
+      .modal-panel { border-radius: 24px; transform: translateY(20px); opacity: 0; box-shadow: var(--shadow); }
       .modal.show .modal-panel { transform: translateY(0); opacity: 1; }
       .modal { align-items: center; }
+      .about-panel { border-radius: 24px; }
     }
 
     @media (max-width: 480px) {
@@ -302,6 +328,23 @@
       .header-title .agent-name { max-width: 160px; font-size: 12px; }
       .icon-btn { width: 36px; height: 36px; }
     }
+
+    /* Deep reasoning collapsible bar (对齐鸿蒙版深度思考条) */
+    .reasoning-bar { margin: 0 0 8px; border-radius: 14px; overflow: hidden; border: 1px solid var(--border); background: var(--surface); }
+    .reasoning-bar.streaming { border-color: var(--primary-light); }
+    .reasoning-header { display: flex; align-items: center; gap: 8px; padding: 9px 12px; cursor: pointer; user-select: none; transition: background .15s; }
+    .reasoning-header:hover { background: var(--surface-secondary); }
+    .reasoning-icon { font-size: 14px; flex-shrink: 0; }
+    .reasoning-title { font-size: 13px; font-weight: 600; color: var(--text-secondary); white-space: nowrap; }
+    .reasoning-title .has-content { color: var(--primary); }
+    .reasoning-live { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: var(--text-secondary); white-space: nowrap; }
+    .reasoning-live .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--primary); animation: pulse 1.2s ease infinite; }
+    .reasoning-stats { margin-left: auto; display: flex; align-items: center; gap: 10px; font-size: 11px; color: var(--text-secondary); white-space: nowrap; }
+    .reasoning-stat { display: inline-flex; align-items: center; gap: 3px; white-space: nowrap; }
+    .reasoning-arrow { font-size: 11px; color: var(--text-tertiary); transition: transform .2s; flex-shrink: 0; }
+    .reasoning-bar.expanded .reasoning-arrow { transform: rotate(180deg); }
+    .reasoning-body { display: none; padding: 2px 12px 12px; font-size: 13px; line-height: 1.6; color: var(--text-secondary); white-space: pre-wrap; word-break: break-word; max-height: 42vh; overflow-y: auto; border-top: 1px solid var(--border); }
+    .reasoning-bar.expanded .reasoning-body { display: block; animation: slideDown .2s ease; }
   </style>
 </head>
 <body>
@@ -350,7 +393,7 @@
             <img src="cat-avatar(1).png" alt="Guncat">
             <h2>Guncat AI</h2>
             <p>选择一个智能体，配置 API 后即可开始对话。</p>
-            <p>支持 Deepseek API 与火山方舟引擎两种预置接入方式，可保存多套配置方案随时切换。</p>
+            <p>支持 OpenAI Completions、OpenAI Responses 与 Anthropic Messages 三种主流接入方式，可保存多套配置方案随时切换。</p>
           </div>
         </div>
 
@@ -407,21 +450,14 @@
         </div>
         <div class="form-group">
           <label for="profileName">配置名称</label>
-          <input type="text" id="profileName" placeholder="例如：火山豆包 Pro">
-        </div>
-        <div class="form-group">
-          <label>快速选择预设</label>
-          <div class="preset-btns">
-            <button class="preset-btn" data-preset="deepseek">Deepseek API</button>
-            <button class="preset-btn" data-preset="volcano">火山方舟引擎</button>
-          </div>
+          <input type="text" id="profileName" placeholder="例如：DeepSeek V4">
         </div>
         <div class="form-group">
           <label for="apiProvider">接入方式</label>
           <select id="apiProvider">
-            <option value="custom">自定义 OpenAI 兼容接口</option>
-            <option value="deepseek">Deepseek API</option>
-            <option value="volcano">火山方舟引擎</option>
+            <option value="openai-completions">openai-completions（/chat/completions）</option>
+            <option value="openai-responses">openai-responses（/responses，DeepSeek / 火山方舟等兼容服务）</option>
+            <option value="anthropic-messages">anthropic-messages（/messages）</option>
           </select>
         </div>
         <div class="form-group">
@@ -469,7 +505,7 @@
         <div class="advanced-panel" id="multimodalPanel">
           <div class="switch-row">
             <div class="switch-label">先行解析附件
-              <small>开启后先由下方独立 API 解析，再将文本交给主模型；关闭后图片和文档将直接传给火山主模型（直传模式仅支持火山方舟引擎）。</small>
+              <small>开启后先由下方独立 API 解析，再将文本交给主模型；关闭后图片和文档将直接传给当前接入方式的主模型（三种协议均支持直传，是否生效取决于服务商）。</small>
             </div>
             <label class="switch"><input type="checkbox" id="mmPreparseEnabled" checked><span class="track"></span></label>
           </div>
@@ -517,7 +553,7 @@
         <div class="about-logo">
           <img src="cat-avatar(1).png" alt="Guncat">
           <div class="about-name">Guncat AI</div>
-          <div class="about-version">version 3.2.0</div>
+          <div class="about-version">version 5.1.0</div>
         </div>
         <div class="about-links">
           <a href="https://github.com/zhubowen-bot" target="_blank" rel="noopener noreferrer">
@@ -558,13 +594,17 @@
       };
 
       function defaultApiConfig() {
-        return { provider: 'custom', baseUrl: '', apiKey: '', model: '', temperature: null, topP: null, maxTokens: null, extraBody: '' };
+        // 对齐鸿蒙 5.1.0 ApiConfig：接入方式统一为三种主流协议
+        return { provider: 'openai-completions', baseUrl: '', apiKey: '', model: '', temperature: null, topP: null, maxTokens: null, extraBody: '' };
       }
 
-      const PRESETS = {
-        deepseek: { provider: 'deepseek', baseUrl: 'https://api.deepseek.com', model: 'deepseek-chat' },
-        volcano: { provider: 'volcano', baseUrl: 'https://ark.cn-beijing.volces.com/api/v3', model: '' }
-      };
+      // 旧版本 provider 迁移（对齐鸿蒙 5.1.0 normalizeProvider）：
+      // custom/空 → openai-completions；deepseek/volcano → openai-responses
+      function normalizeProvider(provider) {
+        if (provider === 'custom' || provider === '' || provider == null) return 'openai-completions';
+        if (provider === 'deepseek' || provider === 'volcano') return 'openai-responses';
+        return provider;
+      }
 
       let agents = [];
       let currentAgent = null;
@@ -596,7 +636,7 @@
       // 流式输出渲染节流，避免输出太快时页面抖动
       let streamUpdatePending = false;
       let streamUpdateEl = null;
-      let streamUpdateContent = null;
+      let streamUpdateState = null;
       let streamUpdateLastTime = 0;
       const STREAM_UPDATE_INTERVAL = 50; // ms，约 20fps
 
@@ -707,10 +747,11 @@
           }];
           saveToStorage(LS_KEYS.apiProfiles, apiProfiles);
         }
-        // 规范化缺失字段
+        // 规范化缺失字段 + 旧 provider 自动迁移为三种协议
         apiProfiles.forEach(p => {
           if (!p.id) p.id = 'api-profile-' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
           p.apiConfig = Object.assign(defaultApiConfig(), p.apiConfig || {});
+          p.apiConfig.provider = normalizeProvider(p.apiConfig.provider);
           p.multimodalConfig = Object.assign({}, DEFAULT_MM_CONFIG, p.multimodalConfig || {});
         });
         const savedId = localStorage.getItem(LS_KEYS.currentProfileId);
@@ -971,7 +1012,42 @@
         scrollToBottom();
       }
 
-      function createMessageHTML(msg) {
+      // 深度思考统计条: 仅显示 API 返回的 usage 派生数据 (token 速度 / 缓存命中率),
+      // 无返回值时只显示"思考中…"或不显示, 不做任何自创算法.
+      function buildStatsHTML(stats, showLive) {
+        const parts = [];
+        if (stats) {
+          if (stats.speed != null && stats.speed > 0) {
+            parts.push(`<span class="reasoning-stat">${stats.speed.toFixed(1)} tok/s</span>`);
+          }
+          if (stats.cacheHit != null && stats.cacheHit >= 0) {
+            parts.push(`<span class="reasoning-stat">缓存命中 ${Math.round(stats.cacheHit * 100)}%</span>`);
+          }
+        }
+        if (parts.length) return parts.join('');
+        if (showLive) return `<span class="reasoning-live"><span class="dot"></span>思考中…</span>`;
+        return '';
+      }
+
+      function buildReasoningBarHTML(msg, isStreaming) {
+        const hasReasoning = !!msg.reasoning;
+        const statsHTML = buildStatsHTML(msg.stats, isStreaming && !hasReasoning);
+        return `
+          <div class="reasoning-bar ${isStreaming ? 'streaming' : ''}">
+            <div class="reasoning-header" data-action="toggle-reasoning">
+              <span class="reasoning-icon">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M15.09 14c.18-.98.65-1.74 1.41-2.5A4.65 4.65 0 0 0 18 8 6 6 0 0 0 6 8c0 1 .23 2.23 1.5 3.5.76.76 1.23 1.52 1.41 2.5"/></svg>
+              </span>
+              <span class="reasoning-title ${hasReasoning ? 'has-content' : ''}">深度思考</span>
+              <span class="reasoning-stats">${statsHTML}</span>
+              <span class="reasoning-arrow">▾</span>
+            </div>
+            <div class="reasoning-body">${hasReasoning ? escapeHtml(msg.reasoning) : ''}</div>
+          </div>
+        `;
+      }
+
+      function createMessageHTML(msg, isStreaming = false) {
         const isUser = msg.role === 'user';
         const avatar = isUser ? '' : 'cat-avatar(1).png';
         const name = isUser ? '我' : (currentAgent?.name || 'AI');
@@ -998,10 +1074,13 @@
             </div>
           `;
         }
+        const reasoningBarHTML = msg.role === 'assistant' && (msg.reasoning || isStreaming)
+          ? buildReasoningBarHTML(msg, isStreaming) : '';
         return `
           <div class="message ai" data-id="${msg.id}">
             <img class="avatar" src="${avatar}" alt="${escapeHtml(name)}">
             <div class="message-content">
+              ${reasoningBarHTML}
               <div class="bubble">${htmlContent}</div>
               <div class="message-actions">
                 <button class="msg-action-btn" data-action="copy-text" type="button">复制</button>
@@ -1029,7 +1108,7 @@
           els.messages.innerHTML = '';
         }
         const temp = document.createElement('div');
-        temp.innerHTML = createMessageHTML(msg);
+        temp.innerHTML = createMessageHTML(msg, streaming);
         const el = temp.firstElementChild;
         if (streaming) el.classList.add('streaming');
         els.messages.appendChild(el);
@@ -1273,9 +1352,9 @@
         streamChat(newContent, config);
       }
 
-      function updateStreamingMessage(el, content) {
+      function updateStreamingMessage(el, state) {
         streamUpdateEl = el;
-        streamUpdateContent = content;
+        streamUpdateState = state;
         if (streamUpdatePending) return;
         streamUpdatePending = true;
         requestAnimationFrame(() => {
@@ -1289,15 +1368,40 @@
         });
       }
 
+      // 渲染单条 AI 消息：正文 Markdown + 顶部深度思考折叠条（含右侧统计）
+      function renderStreamingMessage(el, state) {
+        const bubble = el.querySelector('.bubble');
+        if (!bubble) return;
+        if (state.content !== undefined) {
+          bubble.innerHTML = renderRichContent(state.content);
+          bubble.querySelectorAll('pre code').forEach(block => hljs.highlightElement(block));
+        }
+        const reasoningBar = el.querySelector('.reasoning-bar');
+        if (reasoningBar) {
+          // 非流式且没有思考内容(出错/未启用深度思考): 移除空条
+          if (!state.streaming && !state.reasoning) {
+            reasoningBar.remove();
+          } else {
+            const titleEl = reasoningBar.querySelector('.reasoning-title');
+            const statsEl = reasoningBar.querySelector('.reasoning-stats');
+            const bodyEl = reasoningBar.querySelector('.reasoning-body');
+            if (state.reasoning) {
+              if (bodyEl) bodyEl.textContent = state.reasoning;
+              reasoningBar.classList.add('has-content');
+              if (titleEl) titleEl.classList.add('has-content');
+            }
+            if (statsEl) statsEl.innerHTML = buildStatsHTML(state.stats, !!state.streaming && !state.stats);
+          }
+        }
+        enhanceCodeBlocks(el);
+        scrollToBottom();
+      }
+
       function flushStreamUpdate() {
         streamUpdatePending = false;
         streamUpdateLastTime = performance.now();
-        if (!streamUpdateEl || streamUpdateContent === null) return;
-        const bubble = streamUpdateEl.querySelector('.bubble');
-        bubble.innerHTML = renderRichContent(streamUpdateContent);
-        bubble.querySelectorAll('pre code').forEach(block => hljs.highlightElement(block));
-        enhanceCodeBlocks(streamUpdateEl);
-        scrollToBottom();
+        if (!streamUpdateEl || !streamUpdateState) return;
+        renderStreamingMessage(streamUpdateEl, streamUpdateState);
       }
 
       function scrollToBottom() {
@@ -1485,10 +1589,11 @@
         const mmConfig = getMultimodalConfig();
         const apiConfig = getCurrentConfig();
 
-        // 直传模式：跳过预解析，附件直接随请求发给火山主模型
+        // 直传模式：跳过预解析，附件直接随请求发给主模型（对齐鸿蒙 5.1.0：三种协议均支持）
         if (mmConfig.preparseEnabled === false) {
-          if (apiConfig.provider !== 'volcano') {
-            showToast('附件直传目前仅支持火山方舟引擎');
+          const provider = normalizeProvider(apiConfig.provider);
+          if (provider !== 'openai-completions' && provider !== 'openai-responses' && provider !== 'anthropic-messages') {
+            showToast('当前接入方式不支持附件直传');
             return;
           }
           const validFiles = files.filter(file => {
@@ -1611,10 +1716,12 @@
         const config = getCurrentConfig();
         if (!config.apiKey) { showToast('请先配置 API Key'); openSettings(); return; }
 
-        const readyFiles = pendingFiles.filter(f => f.parsedText && !f.error);
+        // 可发送附件包含先行解析结果与直传附件；只有前者需要拼接解析文本（对齐鸿蒙 ChatViewModel）
+        const readyFiles = pendingFiles.filter(f => !f.isParsing && !f.error && (f.parsedText || f.dataUrl));
+        const parsedReady = readyFiles.filter(f => f.parsedText);
         let fullText = userText;
-        if (readyFiles.length) {
-          const attachmentsText = readyFiles.map(f => `【文件解析：${f.file.name}】\n${f.parsedText}`).join('\n\n');
+        if (parsedReady.length) {
+          const attachmentsText = parsedReady.map(f => `【文件解析：${f.file.name}】\n${f.parsedText}`).join('\n\n');
           fullText = attachmentsText + '\n\n' + userText;
         }
 
@@ -1627,22 +1734,69 @@
           thumbnail: f.thumbnail || null,
           dataUrl: f.dataUrl || null
         }));
+        // 混合发送策略：大图 / Responses 文档优先上传 Files API，上传失败自动回退 Base64（对齐鸿蒙 5.1.0）
+        await prepareAttachmentFileIds(attachments, config);
         clearPendingFiles();
         appendUserMessage(userText, fullText, attachments);
         await streamChat(fullText, config);
       }
 
+      /* ---------- 三协议调用层（对齐鸿蒙 5.1.0 ChatService） ----------
+       * openai-completions → Chat Completions (/chat/completions)
+       * openai-responses   → Responses API    (/responses)
+       * anthropic-messages → Anthropic Messages (/messages)
+       */
+
+      function getProtocol(provider) {
+        if (provider === 'openai-responses') return 'responses';
+        if (provider === 'anthropic-messages') return 'anthropic';
+        return 'completions';
+      }
+
+      function trimBaseUrl(baseUrl) { return (baseUrl || '').replace(/\/+$/, ''); }
+
+      // URL 解析：兼容 DeepSeek Anthropic 端点自动切换（对齐鸿蒙版）
+      function resolveRequestUrl(config, protocol) {
+        const base = trimBaseUrl(config.baseUrl);
+        if (protocol === 'responses') return base + '/responses';
+        if (protocol === 'anthropic') {
+          if (base.endsWith('/v1') || base.endsWith('/anthropic/v1')) return base + '/messages';
+          if (base === 'https://api.deepseek.com' || base === 'http://api.deepseek.com') {
+            return base + '/anthropic/v1/messages'; // 直接填 DeepSeek 主域名时自动切到 Anthropic 兼容端点
+          }
+          return base + '/v1/messages';
+        }
+        return base + '/chat/completions';
+      }
+
+      function buildRequestHeaders(config, protocol, history) {
+        const headers = { 'Content-Type': 'application/json' };
+        if (protocol === 'anthropic') {
+          let needsBeta = false;
+          (history || []).forEach(m => (m.attachments || []).forEach(a => { if (a.fileId) needsBeta = true; }));
+          headers['x-api-key'] = config.apiKey;
+          headers['anthropic-version'] = '2023-06-01';
+          headers['Accept'] = 'text/event-stream';
+          if (needsBeta) headers['anthropic-beta'] = 'files-api-2025-04-14';
+        } else {
+          headers['Authorization'] = 'Bearer ' + config.apiKey;
+        }
+        return headers;
+      }
+
       async function streamChat(userText, config) {
         isStreaming = true;
         updateInputButtons();
-        const baseUrl = (config.baseUrl || '').replace(/\/$/, '');
-        const isVolcano = config.provider === 'volcano';
-        const url = baseUrl + (isVolcano ? '/responses' : '/chat/completions');
+        const protocol = getProtocol(normalizeProvider(config.provider));
+        const url = resolveRequestUrl(config, protocol);
 
         // 必须在追加空 assistant 消息前构建请求体，
-        // 否则 buildChatCompletionsBody / buildResponsesBody 内的 conv.messages.slice(0, -1)
-        // 会把刚追加的 user 消息误判为"最后一条"而漏掉，又在末尾再 push 一次，导致 user 消息被发两次。
-        const body = isVolcano ? buildResponsesBody(userText, config) : buildChatCompletionsBody(userText, config);
+        // 此时 conv.messages 最后一条就是刚追加的当前 user 消息。
+        const history = getCurrentConversation()?.messages || [];
+        const body =
+          protocol === 'responses' ? buildResponsesBody(userText, config) :
+          protocol === 'anthropic' ? buildAnthropicBody(userText, config) :
+          buildChatCompletionsBody(userText, config);
 
         const { el, msg: assistantMsg } = appendMessage('assistant', '', true);
         const bubble = el.querySelector('.bubble');
@@ -1650,22 +1804,27 @@
 
         abortController = new AbortController();
         let fullContent = '';
+        let reasoning = '';
+        let stats = null;
         let aborted = false;
         let streamError = false;
         try {
           const res = await fetch(url, {
             method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': 'Bearer ' + config.apiKey
-            },
+            headers: buildRequestHeaders(config, protocol, history),
             body: JSON.stringify(body),
             signal: abortController.signal
           });
           if (!res.ok) {
             throw new Error(friendlyApiError(res.status));
           }
-          fullContent = isVolcano ? await streamResponses(res, el, bubble) : await streamChatCompletions(res, el, bubble);
+          const result = await streamSSE(res, protocol, (state) => updateStreamingMessage(el, state));
+          fullContent = result.content;
+          reasoning = result.reasoning;
+          stats = result.stats;
+          assistantMsg.reasoning = reasoning;
+          assistantMsg.stats = stats;
+          if (result.usage) assistantMsg.usage = result.usage;
         } catch (err) {
           if (err.name !== 'AbortError') {
             streamError = true;
@@ -1691,8 +1850,14 @@
               // 正常完成 / 出错 / 中断但有部分内容：把内容回填到会话历史
               const last = conv.messages[conv.messages.length - 1];
               if (last) last.content = fullContent;
+              if (reasoning && assistantMsg) assistantMsg.reasoning = reasoning;
+              if (stats && assistantMsg) assistantMsg.stats = stats;
             }
             saveConversations();
+          }
+          // 流式结束后以折叠态 + 最终统计重新渲染该消息
+          if (el && el.parentNode) {
+            renderStreamingMessage(el, { content: fullContent, reasoning, stats, streaming: false });
           }
           // 自动朗读：回答正常完成后自动播报（对齐鸿蒙版 autoReadEnabled）
           if (!aborted && !streamError && fullContent && autoReadEnabled) {
@@ -1838,94 +2003,327 @@
         } catch (e) { /* start() 可能抛错，静默忽略 */ }
       }
 
+      // ===== 请求体构建（对齐鸿蒙 ChatService.buildXXXBody）=====
+      function mergeExtraBody(body, config) {
+        try { Object.assign(body, config.extraBody ? JSON.parse(config.extraBody) : {}); } catch (e) { /* 忽略无效 extraBody */ }
+      }
+
       function buildChatCompletionsBody(userText, config) {
+        const history = getCurrentConversation()?.messages || [];
         const messages = [];
         if (currentAgent?.systemPrompt) {
           messages.push({ role: 'system', content: currentAgent.systemPrompt });
         }
-        const conv = getCurrentConversation();
-        if (conv) {
-          conv.messages.slice(0, -1).forEach(m => {
-            // 跳过空内容消息，避免触发 MissingParameter / 400
-            if (m.role === 'system' || !m.content) return;
-            messages.push({ role: m.role, content: m.content });
-          });
+        for (const m of history) {
+          if (!m.content) continue;
+          if (m.role !== 'user' && m.role !== 'assistant') continue;
+          if (m.role === 'user' && m.attachments?.length) {
+            const parts = [];
+            if (m.content) parts.push({ type: 'text', text: m.content });
+            for (const att of m.attachments) {
+              if (att.parsedText || !att.dataUrl) continue;
+              if (att.type === 'image') {
+                if (att.fileId) parts.push({ type: 'file', file_id: att.fileId });
+                else parts.push({ type: 'image_url', image_url: { url: att.dataUrl } });
+              } else {
+                if (att.fileId) parts.push({ type: 'file', file_id: att.fileId });
+                else parts.push({ type: 'file_url', file_url: { url: att.dataUrl } }); // 兼容支持 file_url 的 OpenAI 兼容接口
+              }
+            }
+            if (parts.length) { messages.push({ role: 'user', content: parts }); continue; }
+          }
+          messages.push({ role: m.role, content: m.content });
         }
-        messages.push({ role: 'user', content: userText });
+        const last = history.length ? history[history.length - 1] : null;
+        if (!last || last.role !== 'user' || last.content !== userText) {
+          messages.push({ role: 'user', content: userText });
+        }
 
-        const body = {
-          model: config.model || 'deepseek-chat',
-          messages,
-          stream: true
-        };
+        const body = { model: config.model, messages, stream: true };
         if (thinkingEnabled) body.reasoning_effort = 'high';
+        if (webSearchEnabled) body.tools = [{ type: 'web_search' }]; // 是否生效取决于服务商支持
         if (config.temperature != null) body.temperature = config.temperature;
         if (config.topP != null) body.top_p = config.topP;
         if (config.maxTokens != null) body.max_tokens = config.maxTokens;
-        try {
-          const extraBody = config.extraBody ? JSON.parse(config.extraBody) : {};
-          Object.assign(body, extraBody);
-        } catch (e) { /* 忽略无效的 extraBody */ }
-
-        if (config.provider === 'deepseek' && thinkingEnabled && config.model === 'deepseek-chat') {
-          showToast('提示：深度思考建议搭配 deepseek-reasoner 模型');
-        }
+        mergeExtraBody(body, config);
         return body;
       }
 
       function buildResponsesBody(userText, config) {
+        const history = getCurrentConversation()?.messages || [];
         const input = [];
-        const conv = getCurrentConversation();
-        // 调用时机：assistant 占位消息尚未追加，conv.messages 的最后一条就是刚添加的当前 user 消息，
-        // 必须整段遍历（含当前消息），否则直传附件和文本都会漏发。
-        const historyMsgs = conv ? conv.messages : [];
-        historyMsgs.forEach(m => {
-          if (m.role !== 'user' && m.role !== 'assistant') return;
-          // 跳过空内容消息，火山 Responses API 会拒绝并报 MissingParameter
-          if (!m.content) return;
-          // 直传附件（dataUrl 且无解析文本）转成 content parts 随消息发送
-          const directAtts = (m.attachments || []).filter(a => a.dataUrl && !a.parsedText);
-          if (m.role === 'user' && directAtts.length) {
+        for (const m of history) {
+          if (!m.content) continue;
+          if (m.role !== 'user' && m.role !== 'assistant') continue;
+          if (m.role === 'user' && m.attachments?.length) {
             const parts = [{ type: 'input_text', text: m.content }];
-            directAtts.forEach(a => {
-              if (a.type === 'image') parts.push({ type: 'input_image', image_url: a.dataUrl });
-              else parts.push({ type: 'input_file', filename: a.name, file_data: a.dataUrl });
-            });
+            for (const att of m.attachments) {
+              if (att.parsedText || !att.dataUrl) continue;
+              if (att.type === 'image') {
+                if (att.fileId) parts.push({ type: 'input_image', file_id: att.fileId });
+                else parts.push({ type: 'input_image', image_url: att.dataUrl });
+              } else {
+                // 统一发送 input_file；若服务商不支持会由服务端返回错误
+                if (att.fileId) parts.push({ type: 'input_file', file_id: att.fileId });
+                else parts.push({ type: 'input_file', filename: att.name, file_data: att.dataUrl });
+              }
+            }
             input.push({ role: m.role, content: parts });
           } else {
             input.push({ role: m.role, content: m.content });
           }
-        });
-        // 当前 user 消息已在上面整段遍历中写入，这里无需重复追加。
-        if (input.length === 0) input.push({ role: 'user', content: userText });
-
-        const body = {
-          model: config.model || 'doubao-seed-2-1-pro-260628',
-          input,
-          stream: true,
-          store: false
-        };
-        if (currentAgent?.systemPrompt) {
-          body.instructions = currentAgent.systemPrompt;
         }
-        if (webSearchEnabled) body.tools = [{ type: 'web_search', max_keyword: 5 }];
+        const last = history.length ? history[history.length - 1] : null;
+        if (!last || last.role !== 'user' || last.content !== userText) {
+          input.push({ role: 'user', content: userText });
+        }
+
+        const body = { model: config.model, input, stream: true, store: false };
+        if (currentAgent?.systemPrompt) body.instructions = currentAgent.systemPrompt;
+        if (webSearchEnabled) body.tools = [{ type: 'web_search' }]; // DeepSeek 与火山方舟均支持
         if (config.temperature != null) body.temperature = config.temperature;
         if (config.topP != null) body.top_p = config.topP;
         if (config.maxTokens != null) body.max_output_tokens = config.maxTokens;
-        try {
-          const extraBody = config.extraBody ? JSON.parse(config.extraBody) : {};
-          Object.assign(body, extraBody);
-        } catch (e) { /* 忽略无效的 extraBody */ }
-        // 深度思考必须显式控制方舟 Responses API；放在 extraBody 之后，界面开关拥有最高优先级
-        body.thinking = { type: thinkingEnabled ? 'enabled' : 'disabled' };
+        mergeExtraBody(body, config);
+        // 深度思考按钮必须显式控制，放在 extraBody 合并之后确保界面开关拥有最高优先级。
+        // OpenAI Responses 标准使用 reasoning；火山方舟保留 thinking 扩展以兼容现有行为。
+        if (trimBaseUrl(config.baseUrl).indexOf('volces.com') !== -1) {
+          body.thinking = { type: thinkingEnabled ? 'enabled' : 'disabled' };
+        } else if (thinkingEnabled) {
+          body.reasoning = { effort: 'high' };
+        }
         return body;
       }
 
-      async function streamChatCompletions(res, el, bubble) {
+      // Anthropic Messages：相邻同角色消息合并（对齐鸿蒙 appendAnthropicMessage）
+      function appendAnthropicMessage(messages, role, content) {
+        const last = messages.length ? messages[messages.length - 1] : null;
+        if (last && last.role === role) {
+          const prev = last.content;
+          if (typeof prev === 'string' && typeof content === 'string') {
+            last.content = prev + '\n\n' + content;
+            return;
+          }
+          if (Array.isArray(prev) && Array.isArray(content)) { prev.push(...content); return; }
+          if (Array.isArray(prev) && typeof content === 'string') { prev.push({ type: 'text', text: content }); return; }
+          if (typeof prev === 'string' && Array.isArray(content)) { last.content = [{ type: 'text', text: prev }, ...content]; return; }
+        }
+        messages.push({ role, content });
+      }
+
+      // dataUrl → Anthropic base64 source 块；网络图片 → url source 块
+      function anthropicSourceBlock(dataUrl, kind) {
+        if (dataUrl.startsWith('http://') || dataUrl.startsWith('https://')) {
+          return { type: kind, source: { type: 'url', url: dataUrl } };
+        }
+        const comma = dataUrl.indexOf(';base64,');
+        if (comma > 0) {
+          return {
+            type: kind,
+            source: { type: 'base64', media_type: dataUrl.substring(5, comma), data: dataUrl.substring(comma + 8) }
+          };
+        }
+        return null;
+      }
+
+      function buildAnthropicBody(userText, config) {
+        const history = getCurrentConversation()?.messages || [];
+        const messages = [];
+        for (const m of history) {
+          if (!m.content) continue;
+          if (m.role !== 'user' && m.role !== 'assistant') continue;
+          if (m.role === 'user' && m.attachments?.length) {
+            const parts = [];
+            if (m.content) parts.push({ type: 'text', text: m.content });
+            for (const att of m.attachments) {
+              if (att.parsedText || !att.dataUrl) continue;
+              if (att.type === 'image') {
+                if (att.fileId) parts.push({ type: 'image', source: { type: 'file', file_id: att.fileId } });
+                else {
+                  const block = anthropicSourceBlock(att.dataUrl, 'image');
+                  if (block) parts.push(block);
+                }
+              } else {
+                // 统一发送 document 块；若服务商不支持会由服务端返回错误
+                if (att.fileId) parts.push({ type: 'document', source: { type: 'file', file_id: att.fileId } });
+                else {
+                  const block = anthropicSourceBlock(att.dataUrl, 'document');
+                  if (block) parts.push(block);
+                }
+              }
+            }
+            if (parts.length) { appendAnthropicMessage(messages, 'user', parts); continue; }
+          }
+          appendAnthropicMessage(messages, m.role, m.content);
+        }
+        const last = history.length ? history[history.length - 1] : null;
+        if (!last || last.role !== 'user' || last.content !== userText) {
+          appendAnthropicMessage(messages, 'user', userText);
+        }
+
+        const body = {
+          model: config.model,
+          messages,
+          stream: true,
+          max_tokens: config.maxTokens != null ? config.maxTokens : 4096
+        };
+        if (currentAgent?.systemPrompt) body.system = currentAgent.systemPrompt;
+        if (webSearchEnabled) body.tools = [{ type: 'web_search_20250305', name: 'web_search', max_uses: 5 }];
+        if (config.temperature != null) body.temperature = config.temperature;
+        if (config.topP != null) body.top_p = config.topP;
+        mergeExtraBody(body, config);
+        return body;
+      }
+
+      // ===== SSE 增量解析（对齐鸿蒙 extractXXXDelta / extractXXXFailure）=====
+      function extractChatCompletionsDelta(sseData) {
+        try { return JSON.parse(sseData)?.choices?.[0]?.delta?.content || ''; } catch (e) { return ''; }
+      }
+      function extractChatCompletionsReasoning(sseData) {
+        try {
+          const delta = JSON.parse(sseData)?.choices?.[0]?.delta;
+          if (!delta) return '';
+          const reasoning = delta.reasoning_content ?? delta.reasoning;
+          return typeof reasoning === 'string' ? reasoning : '';
+        } catch (e) { return ''; }
+      }
+      function extractChatCompletionsUsage(sseData) {
+        try {
+          const usage = JSON.parse(sseData)?.usage;
+          return usage && typeof usage === 'object' ? usage : null;
+        } catch (e) { return null; }
+      }
+      function extractResponsesDelta(sseData) {
+        try {
+          const json = JSON.parse(sseData);
+          return json?.type === 'response.output_text.delta' ? (json.delta || '') : '';
+        } catch (e) { return ''; }
+      }
+      function extractResponsesReasoning(sseData) {
+        try {
+          const json = JSON.parse(sseData);
+          if (json?.type !== 'response.reasoning_summary_text.delta' &&
+              json?.type !== 'response.reasoning_text.delta') return '';
+          const d = json.delta;
+          if (typeof d === 'string') return d;
+          if (Array.isArray(d)) return d.map(x => (x && x.text) || '').join('');
+          return '';
+        } catch (e) { return ''; }
+      }
+      function extractResponsesUsage(sseData) {
+        try {
+          const json = JSON.parse(sseData);
+          if (json?.type !== 'response.completed') return null;
+          const usage = json.response?.usage;
+          return usage && typeof usage === 'object' ? usage : null;
+        } catch (e) { return null; }
+      }
+      function extractResponsesFailure(sseData) {
+        try {
+          const json = JSON.parse(sseData);
+          if (json?.type !== 'response.failed') return '';
+          return json.response?.error?.message || 'Responses API 返回失败';
+        } catch (e) { return ''; }
+      }
+      function extractAnthropicDelta(sseData) {
+        try {
+          const json = JSON.parse(sseData);
+          if (json?.type !== 'content_block_delta') return '';
+          return json.delta?.type === 'text_delta' ? (json.delta.text || '') : '';
+        } catch (e) { return ''; }
+      }
+      function extractAnthropicReasoning(sseData) {
+        try {
+          const json = JSON.parse(sseData);
+          if (json?.type !== 'content_block_delta') return '';
+          return json.delta?.type === 'thinking_delta' ? (json.delta.thinking || '') : '';
+        } catch (e) { return ''; }
+      }
+      function extractAnthropicUsage(sseData) {
+        try {
+          const json = JSON.parse(sseData);
+          if (json?.type !== 'message_delta') return null;
+          const usage = json.usage;
+          return usage && typeof usage === 'object' ? usage : null;
+        } catch (e) { return null; }
+      }
+      function extractAnthropicFailure(sseData) {
+        try {
+          const json = JSON.parse(sseData);
+          if (json?.type !== 'error') return '';
+          return json.error?.message || 'Anthropic Messages API 返回失败';
+        } catch (e) { return ''; }
+      }
+
+      // 由 API 返回的 usage 派生出 token 速度与缓存命中率 (只读返回值, 不做自创算法).
+      function computeStreamStats(usage, startTime) {
+        if (!usage) return null;
+        const elapsed = (performance.now() - startTime) / 1000;
+        const outTokens = usage.completion_tokens != null ? usage.completion_tokens
+          : (usage.output_tokens != null ? usage.output_tokens : null);
+        let hit = null, total = null;
+        if (usage.prompt_cache_hit_tokens != null && usage.prompt_cache_miss_tokens != null) {
+          // DeepSeek Chat Completions
+          hit = usage.prompt_cache_hit_tokens;
+          total = usage.prompt_cache_hit_tokens + usage.prompt_cache_miss_tokens;
+        } else if (usage.prompt_tokens_details && usage.prompt_tokens_details.cached_tokens != null) {
+          // OpenAI Chat Completions
+          hit = usage.prompt_tokens_details.cached_tokens;
+          total = usage.prompt_tokens != null ? usage.prompt_tokens : hit;
+        } else if (usage.input_tokens_details && usage.input_tokens_details.cached_tokens != null) {
+          // OpenAI Responses API
+          hit = usage.input_tokens_details.cached_tokens;
+          total = usage.input_tokens != null ? usage.input_tokens : hit;
+        } else if (usage.cache_read_input_tokens != null || usage.cache_creation_input_tokens != null) {
+          // Anthropic Messages
+          const cr = usage.cache_read_input_tokens != null ? usage.cache_read_input_tokens : 0;
+          const cc = usage.cache_creation_input_tokens != null ? usage.cache_creation_input_tokens : 0;
+          const inp = usage.input_tokens != null ? usage.input_tokens : 0;
+          hit = cr;
+          total = cr + cc + inp;
+        }
+        const speed = outTokens != null && outTokens > 0 && elapsed > 0 ? outTokens / elapsed : null;
+        const cacheHit = hit != null && total > 0 ? hit / total : null;
+        return { speed, cacheHit };
+      }
+
+      // 统一 SSE 流式读取：按协议分发增量与失败事件（对齐鸿蒙 requestInStream 循环）
+      async function streamSSE(res, protocol, onUpdate) {
         let fullContent = '';
+        let fullReasoning = '';
+        let usage = null;
+        const startTime = performance.now();
         const reader = res.body.getReader();
         const decoder = new TextDecoder('utf-8');
         let buffer = '';
+        const handleData = (sseData) => {
+          let delta = '';
+          let reasoning = '';
+          let newUsage = null;
+          if (protocol === 'responses') {
+            const fail = extractResponsesFailure(sseData);
+            if (fail) { const err = new Error(fail); err.isFatal = true; throw err; }
+            delta = extractResponsesDelta(sseData);
+            reasoning = extractResponsesReasoning(sseData);
+            newUsage = extractResponsesUsage(sseData);
+          } else if (protocol === 'anthropic') {
+            const fail = extractAnthropicFailure(sseData);
+            if (fail) { const err = new Error(fail); err.isFatal = true; throw err; }
+            delta = extractAnthropicDelta(sseData);
+            reasoning = extractAnthropicReasoning(sseData);
+            newUsage = extractAnthropicUsage(sseData);
+          } else {
+            delta = extractChatCompletionsDelta(sseData);
+            reasoning = extractChatCompletionsReasoning(sseData);
+            newUsage = extractChatCompletionsUsage(sseData);
+          }
+          if (newUsage) usage = newUsage;
+          if (delta || reasoning || newUsage) {
+            if (delta) fullContent += delta;
+            if (reasoning) fullReasoning += reasoning;
+            onUpdate({ content: fullContent, reasoning: fullReasoning, stats: computeStreamStats(usage, startTime) });
+          }
+        };
         try {
           while (true) {
             const { done, value } = await reader.read();
@@ -1935,16 +2333,12 @@
             buffer = lines.pop();
             for (const line of lines) {
               const trimmed = line.trim();
-              if (!trimmed || trimmed === 'data: [DONE]') continue;
-              if (trimmed.startsWith('data: ')) {
-                try {
-                  const data = JSON.parse(trimmed.slice(6));
-                  const delta = data.choices?.[0]?.delta?.content;
-                  if (delta) {
-                    fullContent += delta;
-                    updateStreamingMessage(el, fullContent);
-                  }
-                } catch (e) { /* ignore malformed json */ }
+              if (!trimmed || trimmed === 'data: [DONE]' || !trimmed.startsWith('data: ')) continue;
+              try {
+                handleData(trimmed.slice(6));
+              } catch (e) {
+                if (e.isFatal) throw e;
+                /* ignore malformed json */
               }
             }
           }
@@ -1952,45 +2346,79 @@
           // 中断时返回已累积的部分内容，保留给用户看；其它错误继续抛出
           if (err.name !== 'AbortError') throw err;
         }
-        return fullContent;
+        return { content: fullContent, reasoning: fullReasoning, usage, stats: computeStreamStats(usage, startTime) };
       }
 
-      async function streamResponses(res, el, bubble) {
-        let fullContent = '';
-        const reader = res.body.getReader();
-        const decoder = new TextDecoder('utf-8');
-        let buffer = '';
-        try {
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            buffer += decoder.decode(value, { stream: true });
-            const lines = buffer.split('\n');
-            buffer = lines.pop();
-            for (const line of lines) {
-              const trimmed = line.trim();
-              if (!trimmed || trimmed === 'data: [DONE]') continue;
-              if (trimmed.startsWith('data: ')) {
-                try {
-                  const data = JSON.parse(trimmed.slice(6));
-                  if (data.type === 'response.output_text.delta' && data.delta) {
-                    fullContent += data.delta;
-                    updateStreamingMessage(el, fullContent);
-                  } else if (data.type === 'response.failed') {
-                    const msg = data.response?.error?.message || 'Responses API 返回失败';
-                    throw new Error(msg);
-                  }
-                } catch (e) {
-                  if (e instanceof Error && e.message.includes('Responses API')) throw e;
-                  /* ignore malformed json */
-                }
-              }
-            }
-          }
-        } catch (err) {
-          if (err.name !== 'AbortError') throw err;
+      // ===== Files API 混合上传（对齐鸿蒙 FileUploadService + prepareAttachmentFileIds）=====
+      const FILE_API_THRESHOLD_BYTES = 4 * 1024 * 1024;
+
+      function dataUrlBytes(dataUrl) {
+        const idx = dataUrl.indexOf(';base64,');
+        if (idx < 0) return 0;
+        const b64len = dataUrl.length - idx - 8;
+        return Math.floor(b64len * 3 / 4);
+      }
+
+      function shouldUploadToFilesApi(provider, baseUrl, att) {
+        if (!att.dataUrl || att.parsedText) return false;
+        if (att.type === 'file') return provider === 'openai-responses';
+        if (provider === 'anthropic-messages') {
+          return dataUrlBytes(att.dataUrl) > FILE_API_THRESHOLD_BYTES && baseUrl.indexOf('deepseek.com') !== -1;
         }
-        return fullContent;
+        return dataUrlBytes(att.dataUrl) > FILE_API_THRESHOLD_BYTES;
+      }
+
+      // POST {baseUrl}/files multipart/form-data（purpose=user_data），返回 file_id
+      async function uploadFileViaFilesApi(config, protocol, fileName, mimeType, dataUrl) {
+        const base = trimBaseUrl(config.baseUrl);
+        let url;
+        if (protocol === 'anthropic') {
+          if (base.endsWith('/v1') || base.endsWith('/anthropic/v1')) url = base + '/files';
+          else if (base === 'https://api.deepseek.com' || base === 'http://api.deepseek.com') url = base + '/anthropic/v1/files';
+          else url = base + '/v1/files';
+        } else {
+          url = base + '/files';
+        }
+        const comma = dataUrl.indexOf(';base64,');
+        const metaType = comma > 5 ? dataUrl.substring(5, comma) : 'application/octet-stream';
+        const bytes = Uint8Array.from(atob(dataUrl.substring(comma + 8)), c => c.charCodeAt(0));
+        const blob = new Blob([bytes], { type: mimeType || metaType });
+        const fd = new FormData();
+        fd.append('purpose', 'user_data');
+        fd.append('file', blob, fileName.replace(/["\r\n]/g, '_'));
+        const headers = {};
+        if (protocol === 'anthropic') {
+          headers['x-api-key'] = config.apiKey;
+          headers['anthropic-version'] = '2023-06-01';
+          headers['anthropic-beta'] = 'files-api-2025-04-14';
+        } else {
+          headers['Authorization'] = 'Bearer ' + config.apiKey;
+        }
+        const resp = await fetch(url, { method: 'POST', headers, body: fd });
+        if (!resp.ok) throw new Error('文件上传失败 (' + resp.status + ')');
+        const json = await resp.json();
+        const id = json?.id || json?.file_id;
+        if (!id) throw new Error('文件上传响应缺少 file_id');
+        return id;
+      }
+
+      // 发送前的混合上传策略：小图 Base64 内联；大图 / Responses 文档走 Files API，失败自动回退 Base64
+      async function prepareAttachmentFileIds(attachments, config) {
+        const provider = normalizeProvider(config.provider);
+        if (provider !== 'openai-completions' && provider !== 'openai-responses' && provider !== 'anthropic-messages') return;
+        const protocol = getProtocol(provider);
+        const baseUrl = trimBaseUrl(config.baseUrl);
+        const needUpload = attachments.filter(a => shouldUploadToFilesApi(provider, baseUrl, a));
+        if (!needUpload.length) return;
+        showToast('正在上传附件...');
+        for (const att of needUpload) {
+          const mime = att.dataUrl.startsWith('data:') ? att.dataUrl.substring(5, att.dataUrl.indexOf(';')) : '';
+          try {
+            att.fileId = await uploadFileViaFilesApi(config, protocol, att.name, mime, att.dataUrl);
+          } catch (e) {
+            att.fileId = ''; // 上传失败时保留 dataUrl，回退 Base64 内联发送
+          }
+        }
       }
 
       function escapeHtml(str) {
@@ -2007,7 +2435,7 @@
       /* Settings */
       function loadSettings() {
         const config = getCurrentConfig();
-        els.apiProvider.value = config.provider || 'custom';
+        els.apiProvider.value = normalizeProvider(config.provider);
         els.apiBaseUrl.value = config.baseUrl || '';
         els.apiKey.value = config.apiKey || '';
         els.apiModel.value = config.model || '';
@@ -2165,21 +2593,30 @@
         showToast(autoReadEnabled ? '已开启自动朗读' : '已关闭自动朗读');
       });
 
-      document.querySelectorAll('.preset-btn').forEach(btn => {
-        btn.addEventListener('click', () => {
-          const p = PRESETS[btn.dataset.preset];
-          els.apiProvider.value = p.provider;
-          els.apiBaseUrl.value = p.baseUrl;
-          els.apiModel.value = p.model;
-          updateHint();
-        });
-      });
       els.apiProvider.addEventListener('change', updateHint);
+      // 提示与占位符（对齐鸿蒙 SettingsPanel getHint / getAutoCompleteHint / 占位文案）
       function updateHint() {
         const v = els.apiProvider.value;
-        if (v === 'deepseek') els.apiHint.textContent = 'Deepseek API：Base URL 通常为 https://api.deepseek.com，模型可填 deepseek-chat 或 deepseek-reasoner。';
-        else if (v === 'volcano') els.apiHint.textContent = '火山方舟引擎：Base URL 通常为 https://ark.cn-beijing.volces.com/api/v3，模型需填写 Endpoint ID（如 ep-xxx）。';
-        else els.apiHint.textContent = '自定义 OpenAI 兼容接口：填写完整的 Base URL、API Key 与模型名称。';
+        const hints = {
+          'openai-completions': '当前接入方式：OpenAI Completions，通用API接入方式，兼容大部分模型。若需要原生图片直传、联网搜索等能力，建议切换 Responses API 或 Anthropic API 选项（需查询模型支持的方式）',
+          'openai-responses': '当前接入方式：OpenAI Responses，建议支持 Responses API 的模型优先选择此选项，以获得原生图片直传、联网搜索等能力',
+          'anthropic-messages': '当前接入方式：Anthropic Messages，建议支持 Anthropic API 的模型优先选择此选项，以获得原生图片直传、联网搜索等能力'
+        };
+        const autos = {
+          'openai-completions': '自动补全 /chat/completions',
+          'openai-responses': '自动补全 /responses',
+          'anthropic-messages': '自动补全 /v1/messages。DeepSeek 可填 https://api.deepseek.com（自动补 /anthropic/v1/messages）'
+        };
+        const placeholders = {
+          'openai-completions': { url: 'https://api.openai.com/v1 或 https://api.deepseek.com', model: 'deepseek-chat / deepseek-reasoner / gpt-...' },
+          'openai-responses': { url: 'https://api.deepseek.com 或 https://ark.cn-beijing.volces.com/api/v3', model: 'deepseek-v4-flash / deepseek-v4-pro / ep-xxx' },
+          'anthropic-messages': { url: 'https://api.anthropic.com/v1 或 https://api.deepseek.com', model: 'deepseek-v4-pro / claude-...' }
+        };
+        els.apiHint.textContent = (hints[v] || '') + (autos[v] ? '\n' + autos[v] : '');
+        if (placeholders[v]) {
+          els.apiBaseUrl.placeholder = placeholders[v].url;
+          els.apiModel.placeholder = placeholders[v].model;
+        }
       }
 
       /* Input */
@@ -2211,6 +2648,13 @@
       els.messages.addEventListener('click', (e) => {
         if (e.target.classList.contains('attachment-thumb')) {
           openImageLightbox(e.target.src);
+          return;
+        }
+        // 深度思考条: 点击头部展开/折叠
+        const reasoningHeader = e.target.closest('.reasoning-header');
+        if (reasoningHeader) {
+          const bar = reasoningHeader.closest('.reasoning-bar');
+          if (bar) bar.classList.toggle('expanded');
           return;
         }
         const btn = e.target.closest('.msg-action-btn');

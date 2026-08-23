@@ -10,6 +10,11 @@ export class Message {
   displayContent: string = '';
   attachments: Attachment[] = [];
   timestamp: number = 0;
+  // 深度思考内容 (对齐 web 版本 msg.reasoning)
+  reasoning: string = '';
+  // 由 API 返回的 usage 派生的统计: token 速度(tok/s)与缓存命中率(0..1), -1 表示无返回值
+  tokenSpeed: number = -1;
+  cacheHitRate: number = -1;
 
   static ofUser(id: string, content: string, displayContent: string,
     attachments: Attachment[]): Message {
@@ -41,6 +46,9 @@ export class Message {
     msg.content = (json['content'] as string) ?? '';
     msg.displayContent = (json['displayContent'] as string) ?? '';
     msg.timestamp = (json['timestamp'] as number) ?? 0;
+    msg.reasoning = (json['reasoning'] as string) ?? '';
+    msg.tokenSpeed = (json['tokenSpeed'] as number) ?? -1;
+    msg.cacheHitRate = (json['cacheHitRate'] as number) ?? -1;
     let raw: Object = json['attachments'];
     if (raw !== undefined) {
       let rawAttachments: Object[] = raw as Object[];
@@ -64,7 +72,10 @@ export class Message {
       'content': this.content,
       'displayContent': this.displayContent,
       'attachments': attArr,
-      'timestamp': this.timestamp
+      'timestamp': this.timestamp,
+      'reasoning': this.reasoning,
+      'tokenSpeed': this.tokenSpeed,
+      'cacheHitRate': this.cacheHitRate
     };
   }
 }

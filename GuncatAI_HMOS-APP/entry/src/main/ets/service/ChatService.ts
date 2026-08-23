@@ -531,6 +531,233 @@ function extractAnthropicFailure(sseData: string): string {
   }
 }
 
+// ===== 深度思考增量解析 (对齐 web 版本 extractXXXReasoning) =====
+
+function extractChatCompletionsReasoning(sseData: string): string {
+  try {
+    let json: Object = JSON.parse(sseData);
+    if (typeof json !== 'object' || json === null) {
+      return '';
+    }
+    let choices: Object = (json as Record<string, Object>)['choices'];
+    if (!(choices instanceof Array) || choices.length === 0) {
+      return '';
+    }
+    let first: Object = choices[0];
+    if (typeof first !== 'object' || first === null) {
+      return '';
+    }
+    let delta: Object = (first as Record<string, Object>)['delta'];
+    if (typeof delta !== 'object' || delta === null) {
+      return '';
+    }
+    // DeepSeek 使用 reasoning_content; 部分 OpenAI 兼容服务使用 reasoning
+    let reasoning: Object = (delta as Record<string, Object>)['reasoning_content'];
+    if (typeof reasoning === 'string') {
+      return reasoning;
+    }
+    let reasoningAlt: Object = (delta as Record<string, Object>)['reasoning'];
+    if (typeof reasoningAlt === 'string') {
+      return reasoningAlt;
+    }
+    return '';
+  } catch (e) {
+    return '';
+  }
+}
+
+function extractResponsesReasoning(sseData: string): string {
+  try {
+    let json: Object = JSON.parse(sseData);
+    if (typeof json !== 'object' || json === null) {
+      return '';
+    }
+    let type: Object = (json as Record<string, Object>)['type'];
+    if (typeof type !== 'string') {
+      return '';
+    }
+    if (type !== 'response.reasoning_summary_text.delta' && type !== 'response.reasoning_text.delta') {
+      return '';
+    }
+    let delta: Object = (json as Record<string, Object>)['delta'];
+    if (typeof delta === 'string') {
+      return delta;
+    }
+    if (delta instanceof Array) {
+      let parts: string[] = [];
+      let arr: Object[] = delta as Object[];
+      for (let i: number = 0; i < arr.length; i++) {
+        let item: Object = arr[i];
+        if (typeof item === 'object' && item !== null) {
+          let text: Object = (item as Record<string, Object>)['text'];
+          if (typeof text === 'string') {
+            parts.push(text);
+          }
+        }
+      }
+      return parts.join('');
+    }
+    return '';
+  } catch (e) {
+    return '';
+  }
+}
+
+function extractAnthropicReasoning(sseData: string): string {
+  try {
+    let json: Object = JSON.parse(sseData);
+    if (typeof json !== 'object' || json === null) {
+      return '';
+    }
+    let type: Object = (json as Record<string, Object>)['type'];
+    if (typeof type !== 'string' || type !== 'content_block_delta') {
+      return '';
+    }
+    let delta: Object = (json as Record<string, Object>)['delta'];
+    if (typeof delta !== 'object' || delta === null) {
+      return '';
+    }
+    let deltaType: Object = (delta as Record<string, Object>)['type'];
+    if (typeof deltaType !== 'string' || deltaType !== 'thinking_delta') {
+      return '';
+    }
+    let thinking: Object = (delta as Record<string, Object>)['thinking'];
+    if (typeof thinking === 'string') {
+      return thinking;
+    }
+    return '';
+  } catch (e) {
+    return '';
+  }
+}
+
+// ===== usage 解析 (对齐 web 版本 extractXXXUsage) =====
+
+function extractChatCompletionsUsage(sseData: string): Record<string, Object> | null {
+  try {
+    let json: Object = JSON.parse(sseData);
+    if (typeof json !== 'object' || json === null) {
+      return null;
+    }
+    let usage: Object = (json as Record<string, Object>)['usage'];
+    if (typeof usage === 'object' && usage !== null) {
+      return usage as Record<string, Object>;
+    }
+    return null;
+  } catch (e) {
+    return null;
+  }
+}
+
+function extractResponsesUsage(sseData: string): Record<string, Object> | null {
+  try {
+    let json: Object = JSON.parse(sseData);
+    if (typeof json !== 'object' || json === null) {
+      return null;
+    }
+    let type: Object = (json as Record<string, Object>)['type'];
+    if (typeof type !== 'string' || type !== 'response.completed') {
+      return null;
+    }
+    let resp: Object = (json as Record<string, Object>)['response'];
+    if (typeof resp === 'object' && resp !== null) {
+      let usage: Object = (resp as Record<string, Object>)['usage'];
+      if (typeof usage === 'object' && usage !== null) {
+        return usage as Record<string, Object>;
+      }
+    }
+    return null;
+  } catch (e) {
+    return null;
+  }
+}
+
+function extractAnthropicUsage(sseData: string): Record<string, Object> | null {
+  try {
+    let json: Object = JSON.parse(sseData);
+    if (typeof json !== 'object' || json === null) {
+      return null;
+    }
+    let type: Object = (json as Record<string, Object>)['type'];
+    if (typeof type !== 'string' || type !== 'message_delta') {
+      return null;
+    }
+    let usage: Object = (json as Record<string, Object>)['usage'];
+    if (typeof usage === 'object' && usage !== null) {
+      return usage as Record<string, Object>;
+    }
+    return null;
+  } catch (e) {
+    return null;
+  }
+}
+
+// 由 API 返回的 usage 派生 token 速度(tok/s)与缓存命中率(0..1);
+// 只读返回值, 不做自创算法; 无对应字段时返回 -1.
+function deriveStreamStats(usage: Record<string, Object> | null, elapsedMs: number): number[] {
+  let speed: number = -1;
+  let hit: number = -1;
+  if (usage === null) {
+    return [speed, hit];
+  }
+  let outTokens: number = -1;
+  let completionTokens: Object = usage['completion_tokens'];
+  if (typeof completionTokens === 'number') {
+    outTokens = completionTokens as number;
+  } else {
+    let outputTokens: Object = usage['output_tokens'];
+    if (typeof outputTokens === 'number') {
+      outTokens = outputTokens as number;
+    }
+  }
+  let hitTokens: number = -1;
+  let totalTokens: number = -1;
+  let hitT: Object = usage['prompt_cache_hit_tokens'];
+  let missT: Object = usage['prompt_cache_miss_tokens'];
+  if (typeof hitT === 'number' && typeof missT === 'number') {
+    hitTokens = hitT as number;
+    totalTokens = (hitT as number) + (missT as number);
+  } else {
+    let promptDetails: Object = usage['prompt_tokens_details'];
+    if (typeof promptDetails === 'object' && promptDetails !== null) {
+      let cached: Object = (promptDetails as Record<string, Object>)['cached_tokens'];
+      if (typeof cached === 'number') {
+        hitTokens = cached as number;
+        let promptTokens: Object = usage['prompt_tokens'];
+        totalTokens = typeof promptTokens === 'number' ? (promptTokens as number) : hitTokens;
+      }
+    } else {
+      let inputDetails: Object = usage['input_tokens_details'];
+      if (typeof inputDetails === 'object' && inputDetails !== null) {
+        let cached: Object = (inputDetails as Record<string, Object>)['cached_tokens'];
+        if (typeof cached === 'number') {
+          hitTokens = cached as number;
+          let inputTokens: Object = usage['input_tokens'];
+          totalTokens = typeof inputTokens === 'number' ? (inputTokens as number) : hitTokens;
+        }
+      } else {
+        let cacheRead: Object = usage['cache_read_input_tokens'];
+        let cacheCreate: Object = usage['cache_creation_input_tokens'];
+        let inputT: Object = usage['input_tokens'];
+        if (typeof cacheRead === 'number' || typeof cacheCreate === 'number') {
+          let cr: number = typeof cacheRead === 'number' ? (cacheRead as number) : 0;
+          let cc: number = typeof cacheCreate === 'number' ? (cacheCreate as number) : 0;
+          let inp: number = typeof inputT === 'number' ? (inputT as number) : 0;
+          hitTokens = cr;
+          totalTokens = cr + cc + inp;
+        }
+      }
+    }
+  }
+  if (outTokens > 0 && elapsedMs > 0) {
+    speed = outTokens / (elapsedMs / 1000);
+  }
+  if (hitTokens >= 0 && totalTokens > 0) {
+    hit = hitTokens / totalTokens;
+  }
+  return [speed, hit];
+}
+
 export class ChatService {
   private static activeRequest: http.HttpRequest | null = null;
 
@@ -580,6 +807,9 @@ export class ChatService {
     let receivedAnyData: boolean = false;
     let aborted: boolean = false;
     let failedMsg: string = '';
+    // 深度思考累积 + 请求起始时间(用于由 usage 派生 token 速度)
+    let fullReasoning: string = '';
+    let startTime: number = Date.now();
     // 对齐 web 版本: SSE 解析出一个 delta 就立即 onToken 全量累积,
     // UI 端 50ms 节流刷新. 不做应用层字符拆分 (避免 setTimeout 队列过长 OOM)
 
@@ -623,6 +853,16 @@ export class ChatService {
                 acc.fullContent += delta;
                 callbacks.onToken(delta);
               }
+              let reasoning: string = extractResponsesReasoning(sseData);
+              if (reasoning !== '') {
+                fullReasoning += reasoning;
+                callbacks.onReasoning(fullReasoning);
+              }
+              let usageObj: Record<string, Object> | null = extractResponsesUsage(sseData);
+              if (usageObj !== null) {
+                let stats: number[] = deriveStreamStats(usageObj, Date.now() - startTime);
+                callbacks.onUsage(stats[0], stats[1]);
+              }
             } else if (protocol === 'anthropic') {
               let fail: string = extractAnthropicFailure(sseData);
               if (fail !== '') {
@@ -635,11 +875,31 @@ export class ChatService {
                 acc.fullContent += delta;
                 callbacks.onToken(delta);
               }
+              let reasoning: string = extractAnthropicReasoning(sseData);
+              if (reasoning !== '') {
+                fullReasoning += reasoning;
+                callbacks.onReasoning(fullReasoning);
+              }
+              let usageObj: Record<string, Object> | null = extractAnthropicUsage(sseData);
+              if (usageObj !== null) {
+                let stats: number[] = deriveStreamStats(usageObj, Date.now() - startTime);
+                callbacks.onUsage(stats[0], stats[1]);
+              }
             } else {
               let delta: string = extractChatCompletionsDelta(sseData);
               if (delta !== '') {
                 acc.fullContent += delta;
                 callbacks.onToken(delta);
+              }
+              let reasoning: string = extractChatCompletionsReasoning(sseData);
+              if (reasoning !== '') {
+                fullReasoning += reasoning;
+                callbacks.onReasoning(fullReasoning);
+              }
+              let usageObj: Record<string, Object> | null = extractChatCompletionsUsage(sseData);
+              if (usageObj !== null) {
+                let stats: number[] = deriveStreamStats(usageObj, Date.now() - startTime);
+                callbacks.onUsage(stats[0], stats[1]);
               }
             }
           }
@@ -657,17 +917,47 @@ export class ChatService {
                     acc.fullContent += delta;
                     callbacks.onToken(delta);
                   }
+                  let reasoning: string = extractResponsesReasoning(sseData);
+                  if (reasoning !== '') {
+                    fullReasoning += reasoning;
+                    callbacks.onReasoning(fullReasoning);
+                  }
+                  let usageObj: Record<string, Object> | null = extractResponsesUsage(sseData);
+                  if (usageObj !== null) {
+                    let stats: number[] = deriveStreamStats(usageObj, Date.now() - startTime);
+                    callbacks.onUsage(stats[0], stats[1]);
+                  }
                 } else if (protocol === 'anthropic') {
                   let delta: string = extractAnthropicDelta(sseData);
                   if (delta !== '') {
                     acc.fullContent += delta;
                     callbacks.onToken(delta);
                   }
+                  let reasoning: string = extractAnthropicReasoning(sseData);
+                  if (reasoning !== '') {
+                    fullReasoning += reasoning;
+                    callbacks.onReasoning(fullReasoning);
+                  }
+                  let usageObj: Record<string, Object> | null = extractAnthropicUsage(sseData);
+                  if (usageObj !== null) {
+                    let stats: number[] = deriveStreamStats(usageObj, Date.now() - startTime);
+                    callbacks.onUsage(stats[0], stats[1]);
+                  }
                 } else {
                   let delta: string = extractChatCompletionsDelta(sseData);
                   if (delta !== '') {
                     acc.fullContent += delta;
                     callbacks.onToken(delta);
+                  }
+                  let reasoning: string = extractChatCompletionsReasoning(sseData);
+                  if (reasoning !== '') {
+                    fullReasoning += reasoning;
+                    callbacks.onReasoning(fullReasoning);
+                  }
+                  let usageObj: Record<string, Object> | null = extractChatCompletionsUsage(sseData);
+                  if (usageObj !== null) {
+                    let stats: number[] = deriveStreamStats(usageObj, Date.now() - startTime);
+                    callbacks.onUsage(stats[0], stats[1]);
                   }
                 }
               }

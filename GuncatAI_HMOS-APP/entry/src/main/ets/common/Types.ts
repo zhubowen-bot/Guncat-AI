@@ -81,6 +81,10 @@ export class PreviewData {
 // 流式回调
 export class StreamCallbacks {
   onToken: (text: string) => void = (_text: string): void => {};
+  // 深度思考增量: 传入已累积的完整思考文本
+  onReasoning: (text: string) => void = (_text: string): void => {};
+  // 由 API 返回的 usage 派生的统计; 无返回值时传 -1
+  onUsage: (tokenSpeed: number, cacheHitRate: number) => void = (_speed: number, _hit: number): void => {};
   onError: (error: string) => void = (_error: string): void => {};
   onDone: (fullContent: string) => void = (_fullContent: string): void => {};
 }

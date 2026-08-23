@@ -4,7 +4,7 @@
 
 Guncat AI is a native HarmonyOS AI chat client built with ArkTS and ArkUI. Its primary interface is not hosted in a WebView.
 
-Current app version: `5.0.0`
+Current app version: `5.1.0`
 
 ## Features
 
@@ -100,8 +100,10 @@ The final read-aloud implementation uses HarmonyOS CoreSpeechKit `textToSpeech`.
 - Supports creating, switching, and deleting conversations.
 - Follows the system light/dark theme, including system bars and Markdown styles.
 
-### UI and motion (5.0.0)
+### UI and motion (5.1.0)
 
+- Reworked the deep-thinking (reasoning) bar UI: it now renders as a standalone card above the bubble with uniform corner radii and a neutral light-gray background that blends with the chat area; the loading spinner sits directly to the right of the "Deep Thinking" label, and the separate "Thinking…" text was removed.
+- Updated the app icon assets while keeping the original filenames, so existing resource references remain valid (just replace the image files to apply).
 - A refreshed, soft modern UI: low-saturation palette, large rounded corners, white soft-elevated buttons, gentle shadows, and no heavy outlines or glow effects.
 - Launch fly-in animation: icons fly out from the center in sequence, staying sharp throughout with no blur fade or cross-fade flicker.
 - One-shot central icon transition: the launch icon uses a single hero node to smoothly move and scale into the empty-state icon at the page center, avoiding "white flash then clear" artifacts.
@@ -324,6 +326,12 @@ You can also select content in Gallery or a file manager and choose Guncat AI fr
 - Original attachments are not copied into permanent app storage.
 - Requests use HTTPS. Data-processing policies still depend on the configured model provider.
 
+## Version 5.1.0
+
+- New deep-thinking (reasoning) display: the reasoning content of AI replies is shown in a collapsible card that is collapsed by default and expands on tapping the header; incremental parsing supports all three protocols — OpenAI Completions (`reasoning_content` / `reasoning`), OpenAI Responses (`reasoning_text` / `reasoning_summary_text`), and Anthropic Messages (`thinking_delta`).
+- Live stats on the reasoning bar: the right side shows the token speed (tok/s) in real time during streaming and then the API-derived exact token speed plus cache hit rate once the stream ends (the cache hit rate only appears when the API returns cache-token usage; otherwise it stays hidden).
+- Reworked the deep-thinking bar UI: a standalone card above the bubble with uniform corner radii and a neutral light-gray background; the spinner sits to the right of the "Deep Thinking" label and the separate "Thinking…" text was removed.
+
 ## Version 5.0.0
 
 - Unified API integration into three mainstream protocols: OpenAI Completions, OpenAI Responses, and Anthropic Messages; removed standalone DeepSeek / Volcengine Ark presets with automatic migration for old configs.
@@ -332,6 +340,12 @@ You can also select content in Gallery or a file manager and choose Guncat AI fr
 - Table recognition now lists all main and multimodal models from every API profile (deduplicated) for direct selection; improved DeepSeek vision output handling (thinking disabled, full-width angle bracket normalization, Markdown table fallback).
 - Improved the model-switch menu: equal item widths, centered text, rounded corners, and a softer shadow.
 - Improved the drawer shadow: a fixed full-screen scrim keeps the right side shaded during the slide, and tapping the blank area closes the drawer.
+- Updated the app icon assets while keeping the original filenames, so existing resource references remain valid (just replace the image files to apply).
+- Refreshed the UI with a soft modern style: low-saturation palette, large rounded corners, white soft-elevated buttons, gentle shadows, and no heavy outlines or glow effects.
+- Added a launch fly-in animation: icons fly out from the center in sequence, staying sharp throughout with no blur fade or cross-fade flicker.
+- Added an one-shot central icon transition: the launch icon uses a single hero node to smoothly move and scale into the empty-state icon at the page center, avoiding "white flash then clear" artifacts.
+- Added a bottom input slide-in animation: it slides in from below the screen edge with no bounce or unnatural top-down drop.
+- Side drawers, settings sheets, and about overlays naturally cover the underlying hero icon instead of leaving it floating above overlays.
 
 ## Version 4.4.0
 

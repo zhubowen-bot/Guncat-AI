@@ -2,9 +2,9 @@
 
 > 中文 | [English](README_EN.md)
 
-Guncat AI 是使用 ArkTS 与 ArkUI 开发的原生 HarmonyOS AI 对话客户端，不使用 WebView 承载主界面。
+Guncat AI 是使用 ArkTS 与 ArkUI 开发的原生 HarmonyOS AI 对话客户端，代替了原有的 WebView 承载主界面的旧方案。
 
-当前应用版本：`5.0.0`
+当前应用版本：`5.1.0`
 
 ## 主要功能
 
@@ -100,8 +100,10 @@ Guncat AI 是使用 ArkTS 与 ArkUI 开发的原生 HarmonyOS AI 对话客户端
 - 支持新建、切换和删除对话。
 - 跟随系统切换深色/浅色主题，并同步状态栏、导航栏和 Markdown 样式。
 
-### UI 与动效（5.0.0）
+### UI 与动效（5.1.0）
 
+- 深度思考条 UI 重做：独立卡片置于气泡上方，四角统一圆角、中性浅灰配色，与整体灰调协调；「深度思考」文字右侧显示流式转圈动画，不再单独显示「思考中…」文字。
+- 更新了应用图标资源（文件名不变，沿用原有资源引用，直接替换图标图片即可生效）。
 - 全新柔和现代 UI：低饱和配色、大圆角、白色轻立体按钮、柔和阴影，去除复杂描边与发光装饰。
 - 开屏飞入动效：启动页图标从中心向外依次弹性飞入，全程清晰，无模糊渐变或交叉淡化闪烁。
 - 一镜到底中央图标：启动页中央图标使用单一 hero 节点平滑移动、放大到页面空状态中央，无“变白再清晰”的闪变。
@@ -112,17 +114,17 @@ Guncat AI 是使用 ArkTS 与 ArkUI 开发的原生 HarmonyOS AI 对话客户端
 
 智能体通过 `resources/rawfile/agents.json` 和独立 Markdown 提示词文件管理：
 
-| 智能体 | 类别 | 功能 |
-| --- | --- | --- |
-| Guncat 2.0-Flash | 通用 | 兼顾速度与质量的通用智能体 |
-| Guncat 2.0-Pro | 通用 | 面向高质量分析与复杂任务 |
-| Guncat 2.5-Lite | 通用 | 结构化思考与轻量推理 |
-| Guncat 2.5-Max | 通用 | 更完整的结构化多阶段推理 |
-| Guncat Cnvt-Paper | 论文改写 | 将普通文本转换为符合学术规范的论文文体 |
-| Guncat Srch-Law | 法律检索 | 多轮法律检索与结构化法律意见 |
-| Guncat Srch-Research | 学术检索 | 跨领域检索及多来源交叉验证 |
-| Guncat Srch-Sift | AI 信息筛选 | 官方来源追踪与 AI 信息过滤 |
-| Guncat Eval-LLM | 模型评估 | 基于 12 步工作流与八项防幻觉机制的大模型评测情报分析 |
+| 智能体                  | 类别      | 功能                           |
+| -------------------- | ------- | ---------------------------- |
+| Guncat 2.0-Flash     | 通用      | 兼顾速度与质量的通用智能体                |
+| Guncat 2.0-Pro       | 通用      | 面向高质量分析与复杂任务                 |
+| Guncat 2.5-Lite      | 通用      | 结构化思考与轻量推理                   |
+| Guncat 2.5-Max       | 通用      | 更完整的结构化多阶段推理                 |
+| Guncat Cnvt-Paper    | 论文改写    | 将普通文本转换为符合学术规范的论文文体          |
+| Guncat Srch-Law      | 法律检索    | 多轮法律检索与结构化法律意见               |
+| Guncat Srch-Research | 学术检索    | 跨领域检索及多来源交叉验证                |
+| Guncat Srch-Sift     | AI 信息筛选 | 官方来源追踪与 AI 信息过滤              |
+| Guncat Eval-LLM      | 模型评估    | 基于 12 步工作流与八项防幻觉机制的大模型评测情报分析 |
 
 ## 持久化与主题系统
 
@@ -191,25 +193,30 @@ ChatService (SSE)
 ### 核心组件
 
 1. **ChatViewModel**
+   
    - 管理对话列表、智能体选择、API 配置和输入状态。
    - 处理消息发送、流式响应、附件解析与重新生成。
    - 负责持久化存储和状态恢复。
 
 2. **ChatService**
+   
    - 实现 SSE 流式通信和请求中断。
    - 支持 Chat Completions 与 Responses API。
    - 解析增量回答并处理网络及服务端错误。
 
 3. **MultimodalService**
+   
    - 处理图片、文本、PDF 和 Office 文档。
    - 支持预解析、重试与并发控制。
    - 支持 Responses API 图片和文件直传。
 
 4. **StorageManager**
+   
    - 封装 Preferences 本地存储。
    - 管理对话、配置、开关和朗读偏好。
 
 5. **TextReaderService / BackgroundReaderService**
+   
    - 查询和管理 CoreSpeechKit 音色。
    - 管理朗读、暂停、进度跳转与语速。
    - 通过 AVSession 和长时任务维持后台音频会话。
@@ -324,7 +331,13 @@ hvigorw --mode module -p product=default -p module=entry@default -p buildMode=de
 - 原始附件不会作为永久文件复制到应用数据中。
 - 网络请求使用 HTTPS，实际数据处理政策以所配置的模型服务商为准。
 
-## 5.0.0 更新
+## 5.1.0 更新
+
+- 新增深度思考（推理过程）展示：AI 回复中的深度思考内容以折叠卡片形式显示，默认折叠，点击头部展开查看完整推理过程；兼容 OpenAI Completions（`reasoning_content` / `reasoning`）、OpenAI Responses（`reasoning_text` / `reasoning_summary_text`）、Anthropic Messages（`thinking_delta`）三种协议增量解析。
+- 思考条右侧实时统计：流式中实时显示 token 速度（tok/s），流式结束后显示 API 返回的精确 token 速度与缓存命中率（缓存命中率仅在 API 返回缓存 token 字段时显示，无返回值不显示）。
+- 深度思考条 UI 重做：独立卡片置于气泡上方，四角统一圆角、中性浅灰配色；「深度思考」文字右侧显示流式转圈动画，不再单独显示「思考中…」文字。
+
+##  5.0.0 更新
 
 - API 接入方式统一为三种主流协议：OpenAI Completions、OpenAI Responses、Anthropic Messages；移除 DeepSeek / 火山方舟独立预设，旧配置自动迁移。
 - DeepSeek 接入升级为最新 Responses API，支持原生联网搜索、识图版图片直传与 Files API `file_id` 混合上传。
@@ -332,6 +345,12 @@ hvigorw --mode module -p product=default -p module=entry@default -p buildMode=de
 - 表格识别页改为动态展示所有 API Profile 的主模型与多模态解析模型，去重后可直接选择；兼容 DeepSeek 视觉模型输出（关闭思考模式、全角尖括号归一化、Markdown 表格兜底）。
 - 优化模型切换菜单：选项统一宽度、文字居中、菜单圆角与轻阴影。
 - 优化侧边栏抽屉阴影：全屏 scrim 固定覆盖，滑动过程中右侧始终有阴影，点击空白可关闭。
+- 更新应用图标资源（文件名不变，沿用原有资源引用，直接替换图标图片即可生效）。
+- 全新柔和现代 UI：低饱和配色、大圆角、白色轻立体按钮、柔和阴影，去除复杂描边与发光装饰。
+- 新增开屏飞入动效：启动页图标从中心向外依次弹性飞入，全程清晰，无模糊渐变或交叉淡化闪烁。
+- 新增一镜到底中央图标：启动页中央图标使用单一 hero 节点平滑移动、放大到页面空状态中央，无“变白再清晰”的闪变。
+- 新增底部输入区滑入动画：从屏幕下方外侧平滑滑入，无回弹、无从上掉落的生硬感。
+- 侧边栏、设置弹层、关于弹层等浮层自然遮盖底层 hero 图标，不会出现图标悬浮在浮层之上的问题。
 
 ## 4.4.0 更新
 
