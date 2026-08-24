@@ -306,6 +306,7 @@ A pre-built `.bat` file is included; simply click to launch the local HTTP servi
 
 * A **pure ArkTS + ArkUI** native HarmonyOS application, **not a WebView wrapper**.
 * Native SSE streaming communication via `@kit.NetworkKit`'s `http.requestInStream`.
+* Version 5.1.1: today's date is automatically prepended to agent system prompts — fetched at runtime from the device's local date and auto-updated daily, applied uniformly across all three protocols; the same change is rolled out to all Web for API variants.
 * Version 5.1.0: deep-thinking (reasoning) content display — a collapsible reasoning card (collapsed by default, tap to expand) with live token speed (tok/s) and cache hit rate shown on the reasoning bar, supporting all three protocols; the web settings panel no longer shows the quick-select access-method presets.
 * Version 5.0.0: access methods unified into three mainstream protocols (OpenAI Completions / OpenAI Responses / Anthropic Messages, with DeepSeek upgraded to the Responses API), plus a brand-new soft modern UI and updated icon assets.
 * High-level native Markdown rendering via `@luvi/lv-markdown-in` component (CommonMark + GFM, LaTeX math, code highlighting, Mermaid diagrams).
@@ -654,6 +655,7 @@ Guncat Eval-LLM 的设计与提示词工程已开源技术报告：[技术报告
 
 - **纯 ArkTS + ArkUI** 鸿蒙原生应用，**非 WebView 套壳**。
 - 基于 `@kit.NetworkKit` 的 `http.requestInStream` 实现原生 SSE 流式通信。
+- 5.1.1：系统提示词最前面自动拼接今天的日期——运行时获取设备本地日期，跨天自动更新，三种接入方式统一生效；同步更新至所有 Web for API 变体。
 - 5.1.0：新增深度思考（推理过程）展示——推理内容以折叠卡片展示（默认折叠、点击展开），思考条右侧实时显示 token 速度（tok/s）与缓存命中率，兼容三种协议；Web 设置页移除「快速选择接入方式」快捷预设板块。
 - 5.0.0：接入方式统一为三种主流协议（OpenAI Completions / OpenAI Responses / Anthropic Messages，DeepSeek 升级 Responses API），全新柔和现代 UI 与图标资源更新。
 - 使用 `@luvi/lv-markdown-in` 原生组件实现高级 Markdown 渲染（CommonMark + GFM、LaTeX 数学公式、代码高亮、Mermaid 图表）。

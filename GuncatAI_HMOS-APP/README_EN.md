@@ -4,7 +4,7 @@
 
 Guncat AI is a native HarmonyOS AI chat client built with ArkTS and ArkUI. Its primary interface is not hosted in a WebView.
 
-Current app version: `5.1.0`
+Current app version: `5.1.1`
 
 ## Features
 
@@ -325,6 +325,10 @@ You can also select content in Gallery or a file manager and choose Guncat AI fr
 - Items received from the system share sheet are never sent automatically; the user must tap Send.
 - Original attachments are not copied into permanent app storage.
 - Requests use HTTPS. Data-processing policies still depend on the configured model provider.
+
+## Version 5.1.1
+
+- Today's date automatically prepended to system prompts: when loading an agent's prompt, the device's local date is fetched at runtime (e.g., "Today's date is 2026-08-24.") and prepended to the beginning of the prompt, updating automatically across days; applies uniformly to all three access methods — OpenAI Completions / OpenAI Responses / Anthropic Messages.
 
 ## Version 5.1.0
 

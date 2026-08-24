@@ -4,8 +4,9 @@
 
 ---
 
-Web for API 版本：5.1.0
+Web for API 版本：5.1.1
 
+2026.8.24 同步鸿蒙 APP 5.1.1：系统提示词最前面自动拼接今天的日期（运行时获取本地日期，跨天自动更新），OpenAI Completions / OpenAI Responses / Anthropic Messages 三种协议统一生效
 2026.8.23 同步鸿蒙 APP 5.1.0：新增深度思考（推理过程）展示（OpenAI Completions / OpenAI Responses / Anthropic Messages 三种协议增量解析，默认折叠、点击头部展开，思考条右侧实时显示 token 速度与缓存命中率）；设置页移除「快速选择接入方式」快捷预设板块，接入协议统一通过「接入方式」下拉框选择
 2026.8.23 同步鸿蒙 APP 5.0.0：接入方式统一为三种主流协议（OpenAI Completions / OpenAI Responses / Anthropic Messages），旧配置自动迁移；DeepSeek 升级 Responses API（原生联网搜索、图片直传、Files API `file_id` 混合上传）；表格识别页改为动态展示所有配置方案的主模型与多模态解析模型，兼容 DeepSeek 视觉输出；更新应用图标资源（文件名不变）；全新柔和现代 UI（低饱和配色、大圆角、白色轻立体按钮、柔和阴影），模型切换菜单选项统一宽度居中
 2026.8.8 新增表格提取工具：图片表格识别为 HTML/Excel（保留合并单元格与行高）

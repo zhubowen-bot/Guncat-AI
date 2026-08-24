@@ -4,7 +4,7 @@
 
 Guncat AI 是使用 ArkTS 与 ArkUI 开发的原生 HarmonyOS AI 对话客户端，代替了原有的 WebView 承载主界面的旧方案。
 
-当前应用版本：`5.1.0`
+当前应用版本：`5.1.1`
 
 ## 主要功能
 
@@ -330,6 +330,10 @@ hvigorw --mode module -p product=default -p module=entry@default -p buildMode=de
 - 从系统分享接收的内容不会自动发送，必须由用户主动点击发送。
 - 原始附件不会作为永久文件复制到应用数据中。
 - 网络请求使用 HTTPS，实际数据处理政策以所配置的模型服务商为准。
+
+## 5.1.1 更新
+
+- 系统提示词自动拼接今日日期：加载智能体提示词时在最前面动态获取设备本地日期（如「今天的日期是 2026年08月24日。」）并拼接，跨天自动更新；OpenAI Completions / OpenAI Responses / Anthropic Messages 三种接入方式统一生效。
 
 ## 5.1.0 更新
 

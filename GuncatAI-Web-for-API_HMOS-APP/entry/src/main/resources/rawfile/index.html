@@ -553,7 +553,7 @@
         <div class="about-logo">
           <img src="cat-avatar(1).png" alt="Guncat">
           <div class="about-name">Guncat AI</div>
-          <div class="about-version">version 5.1.0</div>
+          <div class="about-version">version 5.1.1</div>
         </div>
         <div class="about-links">
           <a href="https://github.com/zhubowen-bot" target="_blank" rel="noopener noreferrer">
@@ -845,6 +845,15 @@
         els.modelSelectorCaret.textContent = '▼';
       }
 
+      // 获取今天的日期（本地时区），用于拼接到系统提示词最前面
+      function getTodayDateLine() {
+        const now = new Date();
+        const y = now.getFullYear();
+        const m = String(now.getMonth() + 1).padStart(2, '0');
+        const d = String(now.getDate()).padStart(2, '0');
+        return `今天的日期是 ${y}年${m}月${d}日。`;
+      }
+
       async function loadAgents() {
         try {
           const res = await fetch('agents.json');
@@ -855,7 +864,7 @@
             if (agent.promptFile) {
               try {
                 const pr = await fetch(agent.promptFile);
-                if (pr.ok) agent.systemPrompt = await pr.text();
+                if (pr.ok) agent.systemPrompt = getTodayDateLine() + '\n\n' + await pr.text();
               } catch (e) { console.warn('加载提示词失败:', agent.promptFile, e); }
             }
           }

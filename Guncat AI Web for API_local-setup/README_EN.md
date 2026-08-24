@@ -6,8 +6,9 @@
 
 ---
 
-Web for API Version: 5.1.0
+Web for API Version: 5.1.1
 
+2026.8.24 Synced with HarmonyOS app 5.1.1: today's date is automatically prepended to the system prompt (fetched at runtime from the local date, auto-updates across days), applied uniformly across all three protocols — OpenAI Completions / OpenAI Responses / Anthropic Messages
 2026.8.23 Synced with HarmonyOS app 5.1.0: new deep-thinking (reasoning) display (incremental parsing for OpenAI Completions / OpenAI Responses / Anthropic Messages, collapsed by default with tap-to-expand, live token speed and cache hit rate shown on the reasoning bar); the settings panel no longer shows the quick-select access-method presets — the protocol is chosen via the Access Method dropdown instead
 2026.8.23 Synced with HarmonyOS app 5.0.0: access methods unified into three mainstream protocols (OpenAI Completions / OpenAI Responses / Anthropic Messages) with automatic migration of legacy configs; DeepSeek upgraded to the Responses API (native web search, direct image upload, Files API `file_id` hybrid upload); table extraction page now dynamically lists main models and multimodal models from all API profiles, with DeepSeek vision output compatibility; updated app icon assets (file names unchanged); brand-new soft modern UI (low-saturation palette, large corner radii, white lightweight 3D buttons, soft shadows), model switcher menu items unified in width and centered
 2026.8.8 Added table extraction tool: recognize table images into HTML/Excel (preserving merged cells and row heights).

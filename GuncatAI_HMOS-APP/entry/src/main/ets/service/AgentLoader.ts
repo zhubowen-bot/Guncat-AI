@@ -17,6 +17,10 @@ export class AgentLoader {
       let prompt: string = '';
       try {
         prompt = await AgentLoader.loadPromptContent(context, entry.promptFile);
+        if (prompt !== '') {
+          // 在系统提示词最前面拼接今天的日期
+          prompt = AgentLoader.getDatePrefix() + '\n\n' + prompt;
+        }
       } catch (e) {
         prompt = '';
       }
@@ -65,5 +69,14 @@ export class AgentLoader {
     let raw: Uint8Array = await context.resourceManager.getRawFileContent(fileName);
     let decoder: util.TextDecoder = util.TextDecoder.create('utf-8', { ignoreBOM: true });
     return decoder.decodeToString(raw, { stream: false });
+  }
+
+  // 获取今天的日期（本地时区），用于拼接到系统提示词最前面
+  static getDatePrefix(): string {
+    const now: Date = new Date();
+    const y: number = now.getFullYear();
+    const m: string = String(now.getMonth() + 1).padStart(2, '0');
+    const d: string = String(now.getDate()).padStart(2, '0');
+    return `今天的日期是 ${y}年${m}月${d}日。`;
   }
 }
