@@ -6,8 +6,10 @@
 
 ---
 
-Web for API 版本：5.1.1
+Web for API 版本：5.2.1
 
+2026.8.27 同步 Web for API 5.2.1：新增 **Guncat 3.0-Mini（轻简模式）** 并置于智能体列表首位——基于 3.0-Flash 进一步精简，移除输出丰富性原则、代之以任务适配输出原则（回答长度由任务复杂度决定，简单对话简洁自然、复杂任务充分展开）；rawfile 同步更新 `agents.json`、双语提示词与独立图标
+2026.8.26 同步 Web for API 5.2.0：深度思考开关按协议显式控制（OpenAI Completions / Anthropic Messages 使用 `thinking.type`，OpenAI Responses 使用 `reasoning.effort = high/none`）；新建对话按智能体名称重置深度思考默认值（效率模式默认关闭、专家模式默认开启）
 2026.8.24 同步 Web for API 5.1.1：系统提示词最前面自动拼接今天的日期（运行时获取本地日期，跨天自动更新），三种协议统一生效
 2026.8.23 同步 Web for API 5.1.0：新增深度思考（推理过程）展示（三种协议增量解析，默认折叠点击展开，思考条右侧实时显示 token 速度与缓存命中率）；设置页移除「快速选择接入方式」快捷预设板块，接入协议统一通过「接入方式」下拉框选择
 2026.7.7 修复了重复输入消息和终止对话后报错的Bug
@@ -56,3 +58,4 @@ Diagnostics 检查无错误。
 ### 注意事项
 
 - 本地拦截的 `agents.json`、`.md`、头像必须与 Netlify 线上版本保持一致；更新网页后记得同步更新 `rawfile`。
+- 智能体深度思考默认值位于 `rawfile/index.html` 的 `AGENT_THINKING_DEFAULT_BY_NAME` 映射（键为智能体 `name`，值为布尔：`false` 默认关闭 / `true` 默认开启）；当前默认：效率模式 `false`、轻简模式 `false`、专家模式 `true`，未列入映射的智能体不重置开关（沿用上次状态）。调整默认值直接修改该映射，并与 Web for API 线上版 `index.html` 保持同步。

@@ -4,7 +4,7 @@
 
 Guncat AI 是使用 ArkTS 与 ArkUI 开发的原生 HarmonyOS AI 对话客户端，代替了原有的 WebView 承载主界面的旧方案。
 
-当前应用版本：`5.1.1`
+当前应用版本：`5.2.1`
 
 ## 主要功能
 
@@ -19,13 +19,22 @@ Guncat AI 是使用 ArkTS 与 ArkUI 开发的原生 HarmonyOS AI 对话客户端
 
 ### 深度思考与联网搜索
 
-- 深度思考按钮会显式控制 OpenAI Responses 请求：
-  - 火山方舟：`thinking.type = enabled / disabled`
-  - DeepSeek / OpenAI Responses：开启时发送 `reasoning.effort = high`
+- 深度思考按钮按接入协议显式控制（对齐 DeepSeek 官方参数）：
+  - OpenAI Completions：`thinking.type = enabled / disabled`，开启时另发 `reasoning_effort = high`
+  - Anthropic Messages：`thinking.type = enabled / disabled`，开启时另发 `output_config.effort = high`
+  - OpenAI Responses：`reasoning.effort = high / none`（`none` 表示关闭思考）
 - 按钮状态优先于额外请求参数，避免界面状态与实际请求不一致。
-- OpenAI Responses 配置（DeepSeek / 火山方舟）支持原生 Web Search 工具。
+- 联网搜索开启时，多轮对话自动回传上一轮 assistant 的 `reasoning_content`（OpenAI Completions），避免 400。
 - OpenAI Completions / Anthropic Messages 也会按各自格式发送联网搜索工具（是否生效取决于服务商支持）。
-- 深度思考和联网搜索状态会持久化保存。
+- 深度思考和联网搜索状态会持久化保存；新建对话（含每次启动自动新建）按智能体名称重置深度思考默认值：效率模式默认关闭、轻简模式默认关闭、专家模式默认开启。
+
+### 维护：智能体深度思考默认值
+
+新建对话 / 每次启动 / 打开空对话时，应用按智能体**名称**重置深度思考开关，配置位于 `entry/src/main/ets/viewmodel/ChatViewModel.ts`：
+
+- `defaultThinkingForAgent()` 方法：按 `agent.name` 返回布尔（`false` = 默认关闭，`true` = 默认开启），返回 `null` 表示不重置（沿用上次状态）
+- 当前默认值：效率模式 `false`、轻简模式 `false`、专家模式 `true`
+- 调整方式：在该方法中新增/修改 `if (agent.name === '…') return …;` 分支即可；以名称匹配而非 `id`，便于将来改名
 
 ### 原生 Markdown
 
@@ -112,19 +121,19 @@ Guncat AI 是使用 ArkTS 与 ArkUI 开发的原生 HarmonyOS AI 对话客户端
 
 ## 内置智能体
 
-智能体通过 `resources/rawfile/agents.json` 和独立 Markdown 提示词文件管理：
+智能体通过 `resources/rawfile/agents.json` 和独立 Markdown 提示词文件管理。侧边栏支持独立自定义图标（`icon` 字段指向 `icons/` 目录下以智能体 id 命名的 PNG，未配置回退猫头像），并采用双描述机制：侧边栏展示 `shortDescription` 短描述，新建对话页展示 `description` 完整描述：
 
-| 智能体                  | 类别      | 功能                           |
-| -------------------- | ------- | ---------------------------- |
-| Guncat 2.0-Flash     | 通用      | 兼顾速度与质量的通用智能体                |
-| Guncat 2.0-Pro       | 通用      | 面向高质量分析与复杂任务                 |
-| Guncat 2.5-Lite      | 通用      | 结构化思考与轻量推理                   |
-| Guncat 2.5-Max       | 通用      | 更完整的结构化多阶段推理                 |
-| Guncat Cnvt-Paper    | 论文改写    | 将普通文本转换为符合学术规范的论文文体          |
-| Guncat Srch-Law      | 法律检索    | 多轮法律检索与结构化法律意见               |
-| Guncat Srch-Research | 学术检索    | 跨领域检索及多来源交叉验证                |
-| Guncat Srch-Sift     | AI 信息筛选 | 官方来源追踪与 AI 信息过滤              |
-| Guncat Eval-LLM      | 模型评估    | 基于 12 步工作流与八项防幻觉机制的大模型评测情报分析 |
+| 智能体         | 类别       | 功能                                                                    |
+| ----------- | -------- | --------------------------------------------------------------------- |
+| 轻简模式        | 通用智能体    | Guncat 3.0-Mini 基座：比 Flash 更轻更快，任务适配输出长度，简单对话简洁自然、复杂任务充分展开                    |
+| 效率模式        | 通用智能体    | Guncat 3.0-Flash 基座：缺口驱动执行带来极速响应，回答详尽度与 Pro 同标准                        |
+| 专家模式        | 通用智能体    | Guncat 3.0-Pro 基座：最强大的单体化超级智能体，全系专家能力与行业领先的反幻觉体系                       |
+| 经典模式        | 通用智能体    | 基于 Guncat 2.5-Lite：成熟的轻量级通用智能体，结构化思维链引导高质量长输出                           |
+| 转换专家-论文     | 改写智能体    | 基于 Guncat Cnvt-Paper：将非论文文体转化为符合学术规范的论文                                |
+| 检索专家-法律     | 检索智能体    | 基于 Guncat Srch-Law：国企法律分析，强制多轮检索与结构化法律意见                               |
+| 检索专家-研究     | 检索智能体    | 基于 Guncat Srch-Research：跨领域信息检索与多源交叉验证                                 |
+| 检索专家-筛滤     | 检索智能体    | 基于 Guncat Srch-Sift：官方溯源与 AI 内容过滤                                      |
+| 评估专家-LLM    | 评估智能体    | 基于 Guncat Eval-LLM：最大减少幻觉地评估 LLM 模型的性能                                 |
 
 ## 持久化与主题系统
 
@@ -330,6 +339,21 @@ hvigorw --mode module -p product=default -p module=entry@default -p buildMode=de
 - 从系统分享接收的内容不会自动发送，必须由用户主动点击发送。
 - 原始附件不会作为永久文件复制到应用数据中。
 - 网络请求使用 HTTPS，实际数据处理政策以所配置的模型服务商为准。
+
+## 5.2.1 更新
+
+- 新增 **Guncat 3.0-Mini（轻简模式）** 并置于智能体列表首位：基于 3.0-Flash 进一步精简，移除输出丰富性原则、代之以任务适配输出原则（回答长度由任务复杂度与用户需求决定，简单对话简洁自然、标准任务中等篇幅、复杂任务充分展开）；完整保留三层一体架构、双档模式、工具方法论与反幻觉体系。
+- 版本升至 5.2.1：rawfile 同步新增 `Guncat 3.0-Mini_prompt_ZH_CN.md` / `_EN.md`、`agents.json`（3.0-Mini 排在首位）与 `icons/guncat-3.0-mini.png`；`Constants.APP_VERSION` 与 `AppScope/app.json5`（versionName 5.2.1 / versionCode 521）同步更新。
+- 新建对话深度思考默认值补充：轻简模式默认关闭（与效率模式一致）。
+
+## 5.2.0 更新
+
+- 深度思考开关按协议显式控制（对齐 DeepSeek 官方参数）：OpenAI Completions 使用 `thinking.type` + `reasoning_effort`，Anthropic Messages 使用 `thinking.type` + `output_config.effort`，OpenAI Responses 使用 `reasoning.effort = high/none`（`none` 关闭思考）；联网搜索开启时多轮对话自动回传上一轮 assistant 的 `reasoning_content`（OpenAI Completions），避免 400。
+- 新建对话默认深度思考按智能体名称重置：效率模式（3.0-Flash）默认关闭、专家模式（3.0-Pro）默认开启；每次启动应用都会重置。
+- 同步 Guncat 3.0 系列智能体基座：新增「效率模式」（Guncat 3.0-Flash）与「专家模式」（Guncat 3.0-Pro），「经典模式」承接原 2.5-Lite 基座；各领域专家统一为「转换专家 / 检索专家 / 评估专家-领域」命名；移除 2.0 系列提示词文件，rawfile 提示词库全量对齐 Web for API 5.2.0。
+- 侧边栏自定义图标：`agents.json` 新增 `icon` 字段（指向 `rawfile/icons/` 目录下以智能体 id 命名的 PNG），`AgentDrawerView` 通过 `$rawfile` 动态加载，未配置自动回退默认猫头像。
+- 双描述机制：新增 `shortDescription` 字段——侧边栏展示短描述、新建对话欢迎页展示完整描述，未配置时相互回退；`AgentLoader` 与 `Agent` 模型同步扩展解析。
+- 版本号治理：关于弹层版本号改为引用 `Constants.APP_VERSION` 单一来源，与 `AppScope/app.json5`、README 保持一致。
 
 ## 5.1.1 更新
 

@@ -95,7 +95,12 @@ function buildChatCompletionsBody(config: ApiConfig, agent: Agent | null,
         continue;
       }
     }
-    messages.push({ role: m.role, content: m.content });
+    let chatMsg: Record<string, Object> = { role: m.role, content: m.content };
+    // 请求携带 tools（联网搜索）时，DeepSeek 要求回传中间 assistant 的 reasoning_content，否则多轮可能 400。
+    if (m.role === 'assistant' && webSearchEnabled && m.reasoning !== '') {
+      chatMsg['reasoning_content'] = m.reasoning;
+    }
+    messages.push(chatMsg);
   }
   let lastHistory: Message | null = history.length > 0 ? history[history.length - 1] : null;
   if (lastHistory === null || lastHistory.role !== 'user' || lastHistory.content !== userText) {
@@ -108,9 +113,6 @@ function buildChatCompletionsBody(config: ApiConfig, agent: Agent | null,
     stream: true
   };
 
-  if (thinkingEnabled) {
-    body['reasoning_effort'] = 'high';
-  }
   if (webSearchEnabled) {
     // OpenAI 兼容 Chat Completions 服务若支持服务端搜索，可识别该工具。
     let tool: Record<string, Object> = { type: 'web_search' };
@@ -137,6 +139,12 @@ function buildChatCompletionsBody(config: ApiConfig, agent: Agent | null,
     } catch (e) {
       // 忽略非法 JSON
     }
+  }
+  // 深度思考开关（OpenAI 兼容格式）：thinking.type 控制开关 + reasoning_effort 控制强度。
+  // 放在 extraBody 合并之后，确保界面开关优先级最高。
+  body['thinking'] = { type: thinkingEnabled ? 'enabled' : 'disabled' };
+  if (thinkingEnabled) {
+    body['reasoning_effort'] = 'high';
   }
   return body;
 }
@@ -236,14 +244,9 @@ function buildResponsesBody(config: ApiConfig, agent: Agent | null,
       // ignore
     }
   }
-  // 深度思考按钮必须显式控制，不能省略后交给模型默认决定。
-  // 放在 extraBody 合并之后，确保界面上的开关状态拥有最高优先级。
-  // OpenAI Responses 标准使用 reasoning；火山方舟保留 thinking 扩展以兼容现有行为。
-  if (config.baseUrl.indexOf('volces.com') !== -1) {
-    body['thinking'] = { type: thinkingEnabled ? 'enabled' : 'disabled' };
-  } else if (thinkingEnabled) {
-    body['reasoning'] = { effort: 'high' };
-  }
+  // 深度思考开关（Responses API 格式）：reasoning.effort 控制开关，none 表示关闭。
+  // 放在 extraBody 合并之后，确保界面开关优先级最高。
+  body['reasoning'] = { effort: thinkingEnabled ? 'high' : 'none' };
   return body;
 }
 
@@ -401,6 +404,12 @@ function buildAnthropicBody(config: ApiConfig, agent: Agent | null,
     } catch (e) {
       // ignore
     }
+  }
+  // 深度思考开关（Anthropic 兼容格式）：thinking.type 控制开关 + output_config.effort 控制强度。
+  // 放在 extraBody 合并之后，确保界面开关优先级最高。
+  body['thinking'] = { type: thinkingEnabled ? 'enabled' : 'disabled' };
+  if (thinkingEnabled) {
+    body['output_config'] = { effort: 'high' };
   }
   return body;
 }

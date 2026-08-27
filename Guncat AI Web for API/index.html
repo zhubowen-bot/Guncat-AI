@@ -235,7 +235,9 @@
     .agent-item { display: flex; align-items: center; gap: 10px; padding: 10px; border-radius: 14px; cursor: pointer; transition: background .15s; margin-bottom: 4px; }
     .agent-item:hover { background: var(--surface-secondary); }
     .agent-item.active { background: var(--primary-light); }
-    .agent-item img { width: 32px; height: 32px; border-radius: 50%; object-fit: cover; background: var(--primary-light); }
+    .agent-item img { width: 32px; height: 32px; border-radius: 50%; object-fit: cover; }
+        .agent-item .agent-icon { width: 32px; height: 32px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; border-radius: 50%; overflow: hidden; }
+        .agent-item .agent-icon svg { width: 18px; height: 18px; display: block; }
     .agent-info { flex: 1; min-width: 0; }
     .agent-info .name { font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .agent-info .desc { font-size: 12px; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -553,7 +555,7 @@
         <div class="about-logo">
           <img src="cat-avatar(1).png" alt="Guncat">
           <div class="about-name">Guncat AI</div>
-          <div class="about-version">version 5.1.1</div>
+          <div class="about-version">version 5.2.1</div>
         </div>
         <div class="about-links">
           <a href="https://github.com/zhubowen-bot" target="_blank" rel="noopener noreferrer">
@@ -616,6 +618,15 @@
       let webSearchEnabled = localStorage.getItem(LS_KEYS.webSearch) === 'true';
       let autoReadEnabled = localStorage.getItem(LS_KEYS.autoRead) === 'true';
       let pendingFiles = [];
+
+      // 智能体深度思考默认值：按名称匹配（效率模式默认关、专家模式默认开、轻简模式默认关），新建对话时应用。
+      // 以名称匹配而非 id，便于将来改名；默认值调整也只需改这里。
+      const AGENT_THINKING_DEFAULT_BY_NAME = { '效率模式': false, '轻简模式': false, '专家模式': true };
+      function getAgentThinkingDefault(agent) {
+        if (!agent) return null;
+        if (agent.name in AGENT_THINKING_DEFAULT_BY_NAME) return AGENT_THINKING_DEFAULT_BY_NAME[agent.name];
+        return null;
+      }
 
       // 配置方案 (对齐鸿蒙版 ApiProfile, 支持多套命名配置快速切换)
       let apiProfiles = [];
@@ -874,13 +885,20 @@
         }
       }
 
+      // 图标解析优先级：外部路径(.svg 等) → <img> 引用；内联 <svg> 标记 → 徽章渲染；未配置 → 猫头像
+      function agentIconHTML(a) {
+        if (!a.icon) return '<img src="cat-avatar(1).png" alt="">';
+        if (a.icon.trim().startsWith('<')) return `<span class="agent-icon">${a.icon}</span>`;
+        return `<img src="${escapeHtml(a.icon)}" alt="">`;
+      }
+
       function renderAgentList() {
         els.agentList.innerHTML = agents.map(a => `
           <div class="agent-item ${currentAgent?.id === a.id ? 'active' : ''}" data-id="${a.id}">
-            <img src="cat-avatar(1).png" alt="">
+            ${agentIconHTML(a)}
             <div class="agent-info">
               <div class="name">${escapeHtml(a.name)}</div>
-              <div class="desc">${escapeHtml(a.description)}</div>
+              <div class="desc">${escapeHtml(a.shortDescription || a.description)}</div>
             </div>
           </div>
         `).join('');
@@ -975,6 +993,13 @@
         saveConversations();
         openConversation(id);
         renderConversationList();
+        // 效率模式默认关闭深度思考、专家模式默认开启：新建对话时按当前智能体重置开关
+        const def = getAgentThinkingDefault(currentAgent);
+        if (def !== null) {
+          thinkingEnabled = def;
+          localStorage.setItem(LS_KEYS.thinking, def ? 'true' : 'false');
+          updateThinkingToggleUI();
+        }
       }
 
       function openConversation(id, options = {}) {
@@ -984,6 +1009,15 @@
         localStorage.setItem(LS_KEYS.currentConv, id);
         if (!options.skipAgentSync && conv.agentId && (!currentAgent || currentAgent.id !== conv.agentId)) {
           selectAgent(conv.agentId, { skipConversationSwitch: true });
+        }
+        // 空对话等价于新对话：打开效率/专家模式的空对话时按智能体名称重置深度思考默认值（效率模式关、专家模式开）
+        if (conv.messages.length === 0) {
+          const def = getAgentThinkingDefault(currentAgent);
+          if (def !== null) {
+            thinkingEnabled = def;
+            localStorage.setItem(LS_KEYS.thinking, def ? 'true' : 'false');
+            updateThinkingToggleUI();
+          }
         }
         renderMessages();
         renderConversationList();
@@ -1011,7 +1045,7 @@
             <div class="empty-state">
               <img src="cat-avatar(1).png" alt="Guncat">
               <h2>${currentAgent ? escapeHtml(currentAgent.name) : 'Guncat AI'}</h2>
-              <p>${currentAgent ? escapeHtml(currentAgent.description) : '选择一个智能体开始对话'}</p>
+              <p>${currentAgent ? escapeHtml(currentAgent.description || currentAgent.shortDescription) : '选择一个智能体开始对话'}</p>
             </div>`;
           return;
         }
@@ -2041,7 +2075,10 @@
             }
             if (parts.length) { messages.push({ role: 'user', content: parts }); continue; }
           }
-          messages.push({ role: m.role, content: m.content });
+          const historyMsg = { role: m.role, content: m.content };
+          // 请求携带 tools（联网搜索）时，DeepSeek 要求回传中间 assistant 的 reasoning_content，否则多轮可能 400。
+          if (m.role === 'assistant' && webSearchEnabled && m.reasoning) historyMsg.reasoning_content = m.reasoning;
+          messages.push(historyMsg);
         }
         const last = history.length ? history[history.length - 1] : null;
         if (!last || last.role !== 'user' || last.content !== userText) {
@@ -2049,12 +2086,15 @@
         }
 
         const body = { model: config.model, messages, stream: true };
-        if (thinkingEnabled) body.reasoning_effort = 'high';
         if (webSearchEnabled) body.tools = [{ type: 'web_search' }]; // 是否生效取决于服务商支持
         if (config.temperature != null) body.temperature = config.temperature;
         if (config.topP != null) body.top_p = config.topP;
         if (config.maxTokens != null) body.max_tokens = config.maxTokens;
         mergeExtraBody(body, config);
+        // 深度思考开关（OpenAI 兼容格式）：thinking.type 控制开关 + reasoning_effort 控制强度。
+        // 放在 extraBody 合并之后，确保界面开关优先级最高。
+        body.thinking = { type: thinkingEnabled ? 'enabled' : 'disabled' };
+        if (thinkingEnabled) body.reasoning_effort = 'high';
         return body;
       }
 
@@ -2094,13 +2134,9 @@
         if (config.topP != null) body.top_p = config.topP;
         if (config.maxTokens != null) body.max_output_tokens = config.maxTokens;
         mergeExtraBody(body, config);
-        // 深度思考按钮必须显式控制，放在 extraBody 合并之后确保界面开关拥有最高优先级。
-        // OpenAI Responses 标准使用 reasoning；火山方舟保留 thinking 扩展以兼容现有行为。
-        if (trimBaseUrl(config.baseUrl).indexOf('volces.com') !== -1) {
-          body.thinking = { type: thinkingEnabled ? 'enabled' : 'disabled' };
-        } else if (thinkingEnabled) {
-          body.reasoning = { effort: 'high' };
-        }
+        // 深度思考开关（Responses API 格式）：reasoning.effort 控制开关，none 表示关闭。
+        // 放在 extraBody 合并之后，确保界面开关优先级最高。
+        body.reasoning = { effort: thinkingEnabled ? 'high' : 'none' };
         return body;
       }
 
@@ -2181,6 +2217,10 @@
         if (config.temperature != null) body.temperature = config.temperature;
         if (config.topP != null) body.top_p = config.topP;
         mergeExtraBody(body, config);
+        // 深度思考开关（Anthropic 兼容格式）：thinking.type 控制开关 + output_config.effort 控制强度。
+        // 放在 extraBody 合并之后，确保界面开关优先级最高。
+        body.thinking = { type: thinkingEnabled ? 'enabled' : 'disabled' };
+        if (thinkingEnabled) body.output_config = { effort: 'high' };
         return body;
       }
 

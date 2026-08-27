@@ -170,6 +170,8 @@ export class ChatViewModel {
         }
       }
     }
+    // 每次启动都按当前智能体重置深度思考开关（效率模式关、专家模式开）
+    await this.applyAgentThinkingDefault();
     this.ready = true;
   }
 
@@ -241,6 +243,10 @@ export class ChatViewModel {
         }
       }
     }
+    // 空对话等价于新对话：打开效率/专家模式的空对话时按智能体名称重置深度思考默认值（效率模式关、专家模式开）
+    if (conv.messages.length === 0) {
+      await this.applyAgentThinkingDefault();
+    }
   }
 
   // 新建对话
@@ -257,6 +263,8 @@ export class ChatViewModel {
       await StorageManager.saveString(this.context, Constants.LS_KEY_CURRENT_CONV_ID, conv.id);
     }
     this.persistConversations();
+    // 效率模式默认关闭深度思考、专家模式默认开启：新建对话时按当前智能体重置开关
+    await this.applyAgentThinkingDefault();
   }
 
   private async cleanupEmptyConversation(): Promise<void> {
@@ -281,6 +289,8 @@ export class ChatViewModel {
           let conv: Conversation = Conversation.create(this.currentAgent.id, '');
           this.conversations.unshift(conv);
           this.currentConversationId = conv.id;
+          // 新建对话时按当前智能体重置深度思考开关（效率模式关、专家模式开）
+          await this.applyAgentThinkingDefault();
         }
       }
       if (this.context !== null && this.currentConversationId !== '') {
@@ -306,6 +316,29 @@ export class ChatViewModel {
     this.thinkingEnabled = enabled;
     if (this.context !== null) {
       await StorageManager.saveBoolean(this.context, Constants.LS_KEY_THINKING_ENABLED, enabled);
+    }
+  }
+
+  // 智能体深度思考默认值：按名称匹配（效率模式默认关、轻简模式默认关、专家模式默认开）。
+  // 以名称匹配而非 id，便于将来改名；默认值调整也只需改这里。
+  private defaultThinkingForAgent(agent: Agent | null): boolean | null {
+    if (agent === null) {
+      return null;
+    }
+    if (agent.name === '效率模式') return false;
+    if (agent.name === '轻简模式') return false;
+    if (agent.name === '专家模式') return true;
+    return null;
+  }
+
+  // 新建对话/启动时按当前智能体重置深度思考开关（含持久化）
+  private async applyAgentThinkingDefault(): Promise<void> {
+    let def: boolean | null = this.defaultThinkingForAgent(this.currentAgent);
+    if (def !== null) {
+      this.thinkingEnabled = def;
+      if (this.context !== null) {
+        await StorageManager.saveBoolean(this.context, Constants.LS_KEY_THINKING_ENABLED, def);
+      }
     }
   }
 

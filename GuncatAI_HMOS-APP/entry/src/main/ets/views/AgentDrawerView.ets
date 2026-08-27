@@ -187,12 +187,12 @@ export struct AgentDrawerView {
   @Builder
   buildAgentItem(agent: Agent) {
     Row() {
-      Image($r('app.media.cat_avatar'))
+      // 自定义图标优先：agents.json 的 icon 指向 rawfile 下 png（如 icons/guncat-3.0-flash.png），未配置回退猫头像
+      Image(agent.icon !== '' ? $rawfile(agent.icon) : $r('app.media.cat_avatar'))
         .width(32)
         .height(32)
         .borderRadius(16)
         .objectFit(ImageFit.Cover)
-        .backgroundColor($r('app.color.brand_light'))
       Column() {
         Text(agent.name)
           .fontSize(14)
@@ -201,7 +201,7 @@ export struct AgentDrawerView {
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
           .width('100%')
-        Text(agent.description)
+        Text(agent.shortDescription !== '' ? agent.shortDescription : agent.description)
           .fontSize(12)
           .fontColor($r('app.color.text_secondary'))
           .maxLines(1)

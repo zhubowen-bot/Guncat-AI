@@ -25,6 +25,9 @@ export class AgentLoader {
         prompt = '';
       }
       agents.push(Agent.of(entry.id, entry.name, entry.description, entry.category, entry.promptFile, prompt));
+      // 对齐 web 版本: 补充侧边栏短描述与独立图标路径(of() 保持原有签名, 此处追加赋值)
+      agents[agents.length - 1].shortDescription = entry.shortDescription;
+      agents[agents.length - 1].icon = entry.icon;
     }
     return agents;
   }
@@ -52,12 +55,15 @@ export class AgentLoader {
       let id: string = (rec['id'] as string) ?? '';
       let name: string = (rec['name'] as string) ?? '';
       let desc: string = (rec['description'] as string) ?? '';
+      let shortDesc: string = (rec['shortDescription'] as string) ?? '';
+      let icon: string = (rec['icon'] as string) ?? '';
       let cat: string = (rec['category'] as string) ?? '';
       let pf: string = (rec['promptFile'] as string) ?? '';
       if (id === '') {
         continue;
       }
-      result.push({ id: id, name: name, description: desc, category: cat, promptFile: pf });
+      result.push({ id: id, name: name, description: desc, shortDescription: shortDesc,
+        icon: icon, category: cat, promptFile: pf });
     }
     return result;
   }

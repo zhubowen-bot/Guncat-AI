@@ -4,7 +4,7 @@
 
 Guncat AI is a native HarmonyOS AI chat client built with ArkTS and ArkUI. Its primary interface is not hosted in a WebView.
 
-Current app version: `5.1.1`
+Current app version: `5.2.1`
 
 ## Features
 
@@ -19,13 +19,22 @@ Current app version: `5.1.1`
 
 ### Deep thinking and web search
 
-- The deep-thinking toggle explicitly controls OpenAI Responses requests:
-  - Volcengine Ark: `thinking.type = enabled / disabled`
-  - DeepSeek / OpenAI Responses: sends `reasoning.effort = high` when enabled
+- The deep-thinking toggle explicitly controls the request per protocol (aligned with the official DeepSeek parameters):
+  - OpenAI Completions: `thinking.type = enabled / disabled`, plus `reasoning_effort = high` when enabled
+  - Anthropic Messages: `thinking.type = enabled / disabled`, plus `output_config.effort = high` when enabled
+  - OpenAI Responses: `reasoning.effort = high / none` (`none` disables thinking)
 - The visible toggle takes precedence over extra request-body fields, preventing UI/request mismatches.
-- OpenAI Responses profiles (DeepSeek / Volcengine Ark) can use the native Web Search tool.
+- When web search is enabled, the previous assistant's `reasoning_content` is sent back in multi-turn turns (OpenAI Completions) to avoid 400 errors.
 - OpenAI Completions / Anthropic Messages also send their corresponding web-search tool; whether it works depends on provider support.
-- Deep-thinking and web-search preferences persist across app restarts.
+- Deep-thinking and web-search preferences persist across app restarts; new conversations (including the one auto-created on every launch) reset the deep-thinking default by agent name — off in Efficiency Mode, off in Light & Simple Mode, on in Expert Mode.
+
+### Maintenance: per-agent deep-thinking default
+
+New conversations, app launches, and opening empty conversations reset the deep-thinking toggle by agent **name**. Configuration lives in `entry/src/main/ets/viewmodel/ChatViewModel.ts`:
+
+- The `defaultThinkingForAgent()` method: returns a boolean by `agent.name` (`false` = off by default, `true` = on by default); returning `null` leaves the toggle untouched (keeps the previous state)
+- Current defaults: Efficiency Mode `false`, Light & Simple Mode `false`, Expert Mode `true`
+- To adjust: add or modify an `if (agent.name === '...') return ...;` branch in that method. Matching is by name (not `id`), so future renames are safe.
 
 ### Native Markdown
 
@@ -112,19 +121,19 @@ The final read-aloud implementation uses HarmonyOS CoreSpeechKit `textToSpeech`.
 
 ## Built-in agents
 
-Agents are managed through `resources/rawfile/agents.json` and separate Markdown prompt files:
+Agents are managed through `resources/rawfile/agents.json` and separate Markdown prompt files. The sidebar supports per-agent custom icons (`icon` field pointing to a PNG named by agent id under `icons/`, falling back to the cat avatar when unset) and dual descriptions: the sidebar shows `shortDescription`, while the new-conversation page shows the full `description`:
 
 | Agent | Category | Purpose |
 | --- | --- | --- |
-| Guncat 2.0-Flash | General | General-purpose agent balancing speed and quality |
-| Guncat 2.0-Pro | General | High-quality analysis and complex tasks |
-| Guncat 2.5-Lite | General | Structured thinking with lightweight reasoning |
-| Guncat 2.5-Max | General | More complete structured, multi-stage reasoning |
-| Guncat Cnvt-Paper | Paper rewriting | Converts ordinary text into academic prose |
-| Guncat Srch-Law | Legal search | Multi-step legal research and structured opinions |
-| Guncat Srch-Research | Academic search | Cross-domain research with source cross-validation |
-| Guncat Srch-Sift | AI information filtering | Official-source tracing and AI information filtering |
-| Guncat Eval-LLM | Model evaluation | LLM evaluation intelligence analysis based on a 12-step workflow and eight anti-hallucination mechanisms |
+| 轻简模式 (Light & Simple) | General | Guncat 3.0-Mini base: lighter and faster than Flash, task-adaptive output length — concise for simple chat, fully elaborated for complex tasks |
+| 效率模式 (Efficiency) | General | Guncat 3.0-Flash base: gap-driven execution for instant responses, answer thoroughness on par with Pro |
+| 专家模式 (Expert) | General | Guncat 3.0-Pro base: the most powerful monolithic super-agent with full expert capabilities and industry-leading anti-hallucination |
+| 经典模式 (Classic) | General | Based on Guncat 2.5-Lite: mature lightweight general agent, structured CoT for high-quality long outputs |
+| 转换专家-论文 | Rewriting | Based on Guncat Cnvt-Paper: converts non-academic text into academically compliant papers |
+| 检索专家-法律 | Search | Based on Guncat Srch-Law: SOE legal analysis with mandatory multi-round research and structured opinions |
+| 检索专家-研究 | Search | Based on Guncat Srch-Research: cross-domain retrieval with multi-source cross-validation |
+| 检索专家-筛滤 | Search | Based on Guncat Srch-Sift: official-source tracing and AI content filtering |
+| 评估专家-LLM | Evaluation | Based on Guncat Eval-LLM: LLM evaluation with minimized hallucination |
 
 ## Persistence and themes
 
@@ -288,9 +297,10 @@ You can also select content in Gallery or a file manager and choose Guncat AI fr
 
 ### Deep thinking
 
-- Volcengine Ark: off sends `thinking: { "type": "disabled" }`, on sends `thinking: { "type": "enabled" }`.
-- DeepSeek / OpenAI Responses: when enabled, sends `reasoning: { "effort": "high" }`.
-- This applies to compatible OpenAI Responses API models.
+- OpenAI Completions: off sends `thinking: { "type": "disabled" }`; on sends `thinking: { "type": "enabled" }` plus `reasoning_effort: "high"`.
+- Anthropic Messages: off sends `thinking: { "type": "disabled" }`; on sends `thinking: { "type": "enabled" }` plus `output_config: { "effort": "high" }`.
+- OpenAI Responses: on sends `reasoning: { "effort": "high" }`; off sends `reasoning: { "effort": "none" }`.
+- New conversations reset the toggle by agent name: off in Efficiency Mode, on in Expert Mode.
 
 ### Read-aloud
 
@@ -325,6 +335,21 @@ You can also select content in Gallery or a file manager and choose Guncat AI fr
 - Items received from the system share sheet are never sent automatically; the user must tap Send.
 - Original attachments are not copied into permanent app storage.
 - Requests use HTTPS. Data-processing policies still depend on the configured model provider.
+
+## Version 5.2.1
+
+- Added **Guncat 3.0-Mini (Light & Simple Mode)** and placed it first in the agent list: further streamlined from 3.0-Flash, removing the Output Richness Principle in favor of the Task-Adaptive Output Principle (answer length decided by task complexity and user needs — light conversation is naturally concise, standard tasks are medium-length, and complex tasks are fully elaborated); fully retains the three-layers-in-one architecture, the two-tier modes, the tool-calling methodology, and the anti-hallucination system.
+- Bumped to version 5.2.1: rawfile adds `Guncat 3.0-Mini_prompt_ZH_CN.md` / `_EN.md`, `agents.json` (3.0-Mini listed first) and `icons/guncat-3.0-mini.png`; `Constants.APP_VERSION` and `AppScope/app.json5` (versionName 5.2.1 / versionCode 521) updated in step.
+- New-conversation deep-thinking default extended: Light & Simple Mode defaults off (same as Efficiency Mode).
+
+## Version 5.2.0
+
+- The deep-thinking toggle now explicitly controls the request per protocol (aligned with the official DeepSeek parameters): OpenAI Completions uses `thinking.type` + `reasoning_effort`, Anthropic Messages uses `thinking.type` + `output_config.effort`, OpenAI Responses uses `reasoning.effort = high/none` (`none` disables thinking); when web search is enabled, the previous assistant's `reasoning_content` is sent back in multi-turn turns (OpenAI Completions) to avoid 400 errors.
+- New conversations reset the deep-thinking default by agent name: off in Efficiency Mode (3.0-Flash), on in Expert Mode (3.0-Pro); the toggle resets on every app launch.
+- Synced the Guncat 3.0-series agent foundations: added "Efficiency Mode" (Guncat 3.0-Flash) and "Expert Mode" (Guncat 3.0-Pro), with "Classic Mode" carrying over the 2.5-Lite foundation; domain experts unified under the "Conversion / Search / Evaluation Expert - Domain" naming scheme; removed the 2.0-series prompt files — the rawfile prompt library is fully aligned with Web for API 5.2.0.
+- Per-agent sidebar icons: a new `icon` field in `agents.json` (pointing to a PNG named by agent id under `rawfile/icons/`); `AgentDrawerView` loads them dynamically via `$rawfile`, falling back to the default cat avatar when unset.
+- Dual descriptions: a new `shortDescription` field — the sidebar shows the short version while the new-conversation welcome page shows the full one, falling back to each other when unset; `AgentLoader` and the `Agent` model extended accordingly.
+- Version governance: the About panel now references `Constants.APP_VERSION` as the single source of truth, consistent with `AppScope/app.json5` and the READMEs.
 
 ## Version 5.1.1
 

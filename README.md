@@ -14,7 +14,7 @@
 
 # Guncat AI
 
-> New-generation LLM agent framework: structured CoT × multi-agent collaboration. RAR-based anti-hallucination agents spanning general-purpose, retrieval, rewriting, legal, and model-evaluation — deployed across Python, Web-for-API, Yuanqi, Qingyan, Coze, and HarmonyOS.
+> New-generation LLM agent framework: from structured-CoT agent clusters (2.0/2.5) to the **Guncat 3.0 monolithic super-agent** built with Prompt-as-Orchestration. RAR-based anti-hallucination agents spanning general-purpose, retrieval, rewriting, legal, and model-evaluation — deployed across Python, Web-for-API, Yuanqi, Qingyan, Coze, and HarmonyOS.
 
 * * *
 
@@ -22,11 +22,11 @@
 
 Guncat AI is a large model agent solution spanning **general-purpose agents, vertical retrieval, content rewriting, legal analysis, model evaluation**, and **cross-platform clients**. Rather than merely providing prompts, it delivers multiple practical technical pathways — from prompt-driven and Python code-driven approaches, to web clients and native HarmonyOS applications.
 
-The core design goal of Guncat is to **ensure that complex tasks are completed in a stable, controllable, and traceable manner**. To this end, Guncat introduces mechanisms such as structured chain-of-thought, multi-agent collaboration, mandatory multi-round retrieval, Retrieval-Augmented Reasoning (RAR), and source grading across multiple product lines — systematically reducing large model hallucinations and improving the reliability of long-horizon tasks and complex reasoning.
+The core design goal of Guncat is to **ensure that complex tasks are completed in a stable, controllable, and traceable manner**. To this end, Guncat introduces mechanisms such as structured chain-of-thought, multi-agent collaboration, mandatory multi-round retrieval, Retrieval-Augmented Reasoning (RAR), and source grading across multiple product lines; since 3.0, it further compresses full agent-stack orchestration into a single model via **Prompt-as-Orchestration** (fused Plan-and-Execute + ReAct + Reflexion metacognition, adaptive reasoning-effort budgets, Agentic RAG, and internalized Mixture-of-Agents expertise) — systematically reducing large model hallucinations and improving the reliability of long-horizon tasks and complex reasoning.
 
 * * *
 
-## Core Technology — RAR (Retrieval-Augmented Reasoning)
+## Core Technology I — RAR (Retrieval-Augmented Reasoning)
 
 Guncat's agents do not rely on traditional **RAG** (Retrieval-Augmented Generation) — stuffing retrieved snippets into prompts to "generate" answers. Instead, they center on **RAR (Retrieval-Augmented Reasoning)**: retrieval serves the reasoning process, evidence precedes conclusions, and every step is verifiable and traceable. This is the shared anti-hallucination kernel across Guncat's Srch, Eval, and retrieval-related product lines.
 
@@ -54,9 +54,54 @@ Where a local vector knowledge base does exist (e.g., the ChromaDB + bge-m3 lega
 
 * * *
 
+## Core Technology II — The 3.0 Monolithic Super-Agent Architecture (Prompt-as-Orchestration)
+
+Guncat 3.0 reproduces virtually every mainstream paradigm of the current agent stack inside a single model through pure prompt engineering — no external multi-agent clusters, no proprietary orchestration frameworks. **One set of prompts is a complete orchestration system**, an order of magnitude beyond the 2.5 series in prompt volume (~116 KB vs ~20 KB for the Chinese edition alone) and paradigm density.
+
+### Four-Layer Architecture
+
+| Layer                           | Absorbed paradigms                                                        | What it does                                                                                                                                                                                                                                                                                                                                                                                                           |
+| ------------------------------- | ------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ① Metacognition Layer           | **Plan-and-Execute + ReAct + Reflexion** (three decision paradigms fused) | Plans before acting (task decomposition, tool orchestration, step budgeting); runs observe–think–act loops without advancing past information gaps; backtracks and revises when assumptions are falsified — all fully internalized, no external chain-of-thought tools required. This internalization is what makes 3.0 dramatically more portable across platforms than 2.5's external Sequential Thinking dependency |
+| ② Execution Layer               | **Reasoning Effort / adaptive reasoning depth**                           | Fast / Standard / Deep three-tier thinking budgets dynamically allocated by task complexity — never trading quality for speed, never oversimplifying hard problems                                                                                                                                                                                                                                                     |
+| ③ Tool Layer                    | **Agentic RAG**                                                           | Upgrades retrieval augmentation from one-shot vector search into an autonomous retrieval loop: the agent decides what to retrieve, when, how many rounds, and how to verify — **information gaps drive retrieval, not fixed pipelines**. Its core skill is crafting the most precise tool inputs (Query / prompts / parameters) for each specific task                                                                 |
+| ④ Professional Capability Layer | **MoE routing + MoA single-body internalization**                         | A reverse take on Mixture-of-Agents: paper rewriting, SOE legal analysis, deep research, information sifting, and LLM evaluation experts are compressed into one brain — modular expert routing replaces inter-agent communication, preserving per-expert depth while eliminating cluster information loss and coordination overhead                                                                                   |
+
+### Two Cross-Cutting Systems
+
+**Deep Research engine** — multi-round search verification, official-channel tracing (P0–P5 priority sequences), entity state anchoring, multi-source cross-validation, opposing-hypothesis testing, and symmetric retrieval, so that every "retrieve → verify → conclude" step forms a complete evidence chain.
+
+**The anti-hallucination combination** —
+
+- **LLM-as-a-Judge**: self-review before output, running opposing-hypothesis tests and gap quantification; no self-contradiction escapes.
+- **Reranking-based source grading**: S/A/B/C-D universal grading plus Tier 1-6 for evaluation tasks; low-authority information must be overridden by high-authority information.
+- **AI Slop filtering**: detects and discards AI-generated roundups, marketing accounts, and unattributed reposts, cutting off the "AI writes stale text → search engines index it → AI cites it" pollution loop.
+- **Provenance tracking**: every key conclusion carries its source, URL, original quotation, and confidence marks — traceable and reproducible.
+- **Temporal grounding**: version timestamps, a three-way time-concept distinction, and information half-life management; every conclusion is anchored to "as of when", never presenting stale information as current.
+
+### The Output Richness Principle
+
+The series-wide signature trait, active at highest priority at all times: token-abundant — no compression, no omission, no brush-offs; better long than lossy. Crucially, even in the streamlined 3.0-Flash, **speed only affects whether tools are invoked — never output thoroughness: Flash ≠ brief**. **3.0-Mini (since 5.2.1) is the deliberate exception: it swaps the Output Richness Principle for the Task-Adaptive Output Principle — answer length is decided by the task and the user's need (light conversation stays naturally concise, standard tasks stay medium-length, complex tasks stay fully elaborated), while information completeness and rigor are never compromised.**
+
+> In one sentence: **Agentic RAG fetches the data, Deep Research digs deep, three decision paradigms drive the thinking, MoA internalization carries the five experts, the anti-hallucination combination holds the quality floor, and the Output Richness Principle runs throughout — that is Guncat 3.0.**
+
+* * *
+
 ## Agent Series
 
-Guncat comprises **7 agent series**, each representing a core technical implementation of "how an agent is organized, driven, and produces content."
+Guncat comprises **8 agent series**, each representing a core technical implementation of "how an agent is organized, driven, and produces content."
+
+### Guncat 3.0 Series — Monolithic Super-Agent (Prompt-as-Orchestration)
+
+The latest-generation foundation and a generational leap over 2.5: through pure prompt engineering (Prompt-as-Orchestration), virtually every mainstream paradigm of the current agent stack is reproduced inside a single model — no external multi-agent clusters, no proprietary orchestration frameworks. **One set of prompts is a complete orchestration system**, with prompt volume and paradigm density an order of magnitude beyond the 2.5 series (~116 KB vs ~20 KB for the Chinese edition alone).
+
+* **3.0-Pro**: The all-capable edition that fuses the expert agents' domain capabilities, enhanced search, and anti-hallucination systems into a single main agent. Four-layer architecture — Metacognition Layer (Plan-and-Execute + ReAct + Reflexion fused), Execution Layer (adaptive reasoning-effort budget: Fast / Standard / Deep), Tool Layer (Agentic RAG gap-driven retrieval loops), Professional Capability Layer (MoA internalization carrying five domain experts) — topped by two cross-cutting systems: a Deep Research engine (multi-round verification, official-source tracing P0–P5, entity state anchoring, symmetric retrieval) and the anti-hallucination combination (LLM-as-a-Judge, reranking-based source grading S/A/B/C-D & Tier 1-6, AI-Slop filtering, provenance tracking, temporal grounding). See [the full technical report](./docx/Guncat_3.0_系列技术报告.md).
+* **3.0-Flash**: The fast lane distilled from the same super-agent foundation — three-layer architecture (expert modules removed), thinking chain ≤5 steps by default, gap-driven close-out replacing the redundant-call philosophy; execution rounds and response times substantially below Pro, while answer thoroughness and the anti-hallucination skeleton are held to exactly the same standard.
+* **3.0-Mini**: The light-and-fast lane further distilled from 3.0-Flash (since 5.2.1) — it removes the Output Richness Principle in favor of the Task-Adaptive Output Principle: answer length follows task complexity (naturally concise for simple chat, medium for standard tasks, fully elaborated for complex ones), fitting the task without padding, while the three-layers-in-one architecture, Fast/Standard modes, tool-calling methodology, and the full anti-hallucination system are all retained.
+
+The **Output Richness Principle** runs through 3.0-Pro and 3.0-Flash: token-abundant, never compressed, never omitted, never perfunctory — better long than lossy. **3.0-Mini is the deliberate exception, replacing it with the Task-Adaptive Output Principle.**
+
+All 3.0-series prompts are maintained in [Guncat 3.0](./Guncat%20AI%20Release/Guncat%203.0/) (Pro / Flash / Mini, CN + EN).
 
 ### Guncat 2.0 Series — All-Purpose Agent Cluster
 
@@ -261,14 +306,14 @@ Built on the **LangChain / LangGraph** ecosystem, Python code-driven, equipped w
 
 The same set of agents can be carried by different clients or platforms. Guncat offers 6 deployment forms.
 
-| Deployment Solution      | Applicable Agents                     | Form                    | Description                                                                                                      |
-| ------------------------ | ------------------------------------- | ----------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| **Tencent Yuanqi**       | Guncat 2.0 / 2.5 Series               | Platform-hosted         | Platform-adapted prompts; agents can be created directly on Tencent Yuanqi                                       |
-| **Zhipu Qingyan**        | Guncat Srch / Cnvt Series             | Platform-hosted         | Platform-adapted prompts, deployed on the Zhipu Qingyan platform                                                 |
+| Deployment Solution      | Applicable Agents                     | Form                    | Description                                                                                                              |
+| ------------------------ | ------------------------------------- | ----------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| **Tencent Yuanqi**       | Guncat 2.0 / 2.5 Series               | Platform-hosted         | Platform-adapted prompts; agents can be created directly on Tencent Yuanqi                                               |
+| **Zhipu Qingyan**        | Guncat Srch / Cnvt Series             | Platform-hosted         | Platform-adapted prompts, deployed on the Zhipu Qingyan platform                                                         |
 | **Guncat Web for API**   | Universal prompts (platform-agnostic) | Web / Windows / Android | "Configuration-as-Agent" architecture; three access protocols since 5.0.0 (Completions / Responses / Anthropic Messages) |
-| **Coze Service**         | Guncat 2.5-Pro                        | Cloud API               | Python agent deployed as a Coze API service for external capability provision                                    |
-| **HarmonyOS H5 App**     | Web for API universal prompts         | HarmonyOS H5 wrapper    | Secondary packaging based on Web for API, with HarmonyOS rawfile preloading + resource interception optimization |
-| **HarmonyOS Native App** | Universal prompts (platform-agnostic) | HarmonyOS native app    | Pure ArkTS + ArkUI implementation, native SSE streaming, Markdown rendering, multi-agent system                  |
+| **Coze Service**         | Guncat 2.5-Pro                        | Cloud API               | Python agent deployed as a Coze API service for external capability provision                                            |
+| **HarmonyOS H5 App**     | Web for API universal prompts         | HarmonyOS H5 wrapper    | Secondary packaging based on Web for API, with HarmonyOS rawfile preloading + resource interception optimization         |
+| **HarmonyOS Native App** | Universal prompts (platform-agnostic) | HarmonyOS native app    | Pure ArkTS + ArkUI implementation, native SSE streaming, Markdown rendering, multi-agent system                          |
 
 ### 1. Tencent Yuanqi
 
@@ -283,6 +328,8 @@ The same set of agents can be carried by different clients or platforms. Guncat 
 * "Configuration-as-Agent" architecture: The agent list is defined by `agents.json`, with prompts stored as external `.md` files.
 * Users select their own API service (OpenAI, Azure, Zhipu, Tongyi Qianwen, DeepSeek, etc.). Since version 5.0.0, access methods are unified into three mainstream protocols — OpenAI Completions (`/chat/completions`), OpenAI Responses (`/responses`), and Anthropic Messages (`/messages`) — with automatic migration of legacy configs.
 * Aligned with the HarmonyOS Native App 5.1.0: Files API hybrid upload for large attachments, soft modern UI (low-saturation palette, large corner radii, soft shadows), updated icon assets (file names unchanged), and a table extraction tool that dynamically lists models from all saved API profiles.
+* 5.2.1: added **Guncat 3.0-Mini (Light & Simple Mode)** and placed it first in the agent list — further streamlined from 3.0-Flash, replacing the Output Richness Principle with the Task-Adaptive Output Principle (answer length fits the task: concise for light chat, fully elaborated for complex tasks); bilingual prompts, `agents.json`, and the per-agent icon synced to all deployment variants.
+* 5.2.0: the deep-thinking toggle now explicitly controls the request per protocol (aligned with the official DeepSeek parameters) — OpenAI Completions `thinking.type` + `reasoning_effort`, Anthropic Messages `thinking.type` + `output_config.effort`, OpenAI Responses `reasoning.effort = high/none` (`none` disables thinking); when web search is enabled, the previous assistant's `reasoning_content` is sent back in multi-turn turns to avoid 400 errors; new conversations reset the deep-thinking default by agent name (off in Efficiency Mode, on in Expert Mode).
 * Suitable for: Cross-platform unified entry point, flexible deployment with user's own API.
 
 #### Windows Local HTTP Service Version
@@ -292,7 +339,7 @@ A pre-built `.bat` file is included; simply click to launch the local HTTP servi
 #### HarmonyOS App Version
 
 * A HarmonyOS H5 native application developed based on Web for API.
-* rawfile bundles `agents.json`, all `.md` prompts, avatars, and the web pages themselves (kept in sync with Web for API 5.1.0), preventing load failures caused by unstable Netlify access in mainland China.
+* rawfile bundles `agents.json`, all `.md` prompts, avatars, and the web pages themselves (kept in sync with Web for API 5.2.0), preventing load failures caused by unstable Netlify access in mainland China.
 * Optimizations: DNS/TCP preconnect, local resource interception and replacement, async rendering, caching strategy.
 * Suitable for: Native app experience on HarmonyOS devices.
 
@@ -306,11 +353,14 @@ A pre-built `.bat` file is included; simply click to launch the local HTTP servi
 
 * A **pure ArkTS + ArkUI** native HarmonyOS application, **not a WebView wrapper**.
 * Native SSE streaming communication via `@kit.NetworkKit`'s `http.requestInStream`.
+* Version 5.2.1: added **Guncat 3.0-Mini (Light & Simple Mode)** (listed first) — further streamlined from 3.0-Flash, replacing the Output Richness Principle with the Task-Adaptive Output Principle; rawfile synced with the bilingual Mini prompts, `agents.json`, and the dedicated icon; new conversations default Light & Simple Mode's deep thinking off.
+* Version 5.2.0: synced the Guncat 3.0-series agent foundations (Efficiency Mode = 3.0-Flash / Expert Mode = 3.0-Pro / Classic Mode = 2.5-Lite), per-agent sidebar icons via the new `icon` field (`$rawfile` dynamic loading with cat-avatar fallback), and dual descriptions (`shortDescription` for the sidebar list, full `description` for the new-conversation page); removed the 2.0-series prompts — the rawfile prompt library is fully aligned with Web for API 5.2.0.
+* Version 5.2.0 (deep thinking): the deep-thinking toggle now explicitly controls the request per protocol (OpenAI Completions `thinking.type` + `reasoning_effort`, Anthropic Messages `thinking.type` + `output_config.effort`, OpenAI Responses `reasoning.effort = high/none`); with web search enabled, the previous assistant's `reasoning_content` is sent back in multi-turn turns to avoid 400 errors; new conversations reset the deep-thinking default by agent name (off in Efficiency Mode, on in Expert Mode).
 * Version 5.1.1: today's date is automatically prepended to agent system prompts — fetched at runtime from the device's local date and auto-updated daily, applied uniformly across all three protocols; the same change is rolled out to all Web for API variants.
 * Version 5.1.0: deep-thinking (reasoning) content display — a collapsible reasoning card (collapsed by default, tap to expand) with live token speed (tok/s) and cache hit rate shown on the reasoning bar, supporting all three protocols; the web settings panel no longer shows the quick-select access-method presets.
 * Version 5.0.0: access methods unified into three mainstream protocols (OpenAI Completions / OpenAI Responses / Anthropic Messages, with DeepSeek upgraded to the Responses API), plus a brand-new soft modern UI and updated icon assets.
 * High-level native Markdown rendering via `@luvi/lv-markdown-in` component (CommonMark + GFM, LaTeX math, code highlighting, Mermaid diagrams).
-* Built-in 9 professional agents managed via `agents.json` + independent Markdown prompt files.
+* Built-in 9 agents managed via `agents.json` + independent Markdown prompt files, featuring per-agent sidebar icons (`icons/` PNGs keyed by agent id) and dual descriptions (`shortDescription` in the sidebar, `description` on the new-conversation page).
 * Multimodal file parsing via GLM-4.6V-Flash (image, text, Office documents).
 * Native Light/Dark theme system based on HarmonyOS resource framework.
 * MVVM architecture with Preferences API persistence.
@@ -322,15 +372,15 @@ A pre-built `.bat` file is included; simply click to launch the local HTTP servi
 
 This project has been fully restructured, with **agent series** and **deployment solutions** clearly separated by responsibility:
 
-| Module                                                                            | Category           | Description                                                           |
-| --------------------------------------------------------------------------------- | ------------------ | --------------------------------------------------------------------- |
-| [Guncat AI Release](./Guncat%20AI%20Release/)                                     | Agent + Deployment | Tencent Yuanqi, Zhipu Qingyan, and other platform-adapted prompts     |
-| [Guncat AI Python](./Guncat%20AI%20Python/)                                       | Agent              | Two Python code-driven projects: Guncat 2.5-Pro and Srch-Law V2       |
-| [Guncat AI Web for API](./Guncat%20AI%20Web%20for%20API/)                         | Deployment         | Universal prompt web client, self-configured API                      |
-| [Guncat AI Web for API_local-setup](./Guncat%20AI%20Web%20for%20API_local-setup/) | Deployment         | Windows one-click local launch version of the web client              |
-| [GuncatAI-Web-for-API_HMOS-APP](./GuncatAI-Web-for-API_HMOS-APP/)                 | Deployment         | HarmonyOS H5 wrapper application (based on Web for API)               |
-| [GuncatAI_HMOS-APP](./GuncatAI_HMOS-APP/)                                         | Deployment         | HarmonyOS native application (pure ArkTS + ArkUI)                     |
-| [docx](./docx/)                                                                  | Documentation      | Technical reports: Guncat Eval-LLM (CN/EN), lv-markdown table rendering crash investigation |
+| Module                                                                            | Category           | Description                                                                                                    |
+| --------------------------------------------------------------------------------- | ------------------ | -------------------------------------------------------------------------------------------------------------- |
+| [Guncat AI Release](./Guncat%20AI%20Release/)                                     | Agent + Deployment | Tencent Yuanqi, Zhipu Qingyan, and other platform-adapted prompts                                              |
+| [Guncat AI Python](./Guncat%20AI%20Python/)                                       | Agent              | Two Python code-driven projects: Guncat 2.5-Pro and Srch-Law V2                                                |
+| [Guncat AI Web for API](./Guncat%20AI%20Web%20for%20API/)                         | Deployment         | Universal prompt web client, self-configured API                                                               |
+| [Guncat AI Web for API_local-setup](./Guncat%20AI%20Web%20for%20API_local-setup/) | Deployment         | Windows one-click local launch version of the web client                                                       |
+| [GuncatAI-Web-for-API_HMOS-APP](./GuncatAI-Web-for-API_HMOS-APP/)                 | Deployment         | HarmonyOS H5 wrapper application (based on Web for API)                                                        |
+| [GuncatAI_HMOS-APP](./GuncatAI_HMOS-APP/)                                         | Deployment         | HarmonyOS native application (pure ArkTS + ArkUI)                                                              |
+| [docx](./docx/)                                                                   | Documentation      | Technical reports: Guncat 3.0 series, Guncat Eval-LLM (CN/EN), lv-markdown table rendering crash investigation |
 
 * * *
 
@@ -363,7 +413,7 @@ Copyright (c) 2026 Zhu Bowen
 
 # Guncat AI
 
-> 新一代 LLM 代理框架：结构化 CoT × 多代理协作。基于 RAR 的防幻觉代理，覆盖通用、检索、重写、法律和模型评估——可部署在 Python、Web-for-API、元气、清言、Coze 和 HarmonyOS 上。
+> 新一代 LLM 智能体框架：从结构化 CoT × 多代理协作（2.0/2.5）进化到以 Prompt-as-Orchestration 构建的 **单体化超级智能体**。基于 RAR 的防幻觉智能体，覆盖通用、检索、改写、法律和模型评估——可部署在 Python、Web-for-API、元器、清言、Coze 和鸿蒙上。
 
 ---
 
@@ -371,23 +421,23 @@ Copyright (c) 2026 Zhu Bowen
 
 Guncat AI 是一套覆盖**通用智能体、垂直检索、内容改写、法律分析、模型评测**到**跨平台客户端**的大模型智能体方案。它不只提供提示词，而是从 Prompt 驱动、Python 代码驱动、Web 客户端到鸿蒙原生应用，提供了多条可落地的技术路径。
 
-Guncat 的核心设计目标是：**让复杂任务能被稳定、可控、可溯源地完成**。为此，Guncat 在多个产品线中引入了结构化思维链、多 Agent 协同、强制多轮检索、检索增强推理（RAR）、来源分级等机制，系统性地降低大模型幻觉，提升长程任务和复杂推理的可靠性。
+Guncat 的核心设计目标是：**让复杂任务能被稳定、可控、可溯源地完成**。为此，Guncat 在多个产品线中引入了结构化思维链、多 Agent 协同、强制多轮检索、检索增强推理（RAR）、来源分级等机制；自 3.0 起，更进一步通过 **Prompt-as-Orchestration（提示词即编排）** 将完整的 Agent 编排体系压缩进单个模型——三范式融合的元认知层（Plan-and-Execute + ReAct + Reflexion）、自适应推理预算、Agentic RAG 与单体内化的 MoA 专家能力——系统性地降低大模型幻觉，提升长程任务和复杂推理的可靠性。
 
 ---
 
-## 核心技术 — RAR（检索增强推理）
+## 核心技术一：RAR（检索增强推理）
 
 Guncat 的智能体并不依赖传统的 **RAG（Retrieval-Augmented Generation，检索增强生成）**——把检索到的片段直接拼进提示词去「生成」答案——而是普遍采用 **RAR（Retrieval-Augmented Reasoning，检索增强推理）**：让检索服务于推理，让证据先于结论，让每一步都可验证、可追溯。这是 Guncat 的 Srch、Eval 及所有检索相关产品线共用的反幻觉内核。
 
 ### RAG 与 RAR 的对比
 
-| 维度      | 传统 RAG  | Guncat RAR                        |
-| ------- | ------- | --------------------------------- |
-| 核心流程    | 检索 → 生成 | 规划 → 检索 → 验证 → 推理 → 自检 → 输出       |
-| 检索结果的用途 | 直接粘贴进答案 | 经交叉验证后作为**证据**进入推理链               |
-| 信源治理    | 少有分级    | 强制信源分级（P0–P5 / S–A–B–C–D）+ 引用前检查门 |
-| 幻觉控制    | 依赖片段质量  | 全链路防线：检索纪律 + 验证门 + 自检清单           |
-| 可追溯性    | 弱       | 每个引用都携带来源、时间戳与验证状态                |
+| 维度      | 传统 RAG                             | Guncat RAR                        |
+| ------- | ---------------------------------- | --------------------------------- |
+| 核心流程    | 检索 → 生成                            | 规划 → 检索 → 验证 → 推理 → 自检 → 输出       |
+| 检索结果的用途 | 直接粘贴进答案                            | 经交叉验证后作为**证据**进入推理链               |
+| 信源治理    | 少有分级                               | 强制信源分级（P0–P5 / S–A–B–C–D）+ 引用前检查门 |
+| 幻觉控制    | 依赖片段质量 | 全链路防线：检索纪律 + 验证门 + 自检清单           |
+| 可追溯性    | 弱                                  | 每个引用都携带来源、时间戳与验证状态                |
 
 ### RAR 推理管线
 
@@ -403,9 +453,54 @@ Guncat 的智能体并不依赖传统的 **RAG（Retrieval-Augmented Generation�
 
 ---
 
+## 核心技术二：3.0 单体化超级智能体架构（Prompt-as-Orchestration）
+
+Guncat 3.0 通过纯提示词工程，在单个模型内完整复现当前 Agent 技术栈几乎所有主流范式——不依赖外部多 Agent 集群、不依赖专有编排框架。**一套提示词，就是一套完整的编排系统**；仅中文版提示词体量即达约 116 KB（2.5 系列约 20 KB），范式密度与防御纵深提升一个数量级。
+
+### 四层架构
+
+| 层次      | 吸收的主流范式                                        | 职责                                                                                                                                        |
+| ------- | ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| ① 元认知层  | **Plan-and-Execute + ReAct + Reflexion 三范式融合** | 先规划后执行（任务拆解、工具编排、步数预估）；观察—思考—行动循环推进，不带信息缺口前进；假设被推翻立即回溯修订——全部内化完成，不依赖任何外部思维链工具。正是这层内化，让 3.0 相对依赖外部 Sequential Thinking 的 2.5 在跨平台可移植性上质的飞跃 |
+| ② 执行层   | **Reasoning Effort 思考预算 / 自适应推理深度**            | 极速 / 标准 / 深度三档思考预算按任务复杂度动态分配——绝不为省时间牺牲质量，也绝不为复杂任务强行简化                                                                                     |
+| ③ 工具层   | **Agentic RAG 自主检索闭环**                         | 把检索增强从一次性向量检索升级为自主检索闭环：由模型决定检索什么、何时检索、检索几轮、如何校验——**信息缺口驱动检索，而不是固定流程**；核心技能是为每个具体任务构造最精确的工具输入（Query / 提示词 / 参数）                            |
+| ④ 专业能力层 | **MoE 路由 + MoA 单体内化**                          | 对 Mixture-of-Agents 的一次反向操作：将论文改写、国企法律分析、深度研究、信息筛选、LLM 评测五大专家压进同一个大脑——模块化专家路由取代智能体间通信，既保留各专家的专业深度，又消除集群的信息断链与协调开销                         |
+
+### 两套贯穿体系
+
+**Deep Research 深度研究引擎** —— 多轮搜索验证、官方渠道溯源（P0-P5 优先级序列）、实体状态锚定、多源交叉验证、对立假设测试、对称检索，确保每一步「检索 → 验证 → 结论」都形成完整证据链。
+
+**反幻觉组合拳** ——
+
+- **LLM-as-a-Judge**：输出前自我评审，执行对立假设测试与差距量化，不放过任何自我矛盾。
+- **reranking 信源分级**：S/A/B/C-D 通用分级 + 评测专用 Tier 1-6；低权威信息必须被高权威信息覆盖。
+- **AI Slop 过滤**：识别并剔除 AI 生成综述、营销号与无溯源搬运，切断「AI 写旧文 → 搜索引擎收录 → AI 再引用」的污染循环。
+- **provenance tracking 溯源追踪**：每条关键结论携带来源、URL、原文引用与置信度标注——可回溯、可复现。
+- **temporal grounding 时间锚定**：版本时间戳、三类时间概念区分、信息半衰期管理；每个结论都锚定在「截至何时」，杜绝以旧代新。
+
+### 输出丰富性原则
+
+全系标志性特色，最高优先级全程生效：token 充裕——不压缩、不省略、不敷衍，宁可篇幅长不可信息丢。关键在于：即便在精简版 3.0-Flash 中，**快速也只影响是否调用工具，绝不影响输出详尽程度——极速 ≠ 简短**。**3.0-Mini（自 5.2.1 起）是刻意的例外：它以任务适配输出原则取代输出丰富性原则——回答长度由任务与用户需求决定（简单对话自然简洁、标准任务中等篇幅、复杂任务充分展开），信息完整性与严谨性绝不打折。**
+
+> 一句话总结：**Agentic RAG 取数，Deep Research 深研，三大决策范式驱动思考，MoA 单体内化承载五大专家，反幻觉组合拳守住质量底线，输出丰富性原则贯穿始终——这就是 Guncat 3.0。**
+
+---
+
 ## 智能体系列
 
-Guncat 包含 **7 个智能体系列**，每条系列代表一种「智能体如何被组织、如何被驱动、如何产出内容」的核心技术实现。
+Guncat 包含 **8 个智能体系列**，每条系列代表一种「智能体如何被组织、如何被驱动、如何产出内容」的核心技术实现。
+
+### Guncat 3.0 系列 — 单体化超级智能体（Prompt-as-Orchestration）
+
+最新一代基座，相对 2.5 是代际级跨越：通过纯提示词工程（Prompt-as-Orchestration），在单个模型内完整复现当前 Agent 技术栈几乎所有主流范式——不依赖外部多 Agent 集群、不依赖专有编排框架。**一套提示词，就是一套完整的编排系统**；仅中文版提示词体量即达约 116 KB，是 2.5 系列（约 20 KB）的一个数量级以上，范式密度与防御纵深全面提升。
+
+- **3.0-Pro**：全能版本。将专家智能体的专业能力、增强搜索能力与反幻觉能力融合进单一主智能体。四层架构——元认知层（Plan-and-Execute + ReAct + Reflexion 三范式融合）、执行层（自适应推理预算：极速/标准/深度三档）、工具层（Agentic RAG 缺口驱动的自主检索闭环）、专业能力层（MoA 单体内化承载论文改写、国企法律、深度研究、信息筛选、LLM 评测五大专家）——其上还有两套贯穿体系：Deep Research 深度研究引擎（多轮验证、官方溯源 P0-P5、实体状态锚定、对称检索）与反幻觉组合拳（LLM-as-a-Judge、reranking 信源分级 S/A/B/C-D 与 Tier 1-6、AI Slop 过滤、provenance tracking 溯源追踪、temporal grounding 时间锚定）。详见[完整技术报告](./docx/Guncat_3.0_系列技术报告.md)。
+- **3.0-Flash**：同基座精简的快速通道——三层一体架构（移除专家模块）、思维链默认 ≤5 步、缺口驱动收口取代冗余调用哲学；执行轮数与响应耗时显著低于 Pro，回答详尽程度与反幻觉骨架则保持完全同一标准。
+- **3.0-Mini**：3.0-Flash 基础上进一步精简的轻快通道（自 5.2.1 起）——移除输出丰富性原则，代之以任务适配输出原则：回答长度随任务复杂度而定（简单对话自然简洁、标准任务中等篇幅、复杂任务充分展开），恰如其分而不堆砌；完整保留三层一体架构、极速/标准双档模式、工具方法论与反幻觉体系。
+
+**输出丰富性原则**贯穿 3.0-Pro 与 3.0-Flash：token 充裕、不压缩、不省略、不敷衍，宁可篇幅长不可信息丢；**3.0-Mini 是刻意的例外，代之以任务适配输出原则。**
+
+全套 3.0 系列提示词统一维护于 [Guncat 3.0](./Guncat%20AI%20Release/Guncat%203.0/)（Pro / Flash / Mini，中英双语）。
 
 ### Guncat 2.0 系列 — 全能 Agent 集群
 
@@ -610,14 +705,14 @@ Guncat Eval-LLM 的设计与提示词工程已开源技术报告：[技术报告
 
 同一套智能体可以由不同的客户端或平台承载，Guncat 提供 6 种部署形态。
 
-| 部署方案                   | 适用智能体                 | 形态                      | 说明                                                |
-| ---------------------- | --------------------- | ----------------------- | ------------------------------------------------- |
-| **腾讯元器**               | Guncat 2.0 / 2.5 系列   | 平台托管                    | 平台适配提示词，可直接在腾讯元器创建智能体                             |
-| **智谱清言**               | Guncat Srch / Cnvt 系列 | 平台托管                    | 平台适配提示词，部署于智谱清言平台                                 |
+| 部署方案                   | 适用智能体                 | 形态                      | 说明                                                                       |
+| ---------------------- | --------------------- | ----------------------- | ------------------------------------------------------------------------ |
+| **腾讯元器**               | Guncat 2.0 / 2.5 系列   | 平台托管                    | 平台适配提示词，可直接在腾讯元器创建智能体                                                    |
+| **智谱清言**               | Guncat Srch / Cnvt 系列 | 平台托管                    | 平台适配提示词，部署于智谱清言平台                                                        |
 | **Guncat Web for API** | 通用提示词（不绑定平台）          | Web / Windows / Android | 「配置即智能体」架构，5.0.0 起统一三种接入协议（Completions / Responses / Anthropic Messages） |
-| **Coze 服务**            | Guncat 2.5-Pro        | 云端 API                  | Python 智能体部署为 Coze API 服务对外提供能力                   |
-| **鸿蒙 H5 应用**           | Web for API 通用提示词     | 鸿蒙 H5 套壳 App            | 基于 Web for API 二次包装，鸿蒙端 rawfile 预加载 + 资源拦截优化      |
-| **鸿蒙原生应用**             | 通用提示词（不绑定平台）          | 鸿蒙原生 App                | 纯 ArkTS + ArkUI 实现，原生 SSE 流式通信、Markdown 渲染、多智能体系统 |
+| **Coze 服务**            | Guncat 2.5-Pro        | 云端 API                  | Python 智能体部署为 Coze API 服务对外提供能力                                          |
+| **鸿蒙 H5 应用**           | Web for API 通用提示词     | 鸿蒙 H5 套壳 App            | 基于 Web for API 二次包装，鸿蒙端 rawfile 预加载 + 资源拦截优化                             |
+| **鸿蒙原生应用**             | 通用提示词（不绑定平台）          | 鸿蒙原生 App                | 纯 ArkTS + ArkUI 实现，原生 SSE 流式通信、Markdown 渲染、多智能体系统                        |
 
 ### 1. 腾讯元器
 
@@ -632,6 +727,8 @@ Guncat Eval-LLM 的设计与提示词工程已开源技术报告：[技术报告
 - 「配置即智能体」架构：智能体列表由 `agents.json` 定义，提示词以外部 `.md` 文件存储。
 - 用户自选大模型服务（OpenAI、Azure、智谱、通义千问、DeepSeek 等）。5.0.0 起接入方式统一为三种主流协议——OpenAI Completions（`/chat/completions`）、OpenAI Responses（`/responses`）、Anthropic Messages（`/messages`），旧配置自动迁移。
 - 已对齐鸿蒙原生应用 5.1.0：大附件 Files API 混合上传、柔和现代 UI（低饱和配色、大圆角、柔和阴影）、应用图标资源更新（文件名不变），表格识别工具动态展示所有配置方案的模型。
+- 5.2.1：新增 **Guncat 3.0-Mini（轻简模式）** 并置于智能体列表首位——基于 3.0-Flash 进一步精简，移除输出丰富性原则、代之以任务适配输出原则（回答长度由任务复杂度决定：简单对话简洁自然、复杂任务充分展开）；同步双语提示词、`agents.json` 与独立图标至所有部署变体。
+- 5.2.0：深度思考开关按协议显式控制（对齐 DeepSeek 官方参数）——OpenAI Completions `thinking.type` + `reasoning_effort`、Anthropic Messages `thinking.type` + `output_config.effort`、OpenAI Responses `reasoning.effort = high/none`（`none` 关闭思考）；联网搜索开启时多轮对话自动回传上一轮 assistant 的 `reasoning_content`，避免 400；新建对话按智能体名称重置深度思考默认值（效率模式默认关闭、专家模式默认开启）。
 - 适合：跨平台统一入口、用户自有 API 灵活部署。
 
 #### Windows 本地http服务版本
@@ -641,7 +738,7 @@ Guncat Eval-LLM 的设计与提示词工程已开源技术报告：[技术报告
 #### HarmonyOS 鸿蒙应用版本
 
 * 基于 Web for API 开发的 HarmonyOS H5 原生应用。
-* rawfile 内置 `agents.json`、全部 `.md` 提示词、头像及网页本体（与 Web for API 5.1.0 保持同步），避免 Netlify 国内访问不稳导致的加载失败。
+* rawfile 内置 `agents.json`、全部 `.md` 提示词、头像及网页本体（与 Web for API 5.2.0 保持同步），避免 Netlify 国内访问不稳导致的加载失败。
 * 优化项：预连接 DNS/TCP、本地资源拦截替换、异步渲染、缓存策略。
 * 适合：鸿蒙设备的原生 App 体验。
 
@@ -655,11 +752,14 @@ Guncat Eval-LLM 的设计与提示词工程已开源技术报告：[技术报告
 
 - **纯 ArkTS + ArkUI** 鸿蒙原生应用，**非 WebView 套壳**。
 - 基于 `@kit.NetworkKit` 的 `http.requestInStream` 实现原生 SSE 流式通信。
+- 5.2.1：新增 **Guncat 3.0-Mini（轻简模式）**（置于列表首位）——基于 3.0-Flash 进一步精简，以任务适配输出原则取代输出丰富性原则；rawfile 同步双语 Mini 提示词、`agents.json` 与独立图标；新建对话轻简模式深度思考默认关闭。
+- 5.2.0：同步 Guncat 3.0 系列智能体基座（效率模式=3.0-Flash / 专家模式=3.0-Pro / 经典模式=2.5-Lite），新增侧边栏独立图标（`icon` 字段，`$rawfile` 动态加载、未配置回退猫头像）与双描述机制（侧边栏展示 `shortDescription`、新建对话页展示完整 `description`）；移除 2.0 系列提示词，rawfile 提示词库全量对齐 Web for API 5.2.0。
+- 5.2.0（深度思考）：深度思考开关按协议显式控制（OpenAI Completions `thinking.type` + `reasoning_effort`、Anthropic Messages `thinking.type` + `output_config.effort`、OpenAI Responses `reasoning.effort = high/none`）；联网搜索开启时多轮对话自动回传上一轮 assistant 的 `reasoning_content`，避免 400；新建对话按智能体名称重置深度思考默认值（效率模式默认关闭、专家模式默认开启）。
 - 5.1.1：系统提示词最前面自动拼接今天的日期——运行时获取设备本地日期，跨天自动更新，三种接入方式统一生效；同步更新至所有 Web for API 变体。
 - 5.1.0：新增深度思考（推理过程）展示——推理内容以折叠卡片展示（默认折叠、点击展开），思考条右侧实时显示 token 速度（tok/s）与缓存命中率，兼容三种协议；Web 设置页移除「快速选择接入方式」快捷预设板块。
 - 5.0.0：接入方式统一为三种主流协议（OpenAI Completions / OpenAI Responses / Anthropic Messages，DeepSeek 升级 Responses API），全新柔和现代 UI 与图标资源更新。
 - 使用 `@luvi/lv-markdown-in` 原生组件实现高级 Markdown 渲染（CommonMark + GFM、LaTeX 数学公式、代码高亮、Mermaid 图表）。
-- 内置 9 个专业智能体，通过 `agents.json` + 独立 Markdown 提示词文件管理。
+- 内置 9 个智能体，通过 `agents.json` + 独立 Markdown 提示词文件管理，支持按智能体的侧边栏独立图标（`icons/` 目录按 id 命名 PNG）与双描述机制（侧边栏 `shortDescription` / 新建对话页 `description`）。
 - 多模态文件解析（图片、文本、Office 文档），基于 GLM-4.6V-Flash。
 - 基于 HarmonyOS 资源框架的原生 Light/Dark 主题系统。
 - MVVM 架构 + Preferences API 持久化。
@@ -671,15 +771,15 @@ Guncat Eval-LLM 的设计与提示词工程已开源技术报告：[技术报告
 
 本项目已完成重构，**智能体系列**与**部署方案**职责清晰分离：
 
-| 模块                                                                                | 类别       | 说明                                            |
-| --------------------------------------------------------------------------------- | -------- | --------------------------------------------- |
-| [Guncat AI Release](./Guncat%20AI%20Release/)                                     | 智能体 + 部署 | 腾讯元器、智谱清言等平台适配提示词                             |
-| [Guncat AI Python](./Guncat%20AI%20Python/)                                       | 智能体      | Guncat 2.5-Pro 与 Srch-Law V2 两个 Python 代码驱动项目 |
-| [Guncat AI Web for API](./Guncat%20AI%20Web%20for%20API/)                         | 部署       | 通用提示词 Web 客户端，自主配置 API                        |
-| [Guncat AI Web for API_local-setup](./Guncat%20AI%20Web%20for%20API_local-setup/) | 部署       | Web 客户端的 Windows 一键本地启动版                      |
-| [GuncatAI-Web-for-API_HMOS-APP](./GuncatAI-Web-for-API_HMOS-APP/)                 | 部署       | 鸿蒙 H5 套壳应用（基于 Web for API）                    |
-| [GuncatAI_HMOS-APP](./GuncatAI_HMOS-APP/)                                         | 部署       | 鸿蒙原生应用（纯 ArkTS + ArkUI）                       |
-| [docx](./docx/)                                     | 技术文档     | 技术报告：Guncat Eval-LLM（中/英）、lv-markdown 表格渲染闪退排查  |
+| 模块                                                                                | 类别       | 说明                                                           |
+| --------------------------------------------------------------------------------- | -------- | ------------------------------------------------------------ |
+| [Guncat AI Release](./Guncat%20AI%20Release/)                                     | 智能体 + 部署 | 腾讯元器、智谱清言等平台适配提示词                                            |
+| [Guncat AI Python](./Guncat%20AI%20Python/)                                       | 智能体      | Guncat 2.5-Pro 与 Srch-Law V2 两个 Python 代码驱动项目                |
+| [Guncat AI Web for API](./Guncat%20AI%20Web%20for%20API/)                         | 部署       | 通用提示词 Web 客户端，自主配置 API                                       |
+| [Guncat AI Web for API_local-setup](./Guncat%20AI%20Web%20for%20API_local-setup/) | 部署       | Web 客户端的 Windows 一键本地启动版                                     |
+| [GuncatAI-Web-for-API_HMOS-APP](./GuncatAI-Web-for-API_HMOS-APP/)                 | 部署       | 鸿蒙 H5 套壳应用（基于 Web for API）                                   |
+| [GuncatAI_HMOS-APP](./GuncatAI_HMOS-APP/)                                         | 部署       | 鸿蒙原生应用（纯 ArkTS + ArkUI）                                      |
+| [docx](./docx/)                                                                   | 技术文档     | 技术报告：Guncat 3.0 系列、Guncat Eval-LLM（中/英）、lv-markdown 表格渲染闪退排查 |
 
 ---
 

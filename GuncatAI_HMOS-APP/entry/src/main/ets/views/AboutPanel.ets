@@ -1,5 +1,6 @@
 // 关于弹层 (对齐 web 版本 .about-panel)
 import { common } from '@kit.AbilityKit';
+import { Constants } from '../common/Constants';
 
 const REPO_URL: string = 'https://github.com/zhubowen-bot/Guncat-AI';
 
@@ -61,7 +62,7 @@ export struct AboutPanel {
               .fontWeight(FontWeight.Bold)
               .fontColor($r('app.color.text_primary'))
               .margin({ bottom: 4 })
-            Text('version 5.1.1')
+            Text(`version ${Constants.APP_VERSION}`)
               .fontSize(14)
               .fontColor($r('app.color.text_secondary'))
               .margin({ bottom: 20 })

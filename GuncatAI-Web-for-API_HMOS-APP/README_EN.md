@@ -6,8 +6,10 @@ This is the HarmonyOS-adapted H5 application version of Guncat AI Web for API.
 
 ---
 
-Web for API Version: 5.1.1
+Web for API Version: 5.2.1
 
+2026.8.27 Synced with Web for API 5.2.1: added **Guncat 3.0-Mini (Light & Simple Mode)** and placed it first in the agent list — further streamlined from 3.0-Flash, removing the Output Richness Principle in favor of the Task-Adaptive Output Principle (answer length decided by task complexity; light conversation is naturally concise, complex tasks are fully elaborated); rawfile updated with `agents.json`, the bilingual prompts, and the dedicated icon
+2026.8.26 Synced with Web for API 5.2.0: deep-thinking toggle now explicitly controls the request per protocol (OpenAI Completions / Anthropic Messages use `thinking.type`, OpenAI Responses uses `reasoning.effort = high/none`); new conversations reset the deep-thinking default by agent name (off in Efficiency Mode, on in Expert Mode)
 2026.8.24 Synced with Web for API 5.1.1: today's date is automatically prepended to the system prompt (fetched at runtime from the local date, auto-updates across days), applied uniformly across all three protocols
 2026.8.23 Synced with Web for API 5.1.0: new deep-thinking (reasoning) display (incremental parsing for all three protocols, collapsed by default with tap-to-expand, live token speed and cache hit rate shown on the reasoning bar); the settings panel no longer shows the quick-select access-method presets — the protocol is chosen via the Access Method dropdown instead
 2026.7.7 Fixed bugs with duplicate message input and errors after terminating conversations.
@@ -56,3 +58,4 @@ Diagnostics check passed with no errors.
 ### Notes
 
 - Locally intercepted `agents.json`, `.md`, and avatar files must remain consistent with the Netlify online version; remember to sync updates to `rawfile` after updating the website.
+- The per-agent deep-thinking default lives in the `AGENT_THINKING_DEFAULT_BY_NAME` map in `rawfile/index.html` (key = agent `name`, value = boolean: `false` off / `true` on). Current defaults: Efficiency Mode `false`, Light & Simple Mode `false`, Expert Mode `true`; agents not in the map leave the toggle untouched (keeps the previous state). Edit the map to change defaults, keeping it in sync with the online `index.html` of Web for API.

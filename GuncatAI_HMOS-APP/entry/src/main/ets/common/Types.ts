@@ -99,6 +99,8 @@ export interface AgentConfigEntry {
   id: string;
   name: string;
   description: string;
+  shortDescription: string;
+  icon: string;
   category: string;
   promptFile: string;
 }
