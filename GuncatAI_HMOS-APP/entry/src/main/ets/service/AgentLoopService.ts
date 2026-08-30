@@ -162,7 +162,7 @@ export class AgentLoopService {
   // 执行循环中的一轮: 流式返回文本/思考, 并累积工具调用; 结束后由调用方检查 toolCalls 决定继续或收尾。
   // includeTools=false 时请求不带工具定义(用于上下文压缩等纯文本辅助调用)。
   static async runTurn(config: ApiConfig, messages: LoopMessage[],
-    thinkingEnabled: boolean, webSearchEnabled: boolean,
+    thinkingEnabled: boolean, reasoningEffort: string, webSearchEnabled: boolean,
     callbacks: LoopTurnCallbacks, abortSignal: AbortSignal,
     includeTools: boolean = true): Promise<LoopTurnResult> {
     let protocol: string = getProtocol(config.provider);
@@ -186,11 +186,11 @@ export class AgentLoopService {
     let tools: Record<string, Object>[] = includeTools ? AgentLoopService.getToolDefs() : [];
     let body: Record<string, Object>;
     if (protocol === 'responses') {
-      body = AgentLoopService.buildResponsesBody(config, messages, tools, thinkingEnabled, webSearchEnabled);
+      body = AgentLoopService.buildResponsesBody(config, messages, tools, thinkingEnabled, reasoningEffort, webSearchEnabled);
     } else if (protocol === 'anthropic') {
-      body = AgentLoopService.buildAnthropicBody(config, messages, tools, thinkingEnabled, webSearchEnabled);
+      body = AgentLoopService.buildAnthropicBody(config, messages, tools, thinkingEnabled, reasoningEffort, webSearchEnabled);
     } else {
-      body = AgentLoopService.buildCompletionsBody(config, messages, tools, thinkingEnabled, webSearchEnabled);
+      body = AgentLoopService.buildCompletionsBody(config, messages, tools, thinkingEnabled, reasoningEffort, webSearchEnabled);
     }
     let bodyStr: string = JSON.stringify(body);
 
@@ -455,7 +455,7 @@ export class AgentLoopService {
   // 429/5xx/网络传输/空响应按指数退避自动重试; 鉴权/协议/参数错误直接上抛。
   // maxRetries 为重试次数上限(不含首次), 退避 500ms 起步、封顶 8s, 附 ±20% 抖动。
   static async runTurnWithRetry(config: ApiConfig, messages: LoopMessage[],
-    thinkingEnabled: boolean, webSearchEnabled: boolean,
+    thinkingEnabled: boolean, reasoningEffort: string, webSearchEnabled: boolean,
     callbacks: LoopTurnCallbacks, abortSignal: AbortSignal,
     includeTools: boolean = true,
     maxRetries: number = Constants.WORK_LLM_RETRY_MAX): Promise<LoopTurnResult> {
@@ -465,7 +465,7 @@ export class AgentLoopService {
       let failed: LoopError | null = null;
       try {
         turn = await AgentLoopService.runTurn(config, messages, thinkingEnabled,
-          webSearchEnabled, callbacks, abortSignal, includeTools);
+          reasoningEffort, webSearchEnabled, callbacks, abortSignal, includeTools);
       } catch (e) {
         let err: Error = e as Error;
         if (err instanceof LoopError) {
@@ -580,13 +580,13 @@ export class AgentLoopService {
   // 完整前缀(静态系统提示词 + 相同工具定义 + 相同历史消息), 仅在末尾追加压缩指令——
   // 对模型侧 KV 缓存而言这是上一个请求的延续而非冷启动, 前缀部分按缓存命中计价。
   static async summarizeHistory(config: ApiConfig, messages: LoopMessage[],
-    thinkingEnabled: boolean, webSearchEnabled: boolean,
+    thinkingEnabled: boolean, reasoningEffort: string, webSearchEnabled: boolean,
     abortSignal: AbortSignal): Promise<string> {
     let input: LoopMessage[] = messages.slice();
     input.push(LoopMessage.user(AgentLoopService.COMPACTION_INSTRUCTION));
     let callbacks: LoopTurnCallbacks = new LoopTurnCallbacks();
     let turn: LoopTurnResult = await AgentLoopService.runTurnWithRetry(
-      config, input, thinkingEnabled, webSearchEnabled, callbacks, abortSignal, true, 2);
+      config, input, thinkingEnabled, reasoningEffort, webSearchEnabled, callbacks, abortSignal, true, 2);
     return turn.content.trim();
   }
 
@@ -774,7 +774,8 @@ export class AgentLoopService {
 
   // openai Chat Completions: assistant(tool_calls) + role:'tool'
   private static buildCompletionsBody(config: ApiConfig, messages: LoopMessage[],
-    tools: Record<string, Object>[], thinkingEnabled: boolean, webSearchEnabled: boolean): Record<string, Object> {
+    tools: Record<string, Object>[], thinkingEnabled: boolean, reasoningEffort: string,
+    webSearchEnabled: boolean): Record<string, Object> {
     let msgs: Record<string, Object>[] = [];
     let systemText: string = messages.length > 0 ? messages[0].content : '';
     if (messages.length > 0 && messages[0].role === 'system' && systemText !== '') {
@@ -843,17 +844,18 @@ export class AgentLoopService {
       body['max_tokens'] = config.maxTokens;
     }
     AgentLoopService.mergeExtraBody(body, config.extraBody);
-    // 深度思考开关(OpenAI 兼容格式), 工作模式强度调整为max
+    // 深度思考开关(OpenAI 兼容格式): thinking.type 控制开关, reasoning_effort 强度可选 max/high/low
     body['thinking'] = { type: thinkingEnabled ? 'enabled' : 'disabled' };
     if (thinkingEnabled) {
-      body['reasoning_effort'] = 'high';
+      body['reasoning_effort'] = reasoningEffort;
     }
     return body;
   }
 
   // openai Responses: function_call / function_call_output 输入项
   private static buildResponsesBody(config: ApiConfig, messages: LoopMessage[],
-    tools: Record<string, Object>[], thinkingEnabled: boolean, webSearchEnabled: boolean): Record<string, Object> {
+    tools: Record<string, Object>[], thinkingEnabled: boolean, reasoningEffort: string,
+    webSearchEnabled: boolean): Record<string, Object> {
     let input: Record<string, Object>[] = [];
     let systemText: string = messages.length > 0 ? messages[0].content : '';
     for (let i: number = 0; i < messages.length; i++) {
@@ -921,13 +923,14 @@ export class AgentLoopService {
       body['max_output_tokens'] = config.maxTokens;
     }
     AgentLoopService.mergeExtraBody(body, config.extraBody);
-    body['reasoning'] = { effort: thinkingEnabled ? 'high' : 'none' };
+    body['reasoning'] = { effort: thinkingEnabled ? reasoningEffort : 'none' };
     return body;
   }
 
   // anthropic: assistant(tool_use blocks) + user(tool_result blocks)
   private static buildAnthropicBody(config: ApiConfig, messages: LoopMessage[],
-    tools: Record<string, Object>[], thinkingEnabled: boolean, webSearchEnabled: boolean): Record<string, Object> {
+    tools: Record<string, Object>[], thinkingEnabled: boolean, reasoningEffort: string,
+    webSearchEnabled: boolean): Record<string, Object> {
     let msgs: Record<string, Object>[] = [];
     let systemText: string = messages.length > 0 ? messages[0].content : '';
     for (let i: number = 0; i < messages.length; i++) {
@@ -1012,10 +1015,10 @@ export class AgentLoopService {
       body['top_p'] = config.topP;
     }
     AgentLoopService.mergeExtraBody(body, config.extraBody);
-    // 深度思考开关(Anthropic 兼容格式), 工作模式强度调整为max
+    // 深度思考开关(Anthropic 兼容格式): thinking.type 控制开关, output_config.effort 强度可选 max/high/low
     body['thinking'] = { type: thinkingEnabled ? 'enabled' : 'disabled' };
     if (thinkingEnabled) {
-      body['output_config'] = { effort: 'high' };
+      body['output_config'] = { effort: reasoningEffort };
     }
     return body;
   }
@@ -1165,7 +1168,7 @@ export class AgentLoopService {
       return AgentLoopService.cachedWorkPrompt;
     }
     let lines: string[] = [];
-    lines.push('你是 Guncat Work 的「工作模式」智能体——在用户 HarmonyOS 设备上原生构建的 Agent Loop 智能体。');
+    lines.push('你是 Guncat Harness —— Guncat Work 中最强大的智能体，是在 HarmonyOS 平台原生构建的 Agent Loop 智能体。');
     lines.push('你的核心使命：在正确的时间，以正确的方式，调用正确的工具，在工作区中产出最正确、最完整、可验证的成果——快在执行路径，绝不在内容上打折。');
     lines.push('');
     lines.push('# 角色（四合一体）');

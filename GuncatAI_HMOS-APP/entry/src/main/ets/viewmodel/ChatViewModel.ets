@@ -36,6 +36,8 @@ export class ChatViewModel {
   currentConversationId: string = '';
   isStreaming: boolean = false;
   thinkingEnabled: boolean = false;
+  // 推理强度('max' / 'high' / 'low'), 深度思考开启时作为 reasoning 强度参数下发
+  reasoningEffort: string = 'high';
   webSearchEnabled: boolean = false;
   autoReadEnabled: boolean = false;
   pendingFiles: FileItem[] = [];
@@ -159,6 +161,9 @@ export class ChatViewModel {
     }
     this.applyApiProfile(selectedProfile);
     this.thinkingEnabled = await StorageManager.loadBoolean(this.context, Constants.LS_KEY_THINKING_ENABLED, false);
+    let savedEffort: string = await StorageManager.loadString(
+      this.context, Constants.LS_KEY_REASONING_EFFORT, 'high');
+    this.reasoningEffort = (savedEffort === 'max' || savedEffort === 'low') ? savedEffort : 'high';
     this.webSearchEnabled = await StorageManager.loadBoolean(this.context, Constants.LS_KEY_WEB_SEARCH_ENABLED, false);
     this.autoReadEnabled = await StorageManager.loadBoolean(
       this.context, Constants.LS_KEY_AUTO_READ_ENABLED, false);
@@ -393,6 +398,17 @@ export class ChatViewModel {
     this.thinkingEnabled = enabled;
     if (this.context !== null) {
       await StorageManager.saveBoolean(this.context, Constants.LS_KEY_THINKING_ENABLED, enabled);
+    }
+  }
+
+  // 推理强度选择('max' / 'high' / 'low', 含持久化): 深度思考开启时生效
+  async setReasoningEffort(effort: string): Promise<void> {
+    if (effort !== 'max' && effort !== 'high' && effort !== 'low') {
+      return;
+    }
+    this.reasoningEffort = effort;
+    if (this.context !== null) {
+      await StorageManager.saveString(this.context, Constants.LS_KEY_REASONING_EFFORT, effort);
     }
   }
 
@@ -1325,7 +1341,7 @@ export class ChatViewModel {
     ctx: common.UIAbilityContext, convId: string): Promise<LoopTurnResult> {
     try {
       return await AgentLoopService.runTurnWithRetry(
-        this.apiConfig, messages, this.thinkingEnabled, this.webSearchEnabled,
+        this.apiConfig, messages, this.thinkingEnabled, this.reasoningEffort, this.webSearchEnabled,
         callbacks, this.abortSignal);
     } catch (e) {
       let err: Error = e as Error;
@@ -1338,7 +1354,7 @@ export class ChatViewModel {
           // 压缩改写了历史, 末尾快照可能已随旧历史被移除, 重试前重新补快照
           await this.appendRuntimeSnapshotIfNeeded(messages, ctx, convId);
           return await AgentLoopService.runTurnWithRetry(
-            this.apiConfig, messages, this.thinkingEnabled, this.webSearchEnabled,
+            this.apiConfig, messages, this.thinkingEnabled, this.reasoningEffort, this.webSearchEnabled,
             callbacks, this.abortSignal);
         }
       }
@@ -1385,7 +1401,7 @@ export class ChatViewModel {
       let summary: string = '';
       try {
         summary = await AgentLoopService.summarizeHistory(
-          this.apiConfig, messages, this.thinkingEnabled, this.webSearchEnabled,
+          this.apiConfig, messages, this.thinkingEnabled, this.reasoningEffort, this.webSearchEnabled,
           this.abortSignal);
       } catch (e) {
         // 压缩失败(网络/中断) → 回退为整条裁剪

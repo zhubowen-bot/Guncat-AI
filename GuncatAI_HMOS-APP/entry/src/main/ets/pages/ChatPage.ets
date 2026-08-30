@@ -62,6 +62,8 @@ struct ChatPage {
   @State private refreshTick: number = 0;
   // 工作模式工作区弹层开关(挂在"工作模式"胶囊上方)
   @State private workspacePopupOpen: boolean = false;
+  // 模型选择弹层开关(挂在输入区左下角模型胶囊上方)
+  @State private modelMenuOpen: boolean = false;
   @State private previewItems: PreviewData[] = [];
   @State private readerVisible: boolean = false;
   @State private readerPhase: string = '';
@@ -1197,39 +1199,112 @@ struct ChatPage {
     .shadow({ radius: 12, color: '#14000000', offsetX: 0, offsetY: 3 })
     .margin({ right: 8 })
     .enabled(!this.vm.isStreaming && !this.vm.isParsing && !this.isListening)
-    .bindMenu(this.buildModelProfileMenu(), { placement: Placement.Top })
+    // bindPopup 是纯状态驱动(不像 bindMenu 点击自动弹出), 需自行点击置位开关
+    .onClick(() => {
+      this.modelMenuOpen = !this.modelMenuOpen;
+    })
+    .bindPopup(this.modelMenuOpen, {
+      builder: this.buildModelProfilePopup,
+      placement: Placement.Top,
+      // 透明遮罩: 点击弹层外任意区域即收起, 且不压暗页面
+      mask: { color: Color.Transparent },
+      showInSubWindow: false,
+      onStateChange: (e: PopupStateChangeParam) => {
+        if (this.modelMenuOpen !== e.isVisible) {
+          this.modelMenuOpen = e.isVisible;
+        }
+      }
+    })
   }
 
+  // 模型选择弹层: 上半部分为 API 配置(模型)列表; 工作模式下横线分隔后额外显示能力预设(推理强度)选择
   @Builder
-  private buildModelProfileMenu() {
-    Menu() {
-      ForEach(this.vm.apiProfiles, (profile: ApiProfile) => {
-        MenuItem() {
-          Row() {
-            Text(profile.name)
-              .fontSize(14)
-              .fontColor($r('app.color.text_primary'))
-              .maxLines(1)
-              .textOverflow({ overflow: TextOverflow.Ellipsis })
-          }
-          .width('100%')
-          .height('100%')
-          .justifyContent(FlexAlign.Center)
+  private buildModelProfilePopup() {
+    Column() {
+      Scroll() {
+        Column() {
+          ForEach(this.vm.apiProfiles, (profile: ApiProfile) => {
+            Row() {
+              Text(profile.name)
+                .fontSize(14)
+                .fontColor($r('app.color.text_primary'))
+                .maxLines(1)
+                .textOverflow({ overflow: TextOverflow.Ellipsis })
+                .layoutWeight(1)
+              if (profile.id === this.vm.currentApiProfileId) {
+                Text('✓')
+                  .fontSize(14)
+                  .fontWeight(FontWeight.Bold)
+                  .fontColor($r('app.color.brand'))
+              }
+            }
+            .width('100%')
+            .height(42)
+            .padding({ left: 12, right: 12 })
+            .borderRadius(12)
+            .backgroundColor(profile.id === this.vm.currentApiProfileId ?
+              $r('app.color.brand_light') : Color.Transparent)
+            .onClick(() => {
+              this.vm.selectApiProfile(profile.id);
+              this.modelMenuOpen = false;
+              this.refreshTick++;
+            })
+          }, (profile: ApiProfile) => profile.id)
         }
         .width('100%')
-        .height(48)
-        .selected(profile.id === this.vm.currentApiProfileId)
-        .onChange(() => {
-          this.vm.selectApiProfile(profile.id);
-          this.refreshTick++;
-        })
-      }, (profile: ApiProfile) => profile.id)
+      }
+      .width('100%')
+      .constraintSize({ maxHeight: 240 })
+      .scrollBar(BarState.Off)
+
+      if (this.vm.workMode) {
+        // 推理强度区仅工作模式显示: 分隔横线 + 档位选择(聊天模式弹层保持只有模型列表)
+        Divider()
+          .strokeWidth(1)
+          .color($r('app.color.divider'))
+          .margin({ top: 6, bottom: 8 })
+
+        Text('能力预设')
+          .fontSize(11)
+          .fontColor($r('app.color.text_secondary'))
+          .width('100%')
+          .padding({ left: 12 })
+          .margin({ bottom: 8 })
+
+        Row({ space: 6 }) {
+          this.buildEffortChip('极高(Max)', 'max')
+          this.buildEffortChip('均衡(High)', 'high')
+          this.buildEffortChip('快速(Low)', 'low')
+        }
+        .width('100%')
+        .padding({ left: 6, right: 6, bottom: 2 })
+      }
     }
     .width(240)
-    .borderRadius(18)
-    .backgroundColor($r('app.color.surface'))
     .padding(6)
+    .backgroundColor($r('app.color.surface'))
+    .borderRadius(18)
     .shadow({ radius: 16, color: '#1A000000', offsetX: 0, offsetY: 6 })
+  }
+
+  // 推理强度档位(选中态保持弹层开启以便看到高亮反馈)
+  @Builder
+  private buildEffortChip(label: string, value: string) {
+    Text(label)
+      .fontSize(12)
+      .fontWeight(this.vm.reasoningEffort === value ? FontWeight.Medium : FontWeight.Normal)
+      .fontColor(this.vm.reasoningEffort === value ? $r('app.color.brand') : $r('app.color.text_secondary'))
+      .textAlign(TextAlign.Center)
+      .maxLines(1)
+      .height(30)
+      .layoutWeight(1)
+      .borderRadius(15)
+      .backgroundColor(this.vm.reasoningEffort === value ?
+        $r('app.color.brand_light') : $r('app.color.raised_surface'))
+      .onClick(() => {
+        this.vm.setReasoningEffort(value);
+        this.refreshTick++;
+      })
   }
 
   private getApiProfileOptions(): SelectOption[] {

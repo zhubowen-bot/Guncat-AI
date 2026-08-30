@@ -10,6 +10,8 @@ export class Constants {
   static readonly LS_KEY_API_PROFILES: string = 'guncat_api_profiles';
   static readonly LS_KEY_CURRENT_API_PROFILE_ID: string = 'guncat_current_api_profile';
   static readonly LS_KEY_THINKING_ENABLED: string = 'guncat_thinking_enabled';
+  // 推理强度('max' / 'high' / 'low'), 深度思考开启时作为 reasoning 强度参数下发
+  static readonly LS_KEY_REASONING_EFFORT: string = 'guncat_reasoning_effort';
   static readonly LS_KEY_WEB_SEARCH_ENABLED: string = 'guncat_web_search_enabled';
   static readonly LS_KEY_AUTO_READ_ENABLED: string = 'guncat_auto_read_enabled';
   static readonly LS_KEY_CURRENT_AGENT_ID: string = 'guncat_current_agent';
