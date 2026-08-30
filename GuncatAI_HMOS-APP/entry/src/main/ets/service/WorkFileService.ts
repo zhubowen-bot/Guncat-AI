@@ -10,6 +10,7 @@ import { ZipWriter, ZipEntry } from '../export/ZipWriter';
 import { PickedFile } from './FileService';
 import { OfficeReader } from './OfficeReader';
 import { PdfTextExtractor } from './PdfTextExtractor';
+import { WorkSkillService } from './WorkSkillService';
 import { arrayBufferToBase64 } from '../common/Utils';
 import { Constants } from '../common/Constants';
 
@@ -352,12 +353,21 @@ export class WorkFileService {
 
   // ===== Agent 工具实现 =====
 
+  // 工具是否只读(无任何工作区写入): 连续只读调用可安全并发执行
+  static isReadOnlyTool(name: string): boolean {
+    return name === 'list_files' || name === 'read_file' || name === 'parse_document' ||
+      name === 'search_files' || name === 'search_pdf' || name === 'view_image' ||
+      name === 'read_ppt' || name === 'list_skills' || name === 'load_skill';
+  }
+
   // 工具是否改变工作区内容(用于执行后刷新文件列表)
   static isMutatingTool(name: string): boolean {
     return name === 'write_file' || name === 'append_file' || name === 'delete_file' ||
       name === 'create_dir' || name === 'move_file' ||
       name === 'write_docx' || name === 'write_xlsx' || name === 'write_pptx' ||
-      name === 'todo_write' || name === 'record_search';
+      name === 'edit_ppt' || name === 'write_csv' || name === 'download_file' ||
+      name === 'write_svg' || name === 'todo_write' || name === 'record_search' ||
+      name === 'transform_file';
   }
 
   // 工具统一入口: 解析参数 JSON 并分发; 任何异常都转为 ERROR 结果送回模型
@@ -429,8 +439,9 @@ export class WorkFileService {
     if (name === 'search_files') {
       let query: string = WorkFileService.strArg(args, 'query', '');
       let rel: string = WorkFileService.strArg(args, 'path', '');
+      let glob: string = WorkFileService.strArg(args, 'glob', '');
       let cacheDir: string = context.cacheDir + '/work_office';
-      return await WorkFileService.toolSearch(root, rel, query, cacheDir);
+      return await WorkFileService.toolSearch(root, rel, query, cacheDir, glob);
     }
     if (name === 'view_image') {
       let rel: string = WorkFileService.strArg(args, 'path', '');
@@ -445,6 +456,21 @@ export class WorkFileService {
       let summary: string = WorkFileService.strArg(args, 'summary', '');
       let sources: string = WorkFileService.strArg(args, 'sources', '');
       return WorkFileService.toolRecordSearch(root, query, summary, sources);
+    }
+    if (name === 'list_skills') {
+      return WorkFileService.ok(WorkSkillService.listText());
+    }
+    if (name === 'load_skill') {
+      let skillName: string = WorkFileService.strArg(args, 'name', '');
+      let file: string = WorkFileService.strArg(args, 'file', '');
+      if (skillName === '') {
+        return WorkFileService.fail('缺少参数 name(技能 id, 见 list_skills)');
+      }
+      let loaded: string = await WorkSkillService.load(context, skillName, file);
+      if (loaded.startsWith('ERROR:')) {
+        return WorkFileService.fail(loaded.substring(6).trim());
+      }
+      return WorkFileService.ok(loaded);
     }
     return WorkFileService.fail('未知工具: ' + name);
   }
@@ -596,12 +622,16 @@ export class WorkFileService {
         contentStr = contentStr.substring(0, 200);
       }
       let statusStr: string = typeof status === 'string' ? status as string : 'pending';
-      if (statusStr !== 'pending' && statusStr !== 'in_progress' && statusStr !== 'done') {
+      if (statusStr === 'done') {
+        // 旧词表兼容: 历史清单与模型惯性都可能写 done, 统一归一为 completed 再落盘
+        statusStr = 'completed';
+      }
+      if (statusStr !== 'pending' && statusStr !== 'in_progress' && statusStr !== 'completed') {
         statusStr = 'pending';
       }
       let record: Record<string, Object> = { 'content': contentStr, 'status': statusStr };
       records.push(record);
-      let mark: string = statusStr === 'done' ? '[已完成]' :
+      let mark: string = statusStr === 'completed' ? '[已完成]' :
         (statusStr === 'in_progress' ? '[进行中]' : '[待开始]');
       lines.push(mark + ' ' + (i + 1).toString() + '. ' + contentStr);
     }
@@ -650,7 +680,8 @@ export class WorkFileService {
         if (contentStr === '') {
           continue;
         }
-        let mark: string = statusStr === 'done' ? '[x]' :
+        // done 是旧词表: 兼容升级前已落盘的清单文件
+        let mark: string = (statusStr === 'completed' || statusStr === 'done') ? '[x]' :
           (statusStr === 'in_progress' ? '[~]' : '[ ]');
         lines.push(mark + ' ' + contentStr);
       }
@@ -931,7 +962,7 @@ export class WorkFileService {
   }
 
   private static async toolSearch(root: string, rel: string, query: string,
-    cacheDir: string): Promise<ToolExecResult> {
+    cacheDir: string, glob: string): Promise<ToolExecResult> {
     if (query === '') {
       return WorkFileService.fail('缺少参数 query');
     }
@@ -952,17 +983,68 @@ export class WorkFileService {
       basePrefix = rel.replace(/\/+$/, '') + '/';
     }
     let qLower: string = query.toLowerCase();
+    let globs: RegExp[] = WorkFileService.globToRegexes(glob);
     let matches: string[] = [];
-    await WorkFileService.searchWalk(base, basePrefix, qLower, matches, cacheDir);
+    await WorkFileService.searchWalk(base, basePrefix, qLower, matches, cacheDir, globs);
     if (matches.length === 0) {
-      return WorkFileService.ok('未找到匹配 "' + query + '" 的内容');
+      let msg: string = '未找到匹配 "' + query + '" 的内容';
+      if (globs.length > 0) {
+        msg += '(文件名过滤: ' + glob + ')';
+      }
+      return WorkFileService.ok(msg);
     }
     let header: string = '共 ' + matches.length.toString() + ' 处匹配:';
+    if (globs.length > 0) {
+      header += '(文件名过滤: ' + glob + ')';
+    }
     return WorkFileService.ok(header + '\n' + matches.join('\n'));
   }
 
+  // glob 模式 -> 正则(整串匹配, 大小写不敏感); 支持逗号分隔多个模式; 目录遍历不受 glob 限制(仅过滤文件名)
+  private static globToRegexes(glob: string): RegExp[] {
+    let regs: RegExp[] = [];
+    let patterns: string[] = glob.split(',');
+    for (let i: number = 0; i < patterns.length; i++) {
+      let pattern: string = patterns[i].trim();
+      if (pattern === '') {
+        continue;
+      }
+      regs.push(WorkFileService.globRegexOne(pattern));
+    }
+    return regs;
+  }
+
+  private static globRegexOne(pattern: string): RegExp {
+    let re: string = '';
+    for (let i: number = 0; i < pattern.length; i++) {
+      let ch: string = pattern.charAt(i);
+      if (ch === '*') {
+        re += '.*';
+      } else if (ch === '?') {
+        re += '.';
+      } else if ('.+^${}()|[]\\'.indexOf(ch) !== -1) {
+        re += '\\' + ch;
+      } else {
+        re += ch;
+      }
+    }
+    return new RegExp('^' + re + '$', 'i');
+  }
+
+  private static matchGlob(name: string, globs: RegExp[]): boolean {
+    if (globs.length === 0) {
+      return true;
+    }
+    for (let i: number = 0; i < globs.length; i++) {
+      if (globs[i].test(name)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   private static async searchWalk(dir: string, prefix: string, qLower: string,
-    matches: string[], cacheDir: string): Promise<void> {
+    matches: string[], cacheDir: string, globs: RegExp[]): Promise<void> {
     if (matches.length >= Constants.WORK_SEARCH_MAX_MATCHES) {
       return;
     }
@@ -988,7 +1070,11 @@ export class WorkFileService {
         continue;
       }
       if (isDir) {
-        await WorkFileService.searchWalk(abs, prefix + names[i] + '/', qLower, matches, cacheDir);
+        await WorkFileService.searchWalk(abs, prefix + names[i] + '/', qLower, matches, cacheDir, globs);
+        continue;
+      }
+      // glob 文件名过滤(仅作用于文件, 目录仍递归进入)
+      if (!WorkFileService.matchGlob(names[i], globs)) {
         continue;
       }
       // Office 文档(zip 容器): 抽取文字层后按行匹配(行号与 read_file 分页一致)
@@ -1086,11 +1172,32 @@ export class WorkFileService {
         'to', WorkFileService.strProp('目标相对路径(可改名, 自动创建父目录)')),
       ['from', 'to']));
     defs.push(WorkFileService.makeTool('search_files',
-      '在工作区文本文件与 Office 文档(.docx/.xlsx/.pptx 自动抽取文字层)中按大小写不敏感的子串搜索, 返回 文件:行号: 内容 列表(最多 50 处)。Office 的行号对应 read_file 抽取文本的行, 定位后用 read_file 传 offset 精读该段。',
-      WorkFileService.props2(
+      '在工作区文本文件与 Office 文档(.docx/.xlsx/.pptx 自动抽取文字层)中按大小写不敏感的子串搜索, 返回 文件:行号: 内容 列表(最多 50 处)。glob 可选, 按文件名过滤(支持 * 与 ?, 多个模式用逗号分隔, 如 "*.md" 或 "*.png,*.jpg"), 目录仍会递归进入。Office 的行号对应 read_file 抽取文本的行, 定位后用 read_file 传 offset 精读该段。',
+      WorkFileService.props3(
         'query', WorkFileService.strProp('搜索关键词(子串匹配)'),
-        'path', WorkFileService.strProp('搜索的目录相对路径, 留空表示整个工作区')),
+        'path', WorkFileService.strProp('搜索的目录相对路径, 留空表示整个工作区'),
+        'glob', WorkFileService.strProp('可选: 文件名 glob 过滤, 如 "*.md" 或 "*.png,*.jpg"')),
       ['query']));
+    defs.push(WorkFileService.makeTool('write_csv',
+      '把表格数据生成 CSV 文件写入工作区(UTF-8, 默认带 BOM, Excel/WPS 打开中文不乱码; 字段按 RFC 4180 转义)。table 支持 Markdown 表格(| 分隔)、CSV 或 TSV, 与 write_xlsx 相同的解析。轻量结构化数据、后续还要程序化处理或再加工时选 CSV; 需要样式/多工作表/数字格式时用 write_xlsx。',
+      WorkFileService.props3(
+        'path', WorkFileService.strProp('目标文件相对路径(建议以 .csv 结尾)'),
+        'table', WorkFileService.strProp('表格数据文本: Markdown 表格、CSV 或 TSV, 首行为表头'),
+        'bom', WorkFileService.strProp('可选: 是否写 UTF-8 BOM, 默认 true; 供程序严格读取时可传 false')),
+      ['path', 'table']));
+    defs.push(WorkFileService.makeTool('download_file',
+      '把 http(s) 链接的文件下载到工作区(单文件 ≤20MB, 自动创建父目录)。联网搜索或资料中发现可用的图片/素材/数据文件时, 用它把原件拿到本地再用——write_pptx/write_docx 只能引用工作区里真实存在的图片, 不要编造路径。path 省略时按 URL 文件名自动命名(重名自动加序号)。返回会报告实际类型与大小; 若下载到的是网页(text/html)说明直链失效, 换链接重试。',
+      WorkFileService.props2(
+        'url', WorkFileService.strProp('要下载的 http(s) 链接'),
+        'path', WorkFileService.strProp('可选: 保存的相对路径(含文件名, 如 assets/logo.png); 省略按 URL 命名')),
+      ['url']));
+    defs.push(WorkFileService.makeTool('write_svg',
+      '把 SVG 源码保存为矢量文件并自动栅格化出 PNG 预览(<name>_preview.png)。生成图片的主要手段: 图标、示意图、流程图、信息图、插画都由你手写 SVG 完成。使用前先 load_skill("svg") 获取绘制规范与配方: 根元素必须带 xmlns 与 viewBox, 图形优先 path+fill 描边风格(少用依赖系统字体的 text 元素)。生成后必须 view_image 预览确认再交付; write_pptx 可直接引用 .svg(自动栅格化), write_docx 引用预览 PNG。',
+      WorkFileService.props3(
+        'path', WorkFileService.strProp('目标文件相对路径(以 .svg 结尾, 如 assets/icon.svg)'),
+        'svg', WorkFileService.strProp('完整的 SVG 源码文本'),
+        'width', WorkFileService.strProp('可选: 预览 PNG 的宽度(px), 默认 512, 高度按 viewBox 比例自动计算')),
+      ['path', 'svg']));
     defs.push(WorkFileService.makeTool('write_docx',
       '把 Markdown 内容生成 Word 文档(.docx)写入工作区。markdown 支持 标题/粗体斜体/列表/表格/引用/图片(data URL)。',
       WorkFileService.props2(
@@ -1103,12 +1210,36 @@ export class WorkFileService {
         'path', WorkFileService.strProp('目标文件相对路径(建议以 .xlsx 结尾)'),
         'table', WorkFileService.strProp('表格数据文本: Markdown 表格、CSV 或 TSV')),
       ['path', 'table']));
+    let tfProps: Record<string, Object> = {};
+    tfProps['input'] = WorkFileService.strProp('要转换的工作区数据文件相对路径(csv/tsv/markdown 表格/json/jsonl/纯文本行)');
+    tfProps['steps'] = WorkFileService.strProp('转换步骤 JSON 数组, 如 [{"op":"filter","expr":"col(\'年龄\') >= 18"},{"op":"derive","name":"全名","expr":"trim(col(\'姓\')) + \' \' + col(\'名\')}"]; 完整语法先 load_skill("data")');
+    tfProps['output'] = WorkFileService.strProp('可选: 结果写盘路径(.csv/.tsv/.json/.md/.xlsx/.txt); 省略则只预览前 3 行, 确认后再带 output 写盘');
+    tfProps['format'] = WorkFileService.strProp('可选: 输入格式 csv/tsv/md/json/jsonl/lines, 留空按内容自动识别');
+    tfProps['json_path'] = WorkFileService.strProp('可选: JSON 输入时定位数组的点分路径, 如 data.items(数组下标用 0 起数字段)');
+    tfProps['has_header'] = WorkFileService.strProp('可选: csv/tsv 首行是否为表头, 默认 true');
+    tfProps['delimiter'] = WorkFileService.strProp('可选: 输入分隔符单字符, 默认自动推断(逗号/分号/制表符)');
+    tfProps['bom'] = WorkFileService.strProp('可选: csv 输出是否带 UTF-8 BOM, 默认 true');
+    tfProps['preview'] = WorkFileService.strProp('可选: true 时即使给了 output 也只预览不写盘');
+    defs.push(WorkFileService.makeTool('transform_file',
+      '对工作区文本数据文件执行本地转换管道(数据不经过模型上下文, 是处理大文件与非标格式的专用工具): 过滤/派生列/重算列/正则提取/拆列/去重/排序/替换/数值化, 以及 CSV↔TSV↔JSON↔Markdown表格↔XLSX 互转。流程: 先省略 output 预览前 3 行 → 修改 steps → 带 output 写盘 → read_file 抽查。全部操作与表达式语法见 load_skill("data")。限制: 输入 ≤2MB 文本、≤10 万行、steps ≤30 步。小表格直接 write_file/write_csv 更快, 不要滥用。',
+      tfProps, ['input', 'steps']));
     defs.push(WorkFileService.makeTool('write_pptx',
-      '把大纲生成 PowerPoint 演示文稿(.pptx, 16:9)写入工作区。outline 格式: "# 页标题" 开启新页, 其后每行一个要点(支持 "- " 前缀)。',
+      '生成/重建 PowerPoint 演示文稿(.pptx, 16:9), 三种输入二选一: (1) deck: Deck JSON 结构化源, 支持 cover/toc/section/content/two-col/image-text/image/image-full/table/chart/quote/end/custom 13 种版式、主题、图表、表格、图片、演讲备注——正式 PPT 用它, 完整语法先 load_skill("ppt"); (2) deck_file: 工作区中 Deck JSON 文件的路径(长 deck 先 write_file/append_file 分块写好再导出, 改内容后可重复导出); (3) outline: 简易大纲("# 页标题"开新页, "## 标题"开分节页, "- 要点"一级要点, 缩进"- 要点"二级要点)。theme 可选主题预设, title 为演示文稿标题。',
+      WorkFileService.props3(
+        'path', WorkFileService.strProp('目标文件相对路径(以 .pptx 结尾)'),
+        'deck', WorkFileService.strProp('Deck JSON 字符串(结构化源, 与 deck_file/outline 三选一)'),
+        'deck_file', WorkFileService.strProp('工作区中 Deck JSON 文件路径(与 deck/outline 三选一)')),
+      ['path']));
+    defs.push(WorkFileService.makeTool('read_ppt',
+      '读回演示文稿的 Deck JSON 源。本应用生成的 .pptx 无损还原; 外来 pptx 为近似导入(文本/表格/版面保留, 图片与图表数据不保留)。编辑或仿制前先读它。',
+      WorkFileService.props1('path', WorkFileService.strProp('要读取的 .pptx 相对路径')),
+      ['path']));
+    defs.push(WorkFileService.makeTool('edit_ppt',
+      '对工作区已有的 .pptx 应用结构化操作后保存(外来 pptx 会先自动备份原文件)。ops 为 JSON 数组, 支持: add_slide{slide,插入位置 index?}/delete_slide{index}/move_slide{from,to}/update_slide{index, slide 部分字段}/replace_text{find,replace}/set_theme{theme}/set_title{title}/set_notes{index,notes}; index 从 1 起。改单页内容用 update_slide, 全局改词用 replace_text。',
       WorkFileService.props2(
-        'path', WorkFileService.strProp('目标文件相对路径(建议以 .pptx 结尾)'),
-        'outline', WorkFileService.strProp('演示文稿大纲文本')),
-      ['path', 'outline']));
+        'path', WorkFileService.strProp('要编辑的 .pptx 相对路径'),
+        'ops', WorkFileService.strProp('操作 JSON 数组, 如 [{"op":"update_slide","index":2,"slide":{"title":"新标题"}}]')),
+      ['path', 'ops']));
     defs.push(WorkFileService.makeTool('parse_document',
       '解析 PDF 的文本内容(本地解析, 按页分批返回)。返回 总页数 与 [第 N 页] 标注的文本; 超长 PDF 单次只返回一部分, 末尾附"未读完"提示, 按提示传 page 逐批读完即可, 不要重复调用同一页。加密 PDF 与扫描件无法解析。.docx/.xlsx/.pptx 优先用 read_file。',
       WorkFileService.props3(
@@ -1134,7 +1265,7 @@ export class WorkFileService {
       WorkFileService.props1('path', WorkFileService.strProp('图片文件相对路径(png/jpg/jpeg/webp/gif/bmp)')),
       ['path']));
     defs.push(WorkFileService.makeTool('todo_write',
-      '创建/更新当前任务的任务清单。复杂任务开始时先建立清单, 每完成一项立即更新状态; 简单任务(1-2步)不必建清单。todos 为 JSON 数组, status 取 pending/in_progress/done。',
+      '创建/更新当前任务的任务清单。复杂任务开始时先建立清单, 每完成一项立即更新状态; 简单任务(1-2步)不必建清单。todos 为 JSON 数组, status 取 pending/in_progress/completed。',
       WorkFileService.props1('todos', WorkFileService.strProp('任务清单 JSON 数组, 如 [{"content":"解析数据","status":"in_progress"},{"content":"生成报告","status":"pending"}]')),
       ['todos']));
     defs.push(WorkFileService.makeTool('record_search',
@@ -1144,7 +1275,22 @@ export class WorkFileService {
         'summary', WorkFileService.strProp('本次搜索获得的关键结论或信息要点(简明扼要)'),
         'sources', WorkFileService.strProp('主要来源 URL, 多个用换行分隔, 可省略')),
       ['query', 'summary']));
+    defs.push(WorkFileService.makeTool('list_skills',
+      '列出当前可用的技能(领域操作指南)。接到 PPT/演示文稿等对应任务时, 先加载对应技能再动手。',
+      WorkFileService.props0(),
+      []));
+    defs.push(WorkFileService.makeTool('load_skill',
+      '加载技能文档全文。name 为技能 id(见 list_skills); file 可选, 传技能的参考文件名(如 reference/deck-dsl.md)加载深入资料, 省略时返回技能正文 SKILL.md。',
+      WorkFileService.props2(
+        'name', WorkFileService.strProp('技能 id, 如 ppt'),
+        'file', WorkFileService.strProp('可选: 技能内的参考文件相对路径, 省略返回 SKILL.md')),
+      ['name']));
     return defs;
+  }
+
+  // 无参数工具的 properties(空对象)
+  private static props0(): Record<string, Object> {
+    return {};
   }
 
   // 单参数 properties 构造
@@ -1223,6 +1369,18 @@ export class WorkFileService {
     return buffer;
   }
 
+  // 复制文件(edit_ppt 备份外来 pptx 用); 目标存在则覆盖
+  static copyFileSync(src: string, dst: string): void {
+    let buffer: ArrayBuffer = WorkFileService.readBytesPublic(src, 64 * 1024 * 1024);
+    let file: fileIo.File = fileIo.openSync(dst,
+      fileIo.OpenMode.READ_WRITE | fileIo.OpenMode.CREATE | fileIo.OpenMode.TRUNC);
+    try {
+      fileIo.writeSync(file.fd, buffer);
+    } finally {
+      fileIo.closeSync(file.fd);
+    }
+  }
+
   private static strArg(args: Record<string, Object>, key: string, defVal: string): string {
     let v: Object = args[key];
     if (typeof v === 'string') {
@@ -1297,8 +1455,8 @@ export class WorkFileService {
     return new Uint8Array(buffer);
   }
 
-  // 写入字节; 防御 Uint8Array 与底层 ArrayBuffer 不对齐的情况(与 DocxExporter 同策略)
-  private static writeBytes(abs: string, bytes: Uint8Array): void {
+  // 写入字节(公开给 WorkToolRunner: SVG 栅格化临时文件等); 防御 Uint8Array 与底层 ArrayBuffer 不对齐的情况(与 DocxExporter 同策略)
+  static writeBytes(abs: string, bytes: Uint8Array): void {
     let buffer: ArrayBuffer = bytes.buffer as ArrayBuffer;
     if (bytes.byteOffset !== 0 || bytes.byteLength !== buffer.byteLength) {
       buffer = bytes.slice().buffer as ArrayBuffer;
@@ -1324,7 +1482,8 @@ export class WorkFileService {
     }
   }
 
-  private static sanitizeFileName(name: string): string {
+  // 文件名净化(公开给 WorkToolRunner: download_file 自动命名等)
+  static sanitizeFileName(name: string): string {
     let out: string = name.replace(/\//g, '_').replace(/\\/g, '_').trim();
     if (out === '' || out === '.' || out === '..') {
       out = '未命名文件';
@@ -1332,8 +1491,8 @@ export class WorkFileService {
     return out;
   }
 
-  // 重名自动追加序号: a.csv → a_1.csv
-  private static uniqueName(root: string, name: string): string {
+  // 重名自动追加序号: a.csv → a_1.csv(公开给 WorkToolRunner)
+  static uniqueName(root: string, name: string): string {
     let candidate: string = name;
     let n: number = 1;
     while (fileIo.accessSync(root + '/' + candidate)) {

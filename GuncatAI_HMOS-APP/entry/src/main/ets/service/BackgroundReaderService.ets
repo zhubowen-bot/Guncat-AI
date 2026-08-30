@@ -12,7 +12,7 @@ export class BackgroundReaderService {
     }
     if (BackgroundReaderService.session === null) {
       BackgroundReaderService.session =
-        await avSession.createAVSession(context, 'GuncatReader', 'audio');
+        await avSession.createAVSession(context, 'Guncat Work Reader', 'audio');
       await BackgroundReaderService.session.activate();
     }
     let playbackState: avSession.AVPlaybackState = {

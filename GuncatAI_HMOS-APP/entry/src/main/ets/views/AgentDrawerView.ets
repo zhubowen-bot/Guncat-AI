@@ -30,7 +30,7 @@ export struct AgentDrawerView {
             .borderRadius(16)
             .objectFit(ImageFit.Cover)
             .backgroundColor($r('app.color.brand_light'))
-          Text('Guncat AI')
+          Text('Guncat Work')
             .fontSize(17)
             .fontWeight(FontWeight.Bold)
             .fontColor($r('app.color.text_primary'))

@@ -304,7 +304,7 @@ struct ChatPage {
                   .margin({ left: 10 })
                 ToggleSwitch({
                   isOn: true,
-                  label: '工作模式',
+                  label: '工作区',
                   // 点击不再直接退出工作模式, 而是在胶囊上方弹出工作区面板(退出入口在面板里)
                   onChange: (_v: boolean) => {
                     this.workspacePopupOpen = !this.workspacePopupOpen;
@@ -946,13 +946,13 @@ struct ChatPage {
           this.heroTargetY = this.emptyStateBaseY + localY;
           this.heroTargetSize = 96;
         })
-      Text(this.vm.currentAgent !== null ? this.vm.currentAgent.name : 'Guncat AI')
+      Text(this.vm.currentAgent !== null ? this.vm.currentAgent.name : 'Guncat Work')
         .fontSize(22)
         .fontWeight(FontWeight.Bold)
         .fontColor($r('app.color.text_primary'))
         .margin({ bottom: 12 })
       Text(this.vm.workMode ?
-        '工作模式: Agent 将自动调用工具、读写沙箱工作区文件, 完成复杂的长程任务' :
+        'Guncat Harness：自主调度数十种工具，直接读写工作区文件，单次任务可连续运行上百轮会话，独立完成编程级复杂度的长程任务。' :
         (this.vm.currentAgent !== null ? this.vm.currentAgent.description : '选择一个智能体开始对话'))
         .fontSize(14)
         .fontColor($r('app.color.text_secondary'))
@@ -1044,18 +1044,11 @@ struct ChatPage {
     Column({ space: 14 }) {
       // 时间线头(全时间线唯一的标识, 不再逐轮出现头像)
       Row({ space: 10 }) {
-        Column() {
-          Image($r('app.media.ic_work'))
-            .width(20)
-            .height(20)
-            .fillColor($r('app.color.brand'))
-        }
-        .width(38)
-        .height(38)
-        .borderRadius(12)
-        .backgroundColor($r('app.color.brand_light'))
-        .justifyContent(FlexAlign.Center)
-        .alignItems(HorizontalAlign.Center)
+        // 机器人标识: 无背景底色, 放大显示
+        Image($r('app.media.ic_work'))
+          .width(32)
+          .height(32)
+          .fillColor($r('app.color.brand'))
 
         Column() {
           Text('工作模式')
@@ -1145,7 +1138,7 @@ struct ChatPage {
     }
     this.showToast('正在导出…');
     let context: common.UIAbilityContext = getContext(this) as common.UIAbilityContext;
-    DocxExporter.exportToDocx(context, msg.content, 'Guncat AI 对话导出').then((fileName: string) => {
+    DocxExporter.exportToDocx(context, msg.content, 'Guncat Work 对话导出').then((fileName: string) => {
       this.showToast('已导出 ' + fileName);
     }).catch((error: Error) => {
       this.showToast('导出失败: ' + error.message);

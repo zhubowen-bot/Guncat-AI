@@ -57,7 +57,7 @@ export struct AboutPanel {
               .objectFit(ImageFit.Cover)
               .backgroundColor($r('app.color.brand_light'))
               .margin({ top: 8, bottom: 12 })
-            Text('Guncat AI')
+            Text('Guncat Work')
               .fontSize(20)
               .fontWeight(FontWeight.Bold)
               .fontColor($r('app.color.text_primary'))
@@ -88,7 +88,7 @@ export struct AboutPanel {
               context.openLink(REPO_URL);
             })
 
-            Text('© 2026 Guncat AI')
+            Text('© 2026 Guncat Work (formerly Guncat AI)')
               .fontSize(12)
               .fontColor($r('app.color.text_secondary'))
               .margin({ bottom: 16 })

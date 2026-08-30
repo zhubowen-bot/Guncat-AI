@@ -1,8 +1,8 @@
-# Guncat AI
+# Guncat Work
 
 > [中文](README.md) | English
 
-Guncat AI is a native HarmonyOS AI chat client built with ArkTS and ArkUI. Its primary interface is not hosted in a WebView.
+Guncat Work is a native HarmonyOS AI chat client built with ArkTS and ArkUI. Its primary interface is not hosted in a WebView.
 
 Current app version: `6.0.0`
 
@@ -78,7 +78,7 @@ Rendered with the native `@luvi/lv-markdown-in` component, with support for:
 The app is registered as a HarmonyOS system share target:
 
 - Receives images, text, and general files, up to five items at a time.
-- Guncat AI can be selected from the Gallery or file manager share sheet.
+- Guncat Work can be selected from the Gallery or file manager share sheet.
 - Shared items are added to the current chat's pending attachment area and are never sent automatically.
 - Uses Share Kit UTD matching and `systemShare.getSharedData()` for reception.
 
@@ -114,9 +114,10 @@ The final read-aloud implementation uses HarmonyOS CoreSpeechKit `textToSpeech`.
 Work mode is an **independent identity parallel to the chat agents** — the 🛠 "Work Mode" entry at the top of the agent list in the drawer. It opens an Agent loop with a per-conversation local sandbox workspace and tool-calling capability, allowing the agent to autonomously complete multi-step, long-horizon tasks. See "[Work mode architecture & maintenance guide](#work-mode-architecture--maintenance-guide)" below.
 
 - **Sandbox workspace**: each work conversation maps to `filesDir/workspaces/<convId>/`, with upload, `.zip` export, and clear actions. Everything stays inside the app sandbox plus system safe components (document picker) — **no new permissions**.
-- **14 local tools**: file CRUD (list/read/write/append/delete/create_dir/move/search), task checklist (`todo_write`), image viewing (`view_image`, routed to the main model's multimodal vision), PDF parsing (`parse_document` + automatic `read_file` routing), and Office generation (`write_docx` / `write_xlsx` / `write_pptx`).
+- **25 local tools**: file CRUD (list/read/write/append/delete/create_dir/move/search, with `glob` filename filtering on search_files), task checklist (`todo_write`), image viewing (`view_image`, routed to the main model's multimodal vision), web download (`download_file`, pulls linked files into the workspace), PDF parsing (`parse_document` + automatic `read_file` routing), Office generation (`write_docx` / `write_xlsx` / `write_csv`), data pipeline (`transform_file`, local cleaning/transformation/conversion of large files without entering model context), PPT read/write/edit (`write_pptx` / `read_ppt` / `edit_ppt`, on a Deck JSON intermediate layer), SVG image generation (`write_svg`, vector output + PNG preview), and the skill system (`list_skills` / `load_skill`, on-demand domain guides).
+- **Skill system**: domain operation guides are packaged under `rawfile/skills/<id>/` (SKILL.md + reference/*.md). The system prompt keeps only a one-line trigger (preserving the byte-stable KV-cache prefix); the model loads skills on demand via `list_skills`/`load_skill`. The bundled `ppt` skill covers the Deck JSON syntax, design guidelines, themes, and self-check lists; the `svg` skill covers SVG authoring rules, the "generate → preview → iterate" workflow, and recipes for icons/flowcharts/infographics.
 - **Local parsing engine**: `.docx/.xlsx/.pptx/.pdf` text is extracted entirely on-device — no multimodal parsing API and no quota consumption.
-- **Task checklist discipline**: complex tasks start with a `todo_write` checklist whose state is injected into the system prompt each turn and updated item by item.
+- **Task checklist discipline**: complex tasks start with a `todo_write` checklist; checklist and workspace state reach the model through a "runtime context" snapshot appended to the tail of the conversation. Progress is updated item by item.
 - **Codex-style timeline**: each turn is its own message, laid out chronologically as "thinking → tool steps → answer" inside a single-container timeline; tool steps expand to show arguments and results.
 - **Three-protocol tool calling**: OpenAI Completions / OpenAI Responses / Anthropic Messages all support streaming function calling; the web-search toggle remains in the tool row (the server-side search tool coexists with client tools).
 
@@ -188,9 +189,10 @@ entry/src/main/ets/
 │   └── ChatViewModel.ets           # Chat state + work-mode Agent Loop driver (note: .ets)
 ├── service/
 │   ├── ChatService.ts              # Three-protocol SSE (parsers exported for AgentLoopService)
-│   ├── AgentLoopService.ts         # Work mode: per-turn tool-calling request + system prompt
+│   ├── AgentLoopService.ts         # Work mode: per-turn tool-calling request + system prompt (static, cache red line)
 │   ├── WorkToolRunner.ets          # Unified tool dispatch (capabilities requiring .ets modules)
-│   ├── WorkFileService.ts          # Sandbox workspace + file tools + tool schemas (toolDefs)
+│   ├── WorkFileService.ts          # Sandbox workspace + file/skill tools + tool schemas (toolDefs)
+│   ├── WorkSkillService.ts         # Skill registry (registry) + rawfile skill-doc loading (list/load)
 │   ├── OfficeReader.ts             # Local docx/xlsx/pptx text extraction (zlib unpack + XML scan)
 │   ├── PdfTextExtractor.ts         # Local PDF text extraction (byte-level objects/pages/ToUnicode)
 │   ├── Flate.ts                    # Pure-TS DEFLATE/zlib inflate (SDK zlib is file-level only)
@@ -205,7 +207,13 @@ entry/src/main/ets/
 ├── export/
 │   ├── DocxExporter.ets            # Markdown→docx (includes buildDocxBytes for work mode)
 │   ├── XlsxExporter.ets            # Table→xlsx (includes buildXlsxFromRows)
-│   ├── PptxBuilder.ets             # Outline→pptx (section pages / two bullet levels / adaptive sizes)
+│   ├── CsvWriter.ts                # Rows→CSV (RFC 4180 escaping + optional BOM, pure logic)
+│   ├── DeckModel.ets               # PPT intermediate layer: Deck JSON parse/validate/edit ops (pure logic, no Kit API)
+│   ├── PptxThemes.ets              # 8 theme presets + semantic-color resolution (pure logic)
+│   ├── PptxCharts.ets              # Chart part XML (bar/line/area/pie/doughnut, pure logic)
+│   ├── PptxImage.ets               # Image resolution (workspace/data URL/http + dimension probing)
+│   ├── PptxBuilder.ets             # Deck→pptx renderer (13 layouts / embedded deck source / notes)
+│   ├── PptxImporter.ets            # pptx→Deck (lossless restore from embedded source / XML import)
 │   ├── OoxmlBuilder.ets / MarkdownParser.ets / OmmlConverter.ets / TableHtmlParser.ets / XmlUtil.ets
 │   └── ZipWriter.ts                # STORE-method zip writer (.ts: reusable from TS modules)
 ├── data/
@@ -215,6 +223,19 @@ entry/src/main/ets/
 │   └── Agent.ts / ApiConfig.ts / ApiProfile.ts / MultimodalConfig.ts
 └── common/
     ├── Constants.ts / Types.ts / Utils.ts / MarkdownSanitizer.ts
+
+entry/src/main/resources/rawfile/
+├── agents.json + *_prompt*.md      # Chat agent definitions and prompt files
+└── skills/                         # Work-mode skills (loaded on demand via load_skill, see "3.2 Skill system")
+    ├── ppt/
+    │   ├── SKILL.md                # PPT skill body (workflows / quick reference / self-check list)
+    │   └── reference/              # deck-dsl.md / design-guide.md / themes.md
+    └── svg/
+        ├── SKILL.md                # SVG image-generation skill (generate→preview→iterate workflow / self-check)
+        └── reference/              # svg-craft.md / svg-recipes.md
+
+test/
+└── pptx-harness/                   # Offline verification harness for PPT/CSV (Node build + python-pptx checks + PNG review)
 ```
 
 The project follows an MVVM-like separation:
@@ -241,7 +262,9 @@ User task → ChatViewModel.executeWorkLoop
   → AgentLoopService.runTurn (three-protocol SSE + streamed tool-call accumulation)
   → WorkToolRunner.execute → WorkFileService.executeTool
       → OfficeReader / PdfTextExtractor (reading)
-      → DocxExporter / XlsxExporter / PptxBuilder (generation)
+      → DocxExporter / XlsxExporter (generation)
+      → PptxBuilder / PptxImporter / PptxImage / DeckOps (PPT write/read/edit, see "3.1")
+      → WorkSkillService (list_skills / load_skill, see "3.2")
   → Tool results written back to ToolCallRecord → injected into next request history
   → one @Observed Message per turn (thinking/tools/answer)
   → ChatPage.buildWorkTimeline → WorkTurnView
@@ -260,10 +283,11 @@ User task → ChatViewModel.executeWorkLoop
    - Supports Chat Completions and Responses API.
    - Parses response deltas and handles network/server errors.
 
-3. **AgentLoopService / WorkToolRunner / WorkFileService (work-mode trio)**
+3. **AgentLoopService / WorkToolRunner / WorkFileService / WorkSkillService (work-mode quartet)**
    - `AgentLoopService`: one LLM turn — three-protocol request bodies (tool definitions, image messages), streamed tool-call accumulation, and the work-mode system prompt.
-   - `WorkToolRunner`: unified tool dispatch entry implementing capabilities that require `.ets` modules (write_docx/xlsx/pptx, parse_document).
+   - `WorkToolRunner`: unified tool dispatch entry implementing capabilities that require `.ets` modules (write_docx/xlsx, write_pptx/read_ppt/edit_ppt, parse_document).
    - `WorkFileService`: all sandbox workspace file operations, file-tool implementations, tool schemas (`toolDefs()`), and workspace zip export.
+   - `WorkSkillService`: the skill registry (`registry()`) and rawfile skill-doc loading for `list_skills`/`load_skill`.
 
 4. **MultimodalService**
    - Processes images, text, PDFs, and Office documents.
@@ -288,6 +312,11 @@ User task → ChatViewModel.executeWorkLoop
 
 Work mode is a standalone agent execution environment: a virtual agent + a per-conversation sandbox workspace + a multi-turn tool-calling loop. This section targets maintainers and covers module responsibilities, data flow, and extension recipes.
 
+> **Maintenance doc map** (which doc to read for which change):
+> - This section (README) — architecture, plus the design and extension recipes for the three systems: tools, skills, and the PPT pipeline.
+> - `test/pptx-harness/README.md` — the offline verification harness for the PPT pipeline and CSV writer (Node build + python-pptx checks + PNG review). Mandatory after touching anything under `export/`.
+> - `entry/src/main/resources/rawfile/skills/` — the **model-facing** operation guides (`ppt`: deck-dsl syntax / design guidelines / themes; `svg`: authoring rules / image-generation recipes). They evolve in lockstep with the tools and double as reusable assets portable to other agent frameworks.
+
 ### 1. Identity and conversation model
 
 - **Virtual agent**: `Constants.WORK_AGENT_ID = 'work'`. Injected at the top of the agent list on launch by `ChatViewModel.buildWorkAgent()` and rendered with a 🛠 badge by `AgentDrawerView` (special case for `id === 'work'`).
@@ -301,23 +330,29 @@ Work mode is a standalone agent execution environment: a virtual agent + a per-c
 ```text
 for step in 1..WORK_MAX_STEPS(200, runaway safeguard):
   1. Create a new assistant message (this turn's thinking/tools/answer attach to it)
-  2. Rebuild the system prompt = discipline + workspace file tree + task checklist (refreshed each turn)
-  3. AgentLoopService.runTurn (three-protocol streaming request, with tool definitions)
-  4. No tool calls → this turn is the final answer, stop
-  5. Tool calls → execute each one (WorkToolRunner), write results back into ToolCallRecord
+  2. Budget check: when over 850K tokens (1M×0.85, usage-anchored), prune oversized early
+     tool results first, then compress older history into a state digest (model call only if pruning is not enough)
+  3. Append the "runtime context" snapshot (date + file tree + task checklist) to the tail of
+     the history (skipped when unchanged)
+  4. AgentLoopService.runTurnWithRetry (three-protocol streaming request with tool definitions;
+     429/5xx/network/empty responses retried with exponential backoff)
+  5. No tool calls → this turn is the final answer, stop
+  6. Tool calls → consecutive read-only calls run concurrently, the rest sequentially
+     (WorkToolRunner); results written back into ToolCallRecord
      - Mutating tools refresh the workspace file panel
      - A successful view_image injects a multimodal user message (in-memory only)
-  6. This turn (assistant + tool results) enters the request history; continue
+  7. This turn (assistant + tool results) enters the request history; continue
 ```
 
 - **One message per turn** is the foundation of the timeline UI: the message list is naturally the chronological "thinking→tools→answer" stream, instead of one big aggregated message.
-- **Automatic context compaction**: when the request history exceeds `WORK_HISTORY_MAX_CHARS` (default 600K chars ≈ hundreds of thousands of tokens, sized for 1M-context models), the older history is summarized by the model into a compact "state digest" (goal/progress/key findings/produced files/decisions and failures, ≤2400 chars) that replaces the original history; the most recent 12 messages are kept verbatim. If compaction fails or the history is still over budget, the loop falls back to trimming oldest-first. The task checklist and workspace files are never compacted and can always be re-read via `read_file` — this is what lets long tasks survive context limits. The timeline shows an "early history compacted" note.
+- **Automatic context compaction (cache-aware, aligned with DeepSeek Harness)**: the budget is anchored to the previous request's real prompt tokens (usage-anchored) against `WORK_CONTEXT_WINDOW_TOKENS`×0.85 (1M×0.85 = 850K tokens), falling back to the session's measured chars→tokens ratio when usage data is absent. When over budget, a two-stage pipeline runs: first a model-free prune of oversized early tool results (head/tail excerpts with precise omission notices); if that is not enough, older history is summarized by the model into a compact "state digest" (≤2400 chars, keeping the most recent 12 messages verbatim) — the summarization request reuses the full prefix (static system prompt + tool definitions + history), so it is a continuation of the last real request for the model-side KV cache and the prefix is billed as cache hits. If the digest fails or the history is still over budget, the loop falls back to trimming oldest-first. If a request fails outright with a context-overflow error, the history is force-compacted and the request retried once. The task checklist and workspace files are never compacted and can always be re-read via `read_file` — this is what lets long tasks survive context limits. The timeline shows an "early history compacted" note.
+- **Prefix-cache design**: the system prompt is fully static (built once, never rebuilt); date / file tree / task checklist travel in a "runtime context" snapshot user message appended to the tail of the history, and only when its content changes; history grows strictly append-only (compaction is the only operation that rewrites it) — consecutive requests therefore share a byte-identical prefix, the model-side KV cache hits across turns, and only a small tail needs recomputation after file writes.
 - **Cancellation**: `stopStreaming()` calls both `ChatService.abort()` and `AgentLoopService.abort()`; an interrupted turn with no output is removed, otherwise a "⏹ Task stopped" note is appended.
 - **Step safeguard**: `WORK_MAX_STEPS(200)` exists purely as a runaway guard (preventing endless tool-call loops from burning tokens); normal long tasks never reach it — when triggered, a "send 'continue' to proceed" note is appended to the last message.
 
-### 3. Tool system (14 tools)
+### 3. Tool system (25 tools)
 
-Dispatch chain: `ChatViewModel` → `WorkToolRunner.execute()` (.ets entry) → Office generation/parse_document implemented locally, everything else delegated to `WorkFileService.executeTool()` (.ts).
+Dispatch chain: `ChatViewModel` → `WorkToolRunner.execute()` (.ets entry) → Office generation/parse_document/PPT/transform_file implemented locally, everything else delegated to `WorkFileService.executeTool()` (.ts).
 
 | Tool | Implementation | Notes |
 | --- | --- | --- |
@@ -326,22 +361,185 @@ Dispatch chain: `ChatViewModel` → `WorkToolRunner.execute()` (.ets entry) → 
 | `read_file` | WorkFileService.toolRead | Plain text direct read; `.docx/.xlsx/.pptx`→OfficeReader, `.pdf`→PdfTextExtractor |
 | `write_file` / `append_file` | WorkFileService.toolWrite | Overwrite/append text (512KB cap, parent dirs auto-created) |
 | `delete_file` / `create_dir` / `move_file` | toolDelete / toolMkdir / toolMove | Recursive delete / mkdir / move (moveFileSync/moveDirSync) |
-| `search_files` | WorkFileService.toolSearch | Case-insensitive substring search over text files, with line numbers |
+| `search_files` | WorkFileService.toolSearch | Case-insensitive substring search over text files, with line numbers; optional `glob` filename filter (`*`/`?`, comma-separated patterns), directories still recursed |
 | `view_image` | WorkFileService.toolViewImage | Image→dataUrl (≤8MB); the loop injects it as the next multimodal message |
+| `download_file` | WorkToolRunner.toolDownloadFile | Downloads an http(s) file into the workspace (≤20MB; type sniffing + html warning; auto or explicit naming) |
 | `parse_document` | WorkToolRunner.toolParseDocument | Full PDF text (local, 3× output cap) |
 | `write_docx` | toolWriteDocx → DocxExporter.buildDocxBytes | Markdown→Word |
 | `write_xlsx` | toolWriteXlsx → XlsxExporter.buildXlsxFromRows | Markdown table/CSV/TSV→Excel |
-| `write_pptx` | toolWritePptx → PptxBuilder.buildPptxBytes | Outline→PPT (`#` content page / `##` section page / `-` bullets / indented `-` sub-bullets) |
+| `write_csv` | toolWriteCsv → CsvWriter.buildCsvBytes | Markdown table/CSV/TSV→CSV (RFC 4180 escaping, UTF-8 BOM by default; input parsing goes through CsvParser, quoted fields handled correctly) |
+| `transform_file` | WorkToolRunner.toolTransformFile → DataPipeline | **Local data pipeline** (data never enters model context): CSV/TSV/MD/JSON/JSONL/lines input; filter/derive/regex-extract/split/dedupe/sort plus CSV↔TSV↔JSON↔MD↔XLSX conversion; restricted DSL (whitelisted ops + expression evaluator, no I/O), preview before write; syntax via `load_skill("data")`; ≤2MB/100k rows/30 steps |
+| `write_pptx` | toolWritePptx → PptxBuilder.buildPptxBytes | **Deck JSON / deck file / outline → PPT** (see the next section) |
+| `read_ppt` | toolReadPpt → PptxImporter.import | .pptx → Deck JSON source (lossless restore for app-generated files, approximate import otherwise) |
+| `edit_ppt` | toolEditPpt → PptxImporter + DeckOps + PptxBuilder | Restore → apply ops → rebuild (foreign files are backed up first) |
+| `write_svg` | WorkToolRunner.toolWriteSvg → SvgUtil | SVG source → workspace .svg + rasterized PNG preview; xmlns/no-script validation, missing width/height auto-filled from viewBox (required by the device engine), precise diagnostics on decode failure |
+| `list_skills` / `load_skill` | WorkFileService.dispatchTool → WorkSkillService | Skill list and on-demand skill-doc loading (the ppt, svg, and data skills under rawfile/skills/) |
 
 Path safety: every tool path passes through `resolveSafe()` — absolute paths, drive letters, and `..` traversal are rejected; operations stay inside `filesDir/workspaces/<convId>/`.
 
+### 3.1 PPT pipeline (Deck JSON intermediate layer)
+
+The design mirrors open-kimi-ppt-skill's PPTD philosophy: **the AI-editable intermediate layer is decoupled from the exporter**. The AI only ever faces the Deck JSON layer — "generate a PPT" = write a Deck → render; "edit a PPT" = restore the Deck → apply ops → rebuild. The exporter knows nothing about prompts, only about the Deck structure, so its behavior is fully deterministic and testable offline.
+
+```text
+write_pptx ──┐                                      ┌─ write_pptx (rebuild the pptx)
+deck JSON ───┼→ PptxBuilder (renders 13 layouts) → .pptx │
+             │    └─ embedded docProps/deck.json source  │
+read_ppt  ───┤                                     └─ edit_ppt (DeckOps apply ops then rebuild)
+             └─→ PptxImporter (lossless restore from embedded source / approximate XML import)
+```
+
+#### Module responsibilities & public API (entry/src/main/ets/export/)
+
+| File | Responsibility | Key public members |
+| --- | --- | --- |
+| `DeckModel.ets` | Intermediate-layer model + JSON parsing/validation + edit ops (**pure logic, no Kit API**) | `Deck/DeckSlide/DeckBullet/DeckChart/DeckTable/DeckElement/DeckBackground`, `DeckParser.parse`, `DeckOutline.parse` (legacy outline compat), `DeckOps.apply`, `DECK_LAYOUTS`, `DECK_MAX_SLIDES` |
+| `PptxThemes.ets` | 8 theme presets + semantic/hex color resolution (**pure logic**) | `PptxThemes.resolve` (Deck→ThemeColors), `resolveColor(colors, spec, fallback)` (primary/accent/bg/surface/title/body/sub/faint/onPrimary/white/dark/light or hex), `ThemeColors` |
+| `PptxCharts.ets` | Chart part XML (bar/line/area/pie/doughnut, data embedded as numCache/strCache, **pure logic**) | `PptxCharts.buildXml(chart, colors)` |
+| `PptxImage.ets` | Image reference resolution: workspace path / data URL / http(s), mime sniffing + PNG/JPEG/GIF/BMP dimension probing | `PptxImage.resolve(src, workspaceRoot)` → `PptxImagePart` |
+| `PptxBuilder.ets` | Deck → pptx full-part rendering (two passes: resolve images/charts first, then render pages) | `PptxBuilder.buildPptxBytes(deck, resolveImage)`; also defines `PptxImagePart`/`ImageResolver` (types live here to avoid a PptxBuilder→PptxImage compile-time dependency) |
+| `PptxImporter.ets` | pptx → Deck: reads the embedded `docProps/deck.json` first (lossless), otherwise parses slide XML into custom layouts (text/tables/image positions preserved, charts become placeholder notes) | `PptxImporter.import(absPath, cacheDir)` → `PptxImportResult{deck, embedded, slideCount}` |
+
+**Dependency direction** (`.ts` must not import `.ets`): `DeckModel ← PptxThemes/PptxCharts/PptxBuilder`; `PptxBuilder ← WorkToolRunner.ets`; `PptxImage → WorkFileService.ts` (only `resolveSafe`, legal direction); no cycles. Draw this map before adding any new file.
+
+**SVG auto-rasterization**: `WorkToolRunner.imageResolver` rasterizes `.svg` source files at 1024px width through the device image engine before they enter the render pipeline — outputs of `write_svg` can be referenced by `write_pptx` directly (together with the svg skill's authoring rules), no manual conversion needed.
+
+#### Deck JSON contract (three places to sync on every field change)
+
+The model-facing field documentation = **the ppt skill's `reference/deck-dsl.md`**. The authoritative implementation is `DeckModel.ets`. When changing any field, all three of the following must be updated, otherwise the model generates from stale docs and error rates rise:
+
+1. `DeckModel.ets` (parsing + validation: `parseSlide`/`validateSlide` error messages must include the page number and state what is missing, so the AI can self-correct);
+2. The skill docs `rawfile/skills/ppt/reference/deck-dsl.md` (field tables) and `SKILL.md` (quick-reference example);
+3. `test/pptx-harness/test-build.mjs` (samples must cover the field, negative cases must cover the new validation).
+
+Structure overview: top level `{title, theme, themeOverride{8 color slots}, slides[]}`; page cap `DECK_MAX_SLIDES(80)`; common page fields `{layout, title, subtitle, notes, background{color|image, fit, overlay}}`; the 13 layouts each have their own fields (bullets / columns / image / table / chart / elements / text/author / imageSide…); limits: table ≤20 rows, one image ≤10MB (`WORK_PPT_IMAGE_MAX_BYTES`), whole deck ≤40 images (`WORK_PPT_MAX_IMAGES`).
+
+#### pptx parts & relationship numbering conventions (read before touching PptxBuilder)
+
+- Per-slide rels: `rId1` is always the slideLayout; then rId2… are allocated **in media → chart order**; the rIds in `renderChart`/background images/`renderCustom` are **computed** from this rule (`'rId' + (2 + mediaParts.length)`) — keep the same algorithm when adding elements that consume relationships.
+- Chart global numbering is allocated during the **first scan pass** (`ctx.chartNos`) and shared by `[Content_Types].xml` and slide rels — never re-count at render time.
+- Notes pages `ppt/notesSlides/`: the notesMaster **always exists** (regardless of notes), which keeps presentation rels stable; each notesSlide's rels back-reference its owning slide number.
+- The embedded source `docProps/deck.json` (Override application/json) is what makes `read_ppt`/`edit_ppt` lossless — rendering changes must not touch it; it is generated by `JSON.stringify(deck)` in the build pass.
+- The notesSlide rels' `../slides/slideN.xml` back-reference must receive the correct page number (`notesSlideRelsXml(i + 1)`).
+
+#### Dark-background auto lightening (contrast red line)
+
+`isDarkBg(slide, colors)`: background image with `overlay ≥ 0.3`, or a resolved background color with luminance < 0.55 → dark surface. When it applies:
+
+- **Page text** (titles/bullets/captions/page numbers) goes through `TextScheme` (computed once in `renderSlide`, passed to every layout renderer), lightened to FFFFFF / E2E8F0 / A9B6C6 / 7E8CA0;
+- **Charts** use a `lightened(colors)` copy: axis labels, legend, and data labels lighten while the **series palette stays unchanged**;
+- **Table cells** always use theme `bg`/`surface` fills + theme `body` text — fills follow the theme rather than the page background, so every theme × page-background combination stays readable (this once caused a rework; do not change it back to hardcoded FFFFFF).
+
+When writing a new layout renderer, **always take text colors from `ts` (TextScheme), never from `colors`** — that is how the rule above is enforced.
+
+#### Extension recipes
+
+**Adding a layout** (4 places):
+1. Register the name in `DeckModel.DECK_LAYOUTS` → add field parsing in `parseSlide` → add required-field validation in `validateSlide` (errors include the page number);
+2. Add a switch branch in `PptxBuilder.renderSlide` → write `renderXxx(slide, …, ts, …)`: geometry constants go at the top of the file (EMU, 1pt = 12700), text uses `ts`, decoration uses `colors.primary/accent`;
+3. Add a sample page to `fullDeck` in `test/pptx-harness/test-build.mjs` → run the full verification chain (below);
+4. Sync the skill docs: the `deck-dsl.md` field table + the layout table in `SKILL.md`.
+
+**Adding a theme**: add a branch in `PptxThemes.preset()` (primary/accent/bg/surface/title/body/sub/faint/onPrimary/dark + a 6-color `series` palette) → add a row to `themes.md`. Unknown theme names fall back to brand-blue (do not throw — the model will correct itself).
+
+**Adding a chart type**: add a branch in `PptxCharts.buildXml`. Mind the OOXML `CT_*Ser` child order `idx→order→tx→spPr→marker→dLbls→cat→val`; `dLblPos` is only valid for bar/line/pie (not doughnut — do not add it there) → sync `deck-dsl.md`.
+
+#### Verification loop (mandatory after touching the generator; commands in test/pptx-harness/README.md)
+
+```bash
+node setup.mjs && node test-build.mjs        # all-layout/multi-theme/edit-ops/negative builds → gen/out_*.pptx
+python validate.py gen\out_all.pptx …        # zip CRC/all-part XML/relationship consistency/content-types/python-pptx
+python deep-check.py                         # python-pptx chart data + embedded source round-trip
+node check-setup.mjs && npx -y -p typescript@5.5.4 tsc -p check/tsconfig.json   # service-layer type check
+```
+
+Visual review (on machines with PowerPoint): export PNGs with `export-png.ps1` and inspect page by page — focus on text overflow, dark-page lightening, chart label readability, and table contrast (all three historical visual bugs were these categories).
+
+### 3.2 Skill system (reusable domain operation guides)
+
+A skill = an **id-organized, pure-Markdown domain operation guide** (no code) that the model loads on demand when a matching task arrives. The problem it solves: domain knowledge (Deck JSON syntax, design guidelines, …) must not go into the system prompt — the system prompt has to stay byte-stable (the KV-cache red line), while skill docs can be added, changed, and layered at any time **without touching a line of prompt code**.
+
+#### Structure conventions
+
+```text
+entry/src/main/resources/rawfile/skills/
+├── ppt/                        ← skill id (lowercase, unique; directory name = id)
+│   ├── SKILL.md                ← skill body (required): when-to-use / toolchain / workflows / quick ref / self-check
+│   └── reference/              ← deep-dive material, loaded file by file (optional)
+│       ├── deck-dsl.md         # field-level syntax
+│       ├── design-guide.md     # design guidelines
+│       └── themes.md           # theme catalog
+└── svg/                        ← built-in skill 2: SVG vector drawing (image generation)
+    ├── SKILL.md                # "generate → preview → iterate" workflow + tool boundaries (photos via download_file)
+    └── reference/
+        ├── svg-craft.md        # authoring rules: xmlns/viewBox requirements, 24 grid, path-first, text risk, color discipline
+        └── svg-recipes.md      # ready-to-use templates: stroke icons / flowcharts / architecture / infographic cards / cover decor
+```
+
+The registry lives in `WorkSkillService.registry()` (**the code is the registry, no config file**). Each `SkillInfo = { id, name, description, files: SkillFileInfo[] }`; `files` is the whitelist of files `load_skill` may read (`SKILL.md` is always allowed), guarding against path probing. **Unregistered skills are invisible to the model** — dropping docs into the directory without registering them does nothing.
+
+#### Loading chain (progressive disclosure)
+
+```text
+System prompt "Skill system" section (a one-line trigger, static)
+  → the model calls list_skills()            → WorkSkillService.listText()
+      returns: id + name + trigger semantics + file index
+  → the model calls load_skill("ppt")        → rawfile read of SKILL.md
+  → the model calls load_skill("ppt", "reference/deck-dsl.md") → load deep-dive file by file
+Dispatch: WorkFileService.dispatchTool() (pure TS, no .ets needed); both are registered in isReadOnlyTool() and may run concurrently.
+Results follow the normal tool rules: over 12K chars they are truncated head+tail (WORK_SKILL_MAX_CHARS is the hard cap on the loading side).
+```
+
+#### SKILL.md writing conventions (reusable skeleton)
+
+```markdown
+---
+name: <id>
+description: <one-line trigger semantics, see below>
+---
+# <Skill name>
+
+## When to use      ← trigger scenario list (the model decides whether to load from this)
+## Toolchain        ← which tools, how to pass arguments, hard constraints such as image sources
+## Workflow A/B     ← numbered steps per scenario, one action per step; include a minimal runnable example
+## Quick reference  ← table/JSON samples (keep the most-used 20%; push the long tail into reference)
+## Pre-delivery self-check list ← checkbox list the model runs before delivering
+```
+
+- Split `reference/` files by topic; **each file under 12K chars** (longer files get truncated in the middle — the lost middle makes them useless);
+- Code examples must be **minimal samples that run as-is**, consistent with the current tool implementation;
+- Length budget: keep SKILL.md at 4–6K chars and leave details to reference.
+
+#### How to write the description (trigger semantics)
+
+The description plays two roles: the expansion of the system-prompt trigger line and the display text in `list_skills`. Formula = **enumerate task keywords + name the tools involved + state "load first"**:
+
+- ✅ `Load when creating/modifying/beautifying presentations (.pptx): the full Deck JSON syntax (13 layouts/charts/tables/images/notes), 8 themes, design guidelines, and the self-check list. Load before any write_pptx / read_ppt / edit_ppt task.`
+- ❌ `PPT skill` (the model cannot tell when to load it — as good as unwritten)
+
+#### Adding a new skill (docs + 1–2 code touch points)
+
+1. Create `rawfile/skills/<id>/SKILL.md` (+ `reference/*.md` as needed) following the skeleton above;
+2. Register the entry in `WorkSkillService.registry()`: id / name / description / files whitelist (every reference file must be registered, otherwise it cannot be loaded);
+3. If proactive triggering is wanted, add a sentence to the "Skill system" section of `AgentLoopService.buildWorkSystemPrompt()` (appending lines does not break the static red line);
+4. **No toolDefs/dispatchTool changes needed**: `list_skills`/`load_skill` are generic tools that automatically cover new skills;
+5. Self-test: in work mode run `list_skills` → `load_skill` every file to confirm nothing is truncated → run a real matching task and check the model follows the skill.
+
+#### Maintenance red lines & portability
+
+- Skill docs **evolve in lockstep with the tools**: change a Deck field/tool parameter → sync the skill doc → then the system prompt (if affected);
+- description wording = trigger behavior; treat changes seriously (flag them separately in commit messages);
+- Skill docs are a **cross-agent reusable asset**: the frontmatter (name/description) deliberately follows the standard Agent Skills convention (same structure as open-kimi-ppt-skill's SKILL.md). Copy the whole directory into another agent framework's skills directory (e.g. `~/.claude/skills/<id>/`) and SKILL.md-aware frameworks will pick it up — no rewriting required.
+
 ### 4. Adding a new tool (5 places)
 
-1. `WorkFileService.toolDefs()`: register the schema (name/description/parameters) — this is what the model sees; use `props1`/`props2` to build property maps.
+1. `WorkFileService.toolDefs()`: register the schema (name/description/parameters) — this is what the model sees; use `props0`/`props1`/`props2`/`props3` to build property maps.
 2. `WorkFileService.dispatchTool()`: add the dispatch branch (for capabilities requiring `.ets` modules, dispatch from `WorkToolRunner.execute()` instead).
 3. Implement the executor returning a `ToolExecResult` (`ok`/`output`; `imageDataUrl` is reserved for view-image-style tools).
-4. `AgentLoopService.buildWorkSystemPrompt()`: document the tool and its discipline.
-5. If it mutates the workspace, register it in `WorkFileService.isMutatingTool()` (the workspace panel refreshes automatically after execution).
+4. `AgentLoopService.buildWorkSystemPrompt()`: document the tool and its discipline (stay byte-static; do not put large bodies of domain knowledge here — make it a skill, see 3.2).
+5. If it mutates the workspace, register it in `WorkFileService.isMutatingTool()`; read-only tools go into `isReadOnlyTool()` (they may run concurrently).
+
+> Content that "teaches the model how to use the new tool" (DSL syntax, format specs, workflows) should become a skill doc rather than being stuffed into the tool description or the system prompt — the description states the purpose in one line, and the details are fetched via `load_skill` on demand.
 
 ### 5. Local parsing engine and the memory/main-thread red lines
 
@@ -383,7 +581,7 @@ hvigorw --mode module -p product=default -p module=entry@default -p buildMode=de
 ### Build steps
 
 1. Clone or download the project.
-2. Open the `GuncatAI` directory in DevEco Studio.
+2. Open the `GuncatAI_HMOS-APP` directory in DevEco Studio.
 3. Install and select HarmonyOS SDK API 24.
 4. Configure debug or release signing.
 5. Connect a HarmonyOS device.
@@ -425,7 +623,7 @@ Multimodal pre-parsing has a separate model, endpoint, and API key configuration
 3. Wait for pre-parsing; when pre-parsing is disabled, attachments are passed directly to a compatible multimodal endpoint.
 4. Review pending attachments and explicitly tap Send.
 
-You can also select content in Gallery or a file manager and choose Guncat AI from the system share sheet. The app only stages the items as attachments and does not submit a request automatically.
+You can also select content in Gallery or a file manager and choose Guncat Work from the system share sheet. The app only stages the items as attachments and does not submit a request automatically.
 
 #### Attachment strategy
 
@@ -450,8 +648,9 @@ You can also select content in Gallery or a file manager and choose Guncat AI fr
 1. Tap the 🛠 "Work Mode" entry at the top of the drawer; the page title and empty state switch to work mode.
 2. Use the workspace panel's "Upload" to add files (or the camera button — photos go straight into the workspace).
 3. Describe the task in the editor; for complex tasks the agent first builds a task checklist, then executes it step by step with tool calls visible in the timeline.
-4. Tap any tool step to expand its arguments and results; "Export" packages the whole workspace into a `.zip`.
-5. When finished, the agent outputs a detailed summary (including produced file paths); switching to another agent exits work mode — the work conversation and workspace files are preserved.
+4. Deliverables come out in phone-readable formats: reports→`docx`, tables→`xlsx`, presentations→`pptx` (themes, charts, and editing of existing PPTs are supported; the agent automatically loads the built-in PPT skill and follows its guidelines).
+5. Tap any tool step to expand its arguments and results; "Export" packages the whole workspace into a `.zip`.
+6. When finished, the agent outputs a detailed summary (including produced file paths); switching to another agent exits work mode — the work conversation and workspace files are preserved.
 
 ### Read-aloud
 
@@ -493,13 +692,18 @@ You can also select content in Gallery or a file manager and choose Guncat AI fr
 Alongside chat mode, this release adds an independent work mode: the 🛠 "Work Mode" virtual agent (top of the agent list, parallel to other agents) opens a conversation bound to a sandbox workspace, where the agent completes long-horizon tasks through a multi-turn tool-calling loop. Version bumped to 6.0.0 (`Constants.APP_VERSION` and `AppScope/app.json5` versionName 6.0.0 / versionCode 600 in sync).
 
 - **Identity and entry**: the `work` virtual agent is injected at the top of the list; the page title, empty state, and new-conversation ownership follow the selected agent automatically; work conversations use `agentId='work'` (legacy data migrated automatically) and deleting one cleans up its workspace.
-- **Agent Loop**: one message per turn (thinking→tools→answer in chronological order), three-protocol streaming function calling, a 200-turn runaway safeguard, automatic compaction of over-budget history into a state digest (falling back to oldest-first trimming), cancellation annotations, and empty-output cleanup; tool results are truncated before being sent back to the model.
-- **Task checklist**: the `todo_write` tool maintains `.todo.json`; the checklist state is injected into the system prompt every turn — plan first for complex tasks and progress item by item.
-- **14 local tools**: file CRUD/search, `view_image` (images are sent to the main model's multimodal vision), `parse_document` (local PDF), and the Office generation trio (`write_docx`/`write_xlsx`/`write_pptx`).
+- **Agent Loop**: one message per turn (thinking→tools→answer in chronological order), three-protocol streaming function calling, a 200-turn runaway safeguard, request-level automatic retries (429/5xx/network/empty responses with exponential backoff and jitter), two-stage compaction of over-budget history (model-free prune first, then prefix-reusing summarization, falling back to oldest-first trimming), cancellation annotations, and empty-output cleanup; tool results are truncated head+tail before being sent back to the model.
+- **Task checklist**: the `todo_write` tool maintains `.todo.json`; checklist and workspace state reach the model through a "runtime context" snapshot appended to the conversation tail (only when it changes) — plan first for complex tasks and progress item by item.
+- **25 local tools**: file CRUD/search (with `glob` filename filtering on `search_files`), `view_image` (images are sent to the main model's multimodal vision), `parse_document` (local PDF), Office generation (`write_docx`/`write_xlsx`/`write_csv`), data pipeline (`transform_file`), the PPT read/write/edit trio (`write_pptx`/`read_ppt`/`edit_ppt`), web download (`download_file`), SVG image generation (`write_svg`), and the skill system (`list_skills`/`load_skill`).
+- **Data pipeline transform_file**: the dedicated tool for large files and non-standard data — CSV/TSV/Markdown-table/JSON/JSONL/lines input, filter/derive/map/regex-extract/split/dedupe/sort/replace/numeric-cast plus CSV↔TSV↔JSON↔MD↔XLSX conversion, **data never enters model context**. Restricted-DSL design: ops go through a whitelist dispatch and expressions through a self-contained evaluator (no I/O, bounded steps, termination guaranteed by construction), with a "preview 3 rows → write → spot-check" workflow mirroring the SVG loop. Full syntax lives in the `data` skill. Two new pure-TS modules — `CsvParser` (RFC 4180 parsing + Markdown/TSV/CSV auto-detection, also benefits write_csv/write_xlsx) and `DataPipeline` — are wired into the pptx-harness verification chain (54 unit tests).
+- **Material acquisition & image generation**: `download_file` pulls network images/files into the workspace (type sniffing, html warning, ≤20MB); `write_svg` lets the model hand-write SVG for icons/diagrams/infographics — validated automatically (xmlns/viewBox/no script) and rasterized to a PNG preview via the device image engine, forming a "generate → preview → iterate" loop with `view_image`; `write_pptx` can reference `.svg` directly (rasterized automatically on export). `search_files` gains a `glob` filename filter (`*.md`, `*.png,*.jpg`). `write_csv` adds explicit CSV support (RFC 4180 escaping + UTF-8 BOM).
+- **PPT pipeline (Deck JSON intermediate layer)**: aligned with open-kimi-ppt-skill's PPTD design — the AI writes a structured Deck source, and `PptxBuilder` renders 13 layouts (cover/TOC/section/bullets/two-column/image-text/image/full-bleed image/table/chart/quote/closing/free-form), 8 themes + custom palettes, charts (bar/line/area/pie/doughnut with embedded data), tables, images (workspace/data URL/http), and speaker notes; exported files embed a `docProps/deck.json` source so `read_ppt` restores them losslessly and `edit_ppt` applies operator-style edits (foreign pptx files are imported approximately and automatically backed up before rebuild); dark backgrounds lighten text and chart labels automatically. Five new modules (`DeckModel/PptxThemes/PptxCharts/PptxImage/PptxImporter`) plus a rewritten `PptxBuilder`; comes with the offline verification harness `test/pptx-harness/` (Node builds of all layouts + negatives, python-pptx structural checks, PowerPoint-rendered PNG reviews).
+- **Skill system**: domain operation guides are organized under `rawfile/skills/<id>/` (SKILL.md + reference/) and loaded progressively via `list_skills`/`load_skill`; the system prompt keeps only a one-line trigger, so the KV-cache prefix stays byte-stable. The bundled `ppt` skill covers Deck JSON syntax / design guidelines / themes / self-check lists, the `svg` skill covers authoring rules / the "generate → preview → iterate" workflow / recipes for icons, flowcharts, and infographics, and the `data` skill covers pipeline ops / expression syntax / cleaning-extraction-conversion recipes; the skill format follows the standard Agent Skills convention and is portable across agent frameworks. Adding a skill = writing docs + registering it in `WorkSkillService.registry()` (see architecture guide 3.2).
 - **Local parsing engine**: new `OfficeReader` (OOXML text extraction, fixing the `<w:t` prefix mismatch that leaked XML), `PdfTextExtractor` (byte-level object table / ObjStm expansion / page-tree resource inheritance / ToUnicode CJK mapping / content-stream parsing / fallback scan with diagnostics), and `Flate` (pure-TS DEFLATE inflate). The multimodal parsing API is no longer required.
 - **Codex-style timeline UI**: a single-container timeline (unique 🛠 header + task cards + per-turn "thinking→tools→answer"); tool steps expand to show arguments and results; intermediate turns hide action buttons; the workspace panel supports upload / zip export / clear.
 - **Stability fixes**: PDF parsing OOM (whole-file latin1 concatenation replaced with byte-level scanning + native utf-16le decoding); main-thread block appfreeze (parsing yields in stages and the fallback scan skips fonts/images/oversized streams with caps and pre-checks); the same O(n²) concatenation in `arrayBufferToBase64` was fixed as well.
 - The system prompt now follows the Guncat 3.0 discipline: planner/executor/final-verifier roles, gap-driven convergence, anti-hallucination, pre-delivery verification, and the output richness principle.
+- **Agent prompts add an "opening Mermaid structure diagram"**: the Guncat 3.0-Pro and 3.0-Flash prompts (Chinese and English) are upgraded in sync — the first element of every formal answer is fixed to a Mermaid mindmap outlining the content structure of the answer body (root node = the answer's topic; second/third-level nodes map one-to-one onto the body's major sections and key points); `mindmap` syntax by default, falling back to `flowchart TD` when unsupported; effective in all modes, with only pure-greeting ultra-short interactions exempt; the time-baseline statement now comes right after the diagram, and the pre-output self-check checklist gains a matching item.
 
 ## Version 5.2.1
 
@@ -596,7 +800,7 @@ Alongside chat mode, this release adds an independent work mode: the 🛠 "Work 
 - Try another API profile.
 - Disable deep thinking for simple tasks to reduce response latency.
 
-### Guncat AI is missing from the Gallery share sheet
+### Guncat Work is missing from the Gallery share sheet
 
 - Confirm that the latest HAP with Share Kit UTD declarations is installed.
 - Reopen the Gallery share sheet after updating so the system refreshes share targets.

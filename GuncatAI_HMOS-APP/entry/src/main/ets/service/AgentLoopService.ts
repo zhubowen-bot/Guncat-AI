@@ -5,7 +5,6 @@
 //   anthropic-messages → content_block tool_use / input_json_delta + tool_result 回传
 // 循环驱动(执行工具/步数控制/历史裁剪)在 ChatViewModel.executeWorkLoop 中。
 import { http } from '@kit.NetworkKit';
-import { AgentLoader } from './AgentLoader';
 import { StreamAccumulator, getProtocol,
   extractChatCompletionsDelta, extractChatCompletionsReasoning, extractChatCompletionsUsage,
   extractResponsesDelta, extractResponsesReasoning, extractResponsesUsage, extractResponsesFailure,
@@ -16,6 +15,39 @@ import { ApiConfig } from '../model/ApiConfig';
 import { ToolCallRecord } from '../model/ToolCallRecord';
 import { AbortSignal } from '../common/Types';
 import { Constants } from '../common/Constants';
+
+// 带分类的循环层错误: kind 用于请求级重试判定(对齐 DeepSeek Harness 的 retry-policy)
+//   rate_limit/server/transport/empty → 可自动重试; auth/http/protocol → 重试无意义, 直接上抛
+export class LoopError extends Error {
+  status: number = 0;
+  kind: string = 'http';
+
+  constructor(message: string, status: number, kind: string) {
+    super(message);
+    this.name = 'LoopError';
+    this.message = message;
+    this.status = status;
+    this.kind = kind;
+  }
+
+  static isRetryable(e: Error): boolean {
+    if (e instanceof LoopError) {
+      let le: LoopError = e as LoopError;
+      return le.kind === 'rate_limit' || le.kind === 'server' ||
+        le.kind === 'transport' || le.kind === 'empty';
+    }
+    return false;
+  }
+
+  // 上下文窗口超限(历史+工具放不进模型上下文): 由调用方压缩历史后重试
+  isContextOverflow(): boolean {
+    if (this.kind !== 'http' && this.kind !== 'protocol') {
+      return false;
+    }
+    let msg: string = this.message !== undefined ? this.message : '';
+    return /context|maximum|length|token|上下文|长度|太长/i.test(msg);
+  }
+}
 
 // 与协议无关的循环消息: assistant 消息的工具调用与执行结果都挂在 toolCalls 上
 // (构建协议请求体时再拆分为 assistant(tool_calls) + tool/function_call_output/tool_result 消息)
@@ -66,6 +98,8 @@ export class LoopTurnResult {
   toolCalls: ToolCallRecord[] = [];
   tokenSpeed: number = -1;
   cacheHitRate: number = -1;
+  // 本请求真实 prompt tokens(usage 锚定, 未知为 0); 用于上下文预算判断
+  promptTokens: number = 0;
 }
 
 // 单轮流式回调(与 StreamCallbacks 同构; onReasoning 传入本轮已累积的完整思考文本)
@@ -74,6 +108,9 @@ export class LoopTurnCallbacks {
   onReasoning: (text: string) => void = (_text: string): void => {};
   onUsage: (tokenSpeed: number, cacheHitRate: number) => void =
     (_speed: number, _hit: number): void => {};
+  // 请求级自动重试开始(attempt 从 1 起); 上一次尝试的部分流式内容应被调用方清除
+  onRetry: (attempt: number, reason: string) => void =
+    (_attempt: number, _reason: string): void => {};
 }
 
 // 流式工具调用累积器: completions/responses/anthropic 三种协议统一汇入
@@ -168,6 +205,8 @@ export class AgentLoopService {
     let startTime: number = Date.now();
     let result: LoopTurnResult = new LoopTurnResult();
     let callAcc: ToolCallAccumulator = new ToolCallAccumulator();
+    // 非成功响应时累积响应体(仅前 8KB), 用于提取服务端错误详情(如上下文超限)
+    let errorBody: string = '';
 
     // 单条 SSE 数据分发: 按协议解析文本/思考/工具调用/usage; 协议失败抛错由外层 reject
     let handleSseLine = (sseData: string): void => {
@@ -193,6 +232,7 @@ export class AgentLoopService {
           let stats: number[] = deriveStreamStats(usageObj, Date.now() - startTime);
           result.tokenSpeed = stats[0];
           result.cacheHitRate = stats[1];
+          result.promptTokens = AgentLoopService.extractPromptTokens(usageObj);
           callbacks.onUsage(stats[0], stats[1]);
         }
       } else if (protocol === 'anthropic') {
@@ -217,6 +257,7 @@ export class AgentLoopService {
           let stats: number[] = deriveStreamStats(usageObj, Date.now() - startTime);
           result.tokenSpeed = stats[0];
           result.cacheHitRate = stats[1];
+          result.promptTokens = AgentLoopService.extractPromptTokens(usageObj);
           callbacks.onUsage(stats[0], stats[1]);
         }
       } else {
@@ -236,6 +277,7 @@ export class AgentLoopService {
           let stats: number[] = deriveStreamStats(usageObj, Date.now() - startTime);
           result.tokenSpeed = stats[0];
           result.cacheHitRate = stats[1];
+          result.promptTokens = AgentLoopService.extractPromptTokens(usageObj);
           callbacks.onUsage(stats[0], stats[1]);
         }
       }
@@ -249,6 +291,9 @@ export class AgentLoopService {
           }
           try {
             let chunk: string = acc.append(data);
+            if (errorBody.length < 8192) {
+              errorBody += chunk;
+            }
             lineBuffer += chunk;
             let lines: string[] = lineBuffer.split('\n');
             if (lineBuffer.endsWith('\n')) {
@@ -324,18 +369,26 @@ export class AgentLoopService {
             if (!settled) {
               settled = true;
               let msg: string = '';
+              let kind: string = 'http';
               if (code === 401) {
                 msg = 'API Key 无效，请检查设置';
+                kind = 'auth';
               } else if (code === 429) {
                 msg = '请求过于频繁，请稍后再试';
+                kind = 'rate_limit';
               } else if (code >= 400 && code < 500) {
-                msg = 'API 请求错误 (' + code + ')，请检查配置';
+                msg = 'API 请求错误 (' + code + ')';
+                let detail: string = AgentLoopService.extractHttpErrorDetail(errorBody);
+                if (detail !== '') {
+                  msg += ': ' + detail;
+                }
               } else if (code >= 500) {
                 msg = '服务器错误 (' + code + ')，请稍后再试';
+                kind = 'server';
               } else {
                 msg = '请求失败，状态码: ' + code;
               }
-              reject(new Error(msg));
+              reject(new LoopError(msg, code, kind));
             }
             return;
           }
@@ -353,7 +406,9 @@ export class AgentLoopService {
           }
           if (!settled) {
             settled = true;
-            reject(err);
+            // 网络层异常(连接失败/超时/DNS 等)归类为 transport, 可自动重试
+            let msg: string = err.message !== undefined ? err.message : '网络请求失败';
+            reject(new LoopError(msg, 0, 'transport'));
           }
         });
       });
@@ -366,7 +421,8 @@ export class AgentLoopService {
         if (failedMsg === '') {
           failedMsg = '请求失败';
         }
-        throw new Error(failedMsg);
+        // 流式过程中由协议层报出的失败(内容审查/服务端事件错误等), 重试同样请求无意义
+        throw new LoopError(failedMsg, 0, 'protocol');
       }
     } finally {
       AgentLoopService.activeRequest = null;
@@ -395,14 +451,143 @@ export class AgentLoopService {
     }
   }
 
-  // 上下文压缩: 以纯文本请求(不带工具定义)让模型把早期执行历史汇总为状态摘要
-  static async summarizeHistory(config: ApiConfig, prompt: string,
+  // 带自动重试的请求执行(对齐 DeepSeek Harness 的 llm-retry):
+  // 429/5xx/网络传输/空响应按指数退避自动重试; 鉴权/协议/参数错误直接上抛。
+  // maxRetries 为重试次数上限(不含首次), 退避 500ms 起步、封顶 8s, 附 ±20% 抖动。
+  static async runTurnWithRetry(config: ApiConfig, messages: LoopMessage[],
+    thinkingEnabled: boolean, webSearchEnabled: boolean,
+    callbacks: LoopTurnCallbacks, abortSignal: AbortSignal,
+    includeTools: boolean = true,
+    maxRetries: number = Constants.WORK_LLM_RETRY_MAX): Promise<LoopTurnResult> {
+    let attempt: number = 0;
+    while (true) {
+      let turn: LoopTurnResult | null = null;
+      let failed: LoopError | null = null;
+      try {
+        turn = await AgentLoopService.runTurn(config, messages, thinkingEnabled,
+          webSearchEnabled, callbacks, abortSignal, includeTools);
+      } catch (e) {
+        let err: Error = e as Error;
+        if (err instanceof LoopError) {
+          failed = err as LoopError;
+        } else {
+          let msg: string = err.message !== undefined ? err.message : '请求失败';
+          failed = new LoopError(msg, 0, 'transport');
+        }
+      }
+      // 空响应(无文本也无工具调用且非用户中断): 按可重试错误处理, 避免整轮循环因此报废
+      if (failed === null && turn !== null && turn.content === '' &&
+        turn.toolCalls.length === 0 && !abortSignal.aborted) {
+        failed = new LoopError('模型返回了空响应', 0, 'empty');
+      }
+      if (failed === null && turn !== null) {
+        return turn;
+      }
+      if (failed === null) {
+        continue;
+      }
+      if (abortSignal.aborted || !LoopError.isRetryable(failed) || attempt >= maxRetries) {
+        throw failed;
+      }
+      attempt++;
+      callbacks.onRetry(attempt, failed.message);
+      await AgentLoopService.retryBackoff(attempt, abortSignal);
+      if (abortSignal.aborted) {
+        throw failed;
+      }
+    }
+  }
+
+  // 指数退避等待: 500ms * 2^(attempt-1), 封顶 8s, 乘 ±20% 抖动; 分片睡眠以便及时感知中断
+  private static async retryBackoff(attempt: number, abortSignal: AbortSignal): Promise<void> {
+    let base: number = Math.min(500 * Math.pow(2, attempt - 1), 8000);
+    let delay: number = base * (0.8 + 0.4 * Math.random());
+    let deadline: number = Date.now() + delay;
+    while (Date.now() < deadline) {
+      if (abortSignal.aborted) {
+        return;
+      }
+      let slice: number = Math.min(200, deadline - Date.now());
+      if (slice <= 0) {
+        break;
+      }
+      await AgentLoopService.sleep(slice);
+    }
+  }
+
+  private static sleep(ms: number): Promise<void> {
+    return new Promise<void>((resolve: () => void) => {
+      setTimeout(() => {
+        resolve();
+      }, ms);
+    });
+  }
+
+  // 从 usage 中提取真实 prompt tokens(completions 用 prompt_tokens, responses/anthropic 用 input_tokens)
+  private static extractPromptTokens(usage: Record<string, Object>): number {
+    let pt: Object = usage['prompt_tokens'];
+    if (typeof pt === 'number') {
+      return pt as number;
+    }
+    let it: Object = usage['input_tokens'];
+    if (typeof it === 'number') {
+      return it as number;
+    }
+    return 0;
+  }
+
+  // 从非 2xx 响应体提取服务端错误详情(兼容 {error:{message}} 与 {error:"..."} 两种形态)
+  private static extractHttpErrorDetail(body: string): string {
+    let trimmed: string = body.trim();
+    if (trimmed === '') {
+      return '';
+    }
+    try {
+      let parsed: Object = JSON.parse(trimmed);
+      if (typeof parsed !== 'object' || parsed === null) {
+        return '';
+      }
+      let errField: Object = (parsed as Record<string, Object>)['error'];
+      let detail: string = '';
+      if (typeof errField === 'string') {
+        detail = errField as string;
+      } else if (typeof errField === 'object' && errField !== null) {
+        let msg: Object = (errField as Record<string, Object>)['message'];
+        if (typeof msg === 'string') {
+          detail = msg as string;
+        }
+      }
+      if (detail.length > 300) {
+        detail = detail.substring(0, 300) + '…';
+      }
+      return detail;
+    } catch (e) {
+      return '';
+    }
+  }
+
+  // 上下文压缩指令(固定文本, 不含任何时间戳等易变内容, 保证请求前缀可复用)
+  private static readonly COMPACTION_INSTRUCTION: string =
+    '【上下文压缩指令】以上是本任务的完整执行历史(系统提示词与工具定义保持不变)。' +
+    '请把本条指令之前的全部执行历史压缩成一份「状态摘要」, 供后续轮次继续任务时使用:\n' +
+    '1. 必须保留: 任务目标与用户要求; 已完成/进行中/未完成的步骤及先后顺序; 关键发现与重要数据; ' +
+    '已产出或修改的文件路径; 重要决策、失败尝试与原因(避免重蹈覆辙); 待用户补充的事项。\n' +
+    '2. 应删除: 工具原始输出的冗余细节、重复内容、与后续执行无关的过程性信息。\n' +
+    '3. 用紧凑的要点列表输出, 总长不超过 1500 字; 直接输出摘要正文, 不要任何前后缀或解释, 也不要调用任何工具。';
+
+  // 上下文压缩: 让模型把早期执行历史汇总为状态摘要。
+  // 关键设计(对齐 DeepSeek Harness 的 buildSummarizationInput): 摘要请求复用真实请求的
+  // 完整前缀(静态系统提示词 + 相同工具定义 + 相同历史消息), 仅在末尾追加压缩指令——
+  // 对模型侧 KV 缓存而言这是上一个请求的延续而非冷启动, 前缀部分按缓存命中计价。
+  static async summarizeHistory(config: ApiConfig, messages: LoopMessage[],
+    thinkingEnabled: boolean, webSearchEnabled: boolean,
     abortSignal: AbortSignal): Promise<string> {
-    let messages: LoopMessage[] = [LoopMessage.user(prompt)];
+    let input: LoopMessage[] = messages.slice();
+    input.push(LoopMessage.user(AgentLoopService.COMPACTION_INSTRUCTION));
     let callbacks: LoopTurnCallbacks = new LoopTurnCallbacks();
-    let turn: LoopTurnResult = await AgentLoopService.runTurn(
-      config, messages, false, false, callbacks, abortSignal, false);
-    return turn.content;
+    let turn: LoopTurnResult = await AgentLoopService.runTurnWithRetry(
+      config, input, thinkingEnabled, webSearchEnabled, callbacks, abortSignal, true, 2);
+    return turn.content.trim();
   }
 
   // ===== 流式工具调用累积(按协议) =====
@@ -661,7 +846,7 @@ export class AgentLoopService {
     // 深度思考开关(OpenAI 兼容格式), 工作模式强度调整为max
     body['thinking'] = { type: thinkingEnabled ? 'enabled' : 'disabled' };
     if (thinkingEnabled) {
-      body['reasoning_effort'] = 'max';
+      body['reasoning_effort'] = 'high';
     }
     return body;
   }
@@ -736,7 +921,7 @@ export class AgentLoopService {
       body['max_output_tokens'] = config.maxTokens;
     }
     AgentLoopService.mergeExtraBody(body, config.extraBody);
-    body['reasoning'] = { effort: thinkingEnabled ? 'max' : 'none' };
+    body['reasoning'] = { effort: thinkingEnabled ? 'high' : 'none' };
     return body;
   }
 
@@ -830,7 +1015,7 @@ export class AgentLoopService {
     // 深度思考开关(Anthropic 兼容格式), 工作模式强度调整为max
     body['thinking'] = { type: thinkingEnabled ? 'enabled' : 'disabled' };
     if (thinkingEnabled) {
-      body['output_config'] = { effort: 'max' };
+      body['output_config'] = { effort: 'high' };
     }
     return body;
   }
@@ -966,14 +1151,21 @@ export class AgentLoopService {
     }
   }
 
-  // ===== 工作模式系统提示词 =====
+  // ===== 工作模式系统提示词与运行时快照 =====
 
-  // todoText: 当前任务清单渲染文本(空串表示尚未建立); fileTree: 工作区文件树
-  static buildWorkSystemPrompt(fileTree: string, todoText: string): string {
+  // 缓存设计(对齐 DeepSeek Harness 的 PromptContext 机制):
+  // 系统提示词必须 100% 静态且逐字节稳定——日期、工作区文件树、任务清单等易变内容
+  // 一律不进入系统提示词, 而是通过 buildRuntimeSnapshot 以用户消息追加到历史末尾,
+  // 且仅在内容变化时追加。这样任何一轮之后, 前缀(系统提示词+全部历史)保持逐字节一致,
+  // 模型侧 KV 缓存可以直接命中; 只有真正变化的那一小段(新快照)需要重新计算。
+  private static cachedWorkPrompt: string = '';
+
+  static buildWorkSystemPrompt(): string {
+    if (AgentLoopService.cachedWorkPrompt !== '') {
+      return AgentLoopService.cachedWorkPrompt;
+    }
     let lines: string[] = [];
-    lines.push(AgentLoader.getDatePrefix());
-    lines.push('');
-    lines.push('你是 Guncat AI 的「工作模式」智能体——在用户 HarmonyOS 手机上原生构建的 Agent Loop 智能体。');
+    lines.push('你是 Guncat Work 的「工作模式」智能体——在用户 HarmonyOS 设备上原生构建的 Agent Loop 智能体。');
     lines.push('你的核心使命：在正确的时间，以正确的方式，调用正确的工具，在工作区中产出最正确、最完整、可验证的成果——快在执行路径，绝不在内容上打折。');
     lines.push('');
     lines.push('# 角色（四合一体）');
@@ -997,25 +1189,16 @@ export class AgentLoopService {
     lines.push('- 禁止使用绝对路径或包含 ".." 的路径，越界访问会被拒绝。');
     lines.push('- 工作区在会话内持久存在，用户可能基于此前产出继续提问；用户通过界面上传的文件出现在工作区根目录（重名自动加序号，如 a.csv → a_1.csv）。');
     lines.push('- 工作区中的 .todo.json 是任务清单的存储文件，由 todo_write 维护，不要直接读写它。');
-    lines.push('- 当前工作区内容（每轮工具调用后自动刷新，以此为准）：');
-    lines.push('<workspace_files>');
-    lines.push(fileTree);
-    lines.push('</workspace_files>');
-    if (todoText !== '') {
-      lines.push('- 当前任务清单（每轮自动刷新，随 todo_write 更新）：');
-      lines.push('<task_todo>');
-      lines.push(todoText);
-      lines.push('</task_todo>');
-    }
+    lines.push('- 系统会把「运行时上下文」快照作为用户消息追加到对话末尾，内含今天的日期、当前工作区文件树与任务清单；**最新快照取代此前所有快照**——判断工作区现状时以最后一条快照为准，历史中更早的快照已过期。');
     lines.push('');
     lines.push('# 可用工具');
     lines.push('**清单与进度**');
-    lines.push('- todo_write(todos)：整体替换式地创建/更新任务清单。todos 为 JSON 数组，如 [{"content":"解析数据","status":"in_progress"}]；status 取 pending/in_progress/done；最多 50 项，每项 content 超过 200 字会被截断。同一时刻只保留一项 in_progress；一项真正完成并验证后才标 done。');
+    lines.push('- todo_write(todos)：整体替换式地创建/更新任务清单。todos 为 JSON 数组，如 [{"content":"解析数据","status":"in_progress"}]；status 取 pending/in_progress/completed；最多 50 项，每项 content 超过 200 字会被截断。同一时刻只保留一项 in_progress；一项真正完成并验证后才标 completed。');
     lines.push('**读取与检索**');
     lines.push('- list_files(path?)：列出文件与目录（含子目录与大小），path 留空列出整个工作区。适合确认产出物存在、查看目录结构。');
     lines.push('- read_file(path, offset?, limit?)：读取文件内容，按行分页（默认返回前约 1.2 万字符，末尾有"未读完"提示与下一次 offset）。.docx/.xlsx/.pptx 自动抽取文字层且行号与 search_files 一致——长文档先 search_files 定位行号，再 read_file 传 offset 精读该段。.pdf 只返回开头，完整/分页阅读用 parse_document；二进制文件拒绝。修改文件前先读取确认现状。');
     lines.push('- parse_document(path, page?, page_count?)：解析 PDF 文本（本地），按页分批返回并带 [第 N 页] 标注。超长 PDF 单次只返回一部分，末尾有"未读完"提示——按提示传 page 继续下一批，循环直到"已到文档末页"，不要重复读同一页。仅支持 .pdf，加密 PDF 与扫描件无法解析（扫描件改用 pdf_to_images 转图片后 view_image）；.docx/.xlsx/.pptx 用 read_file 即可。');
-    lines.push('- search_files(query, path?)：在文本文件与 Office 文档（.docx/.xlsx/.pptx 自动抽取文字层）中大小写不敏感子串搜索，返回"文件:行号: 内容"，最多 50 处匹配。适合在大量内容（含长 Word/Excel/PPT）中定位关键信息；定位后用 read_file 传 offset 精读该段。');
+    lines.push('- search_files(query, path?, glob?)：在文本文件与 Office 文档（.docx/.xlsx/.pptx 自动抽取文字层）中大小写不敏感子串搜索，返回"文件:行号: 内容"，最多 50 处匹配。glob 可选按文件名过滤（* 与 ?，多个模式逗号分隔，如 "*.md"）——素材搜索（找图片/表格文件）时先加 glob 缩小范围。适合在大量内容（含长 Word/Excel/PPT）中定位关键信息；定位后用 read_file 传 offset 精读该段。');
     lines.push('- search_pdf(path, query)：在 PDF 文字层搜索关键词（大小写不敏感），返回"页码: 上下文摘录"，最多 50 处。搜索 PDF 内容必须用它（search_files 读不了 PDF）；命中后用 parse_document 传 page=N 精读对应页。');
     lines.push('- pdf_to_images(path, page?, page_count?)：把 PDF 页面渲染成图片存入工作区 pdf_images/<文件名>/ 目录（每页一个 p001.jpg），返回文件列表。扫描件/纯图片 PDF 的专用入口——parse_document 提示是扫描件或读不出文字时，用它转图后逐张 view_image 查看；需要更多页按提示传 page 继续下一批。');
     lines.push('- view_image(path)：把工作区图片（png/jpg/jpeg/webp/gif/bmp，不超过 8MB）送入你的多模态视觉，图片会作为你的下一条消息出现。调用前明确提取目标（全部文字/表格数据/布局/图表含义）与输出结构。');
@@ -1024,26 +1207,37 @@ export class AgentLoopService {
     lines.push('**写入与整理**');
     lines.push('- write_file(path, content)：覆盖写入文本文件，自动创建父目录。**危险操作**：覆盖已存在文件前，确认不会丢失用户需要的数据。单次写入上限 512KB；更长的内容分多次写入：先 write_file 首段，再连续 append_file 续写。');
     lines.push('- append_file(path, content)：追加文本到文件末尾（文件不存在则创建）。');
+    lines.push('- download_file(url, path?)：把 http(s) 链接的文件下载进工作区（≤20MB，自动建父目录）。联网搜索或资料中发现可用的图片/素材/数据文件时，先用它把原件拿到工作区再用——write_pptx/write_docx 只能引用工作区里真实存在的图片。返回报告实际类型与大小；下载到网页（text/html）说明不是直链，换源重试。');
     lines.push('- create_dir(path)：创建目录（自动创建父目录）。');
     lines.push('- move_file(from, to)：移动/重命名文件或目录。目标路径已存在会被拒绝，不会覆盖。');
     lines.push('- delete_file(path)：删除文件或目录（递归）。**危险操作**：path 为空字符串会清空整个工作区，仅在用户明确要求时执行。');
+    lines.push('**数据处理**');
+    lines.push('- transform_file(input, steps, output?, format?, json_path?, has_header?, delimiter?, bom?, preview?)：对工作区数据文件执行本地转换管道——过滤/派生列/重算列/正则提取/拆列/去重/排序/替换/数值化，以及 CSV↔TSV↔JSON↔Markdown 表格↔XLSX 互转。数据全程不进入对话上下文，是处理大文件与非标格式的专用工具（read_file 读不全的表、要批量清洗/提取/转换的数据都归它）。流程：先省略 output 预览前 3 行 → 调整 steps → 带 output 写盘 → read_file 抽查。steps 完整语法先 load_skill("data")。限制：输入 ≤2MB 文本、≤10 万行、steps ≤30 步；小表格直接 write_file/write_csv 更快，不要滥用。');
     lines.push('**文档生成**');
     lines.push('- write_docx(path, markdown)：把 Markdown 生成 Word 文档（.docx）。支持 标题(#~######)/粗体/斜体/有序无序列表/表格/引用/图片(data URL)，图片写法：![说明](data:image/png;base64,…)。可选 title 参数为文档元数据标题。');
     lines.push('- write_xlsx(path, table)：把表格数据生成 Excel（.xlsx），首行为表头。table 用 Markdown 表格、CSV 或 TSV（自动识别，含 | 时按 Markdown 解析）。');
-    lines.push('- write_pptx(path, outline)：把大纲生成演示文稿（16:9，.pptx）。outline 规则："# 页标题" 开新内容页；"## 标题" 开分节页（大字居中）；"- 要点" 为一级要点；前置两个空格的 "- 要点" 为二级要点。每页要点 3~7 条、每条一句话，不要把整段文字塞进单页。可选 title 参数为演示文稿元数据标题。');
+    lines.push('- write_csv(path, table, bom?)：把表格数据生成 CSV（UTF-8 默认带 BOM，Excel/WPS 打开中文不乱码；RFC 4180 转义）。table 与 write_xlsx 相同的解析。轻量结构化数据、后续还要程序化处理时选 CSV；需要样式/多工作表用 write_xlsx。');
+    lines.push('- write_pptx(path, deck?, deck_file?, outline?, theme?, title?)：生成/重建演示文稿（16:9，.pptx）。三种输入二选一：deck（Deck JSON 结构化源——13 种版式、8 套主题、图表/表格/图片/备注，正式 PPT 一律用它）；deck_file（工作区中 Deck JSON 文件路径——长 deck 先 write_file/append_file 分块写好再导出，改内容后可重复导出）；outline（简易大纲："# 页标题"开新页、"## 标题"开分节页、"- 要点"一级要点、缩进"- 要点"二级要点）。做正式 PPT 前必须先 load_skill("ppt") 获取 Deck 语法与设计规范。theme 可选预设：brand-blue/midnight/forest/sunset/violet/graphite/ivory/crimson。');
+    lines.push('- read_ppt(path)：读回演示文稿的 Deck JSON 源。本应用生成的 .pptx 无损还原；外来 pptx 为近似导入（文本/表格/版面保留，图片与图表数据不保留）。编辑或仿制前先读它。');
+    lines.push('- edit_ppt(path, ops)：对已有 .pptx 应用结构化操作后保存（外来 pptx 会先自动备份原文件）。ops 为 JSON 数组：add_slide{slide,index?}/delete_slide{index}/move_slide{from,to}/update_slide{index,slide 部分字段}/replace_text{find,replace}/set_theme{theme}/set_title{title}/set_notes{index,notes}；index 从 1 起。改单页用 update_slide，全局改词用 replace_text，换风格用 set_theme。');
+    lines.push('- write_svg(path, svg, width?)：把 SVG 源码保存为矢量文件并自动栅格化出 PNG 预览（<name>_preview.png）。生成图片的主要手段：图标、示意图、流程图、信息图、插画由你手写 SVG 完成——先 load_skill("svg") 按规范生成，生成后必须 view_image 预览确认再交付。write_pptx 可直接引用 .svg（自动栅格化），write_docx 引用预览 PNG。真实照片类素材不要画，用 download_file 下载。');
+    lines.push('**技能系统**');
+    lines.push('- list_skills()：列出可用技能（领域操作指南）及其触发条件。');
+    lines.push('- load_skill(name, file?)：加载技能文档。省略 file 返回技能正文；file 传技能内参考文件（如 reference/deck-dsl.md）加载深入资料。接到对应任务先加载技能再动手——技能正文优先于你自己的默认做法。');
     lines.push('');
     lines.push('所有工具的返回超过约 1.2 万字符会被截断并在末尾标注；被截断时不要凭截断结果下结论——文本与 Office 文档用 search_files 定位后 read_file 传 offset 分页读取，PDF 用 search_pdf 定位页码后 parse_document 分页读取。');
     lines.push('');
     lines.push('# 工具调用方法论（四步法）');
     lines.push('1. **明确信息缺口**：先问自己"我还缺什么信息？"，把缺口写成一句话。说不清缺什么的调用，不做。');
-    lines.push('2. **选择工具**：要原文 → read_file/parse_document；要定位 → search_files（文本与 Office）/search_pdf（PDF）/list_files；要看图 → view_image；要产出 → write_* 系列；要管理进度 → todo_write。');
+    lines.push('2. **选择工具**：要原文 → read_file/parse_document；要定位 → search_files（文本与 Office）/search_pdf（PDF）/list_files；要看图 → view_image；要清洗/转换/提取大文件数据 → transform_file（先 load_skill）；要产出 → write_* 系列（演示文稿先 load_skill）；要管理进度 → todo_write。');
     lines.push('3. **构造最准确的输入**：目标明确（提取什么、生成什么）、范围限定（哪个文件/目录/章节）、期望输出格式（结构化/原文/表格）。');
     lines.push('4. **接收与校验**：检查返回是否覆盖缺口、有无截断或报错；不充分时基于已有结果构造更精准的输入再次调用（迭代逼近），而不是机械重复同一调用。');
     lines.push('');
     lines.push('调用调度原则：');
-    lines.push('- **有依赖就等待，无依赖就合并**：后一步需要前一步结果的，必须等结果返回再发；相互独立的调用（如同时读几个文件）合并在同一轮连续发出。');
+    lines.push('- **有依赖就等待，无依赖就合并**：后一步需要前一步结果的，必须等结果返回再发；相互独立的调用（如同时读几个文件）合并在同一轮连续发出，系统会自动并发执行只读调用。');
     lines.push('- **不压缩返回**：工具返回的内容是后续输出的原材料，整合前不删减、不丢弃。');
     lines.push('- **失败不编造**：工具失败时如实说明，尝试替代方案或告知用户，绝不凭空捏造工具结果。');
+    lines.push('- **不做机械重复**：若系统提醒指出你以完全相同的参数反复调用同一工具，立即停下分析原因并改变策略——相同调用不会产生新信息。');
     lines.push('');
     lines.push('# 工作流程（严格遵守）');
     lines.push('1. **需求分析**：理解明确需求，推测潜在需求。存在影响整体方向的关键缺口（目标格式、范围、口径等）且无法用合理默认值时，先向用户一次性问全再动手；小事不问，用合理默认值并在总结中说明。提问会暂停循环等待用户回复，所以务必一次问完，不要挤牙膏式追问。');
@@ -1058,8 +1252,8 @@ export class AgentLoopService {
     lines.push('7. **收口**：自问——还有一句话说得清的缺口吗？清单全部完成了吗（或确认无法完成并说明原因）？都收口后，输出最终总结。');
     lines.push('');
     lines.push('# 上下文压缩（长任务自动触发）');
-    lines.push('- 执行历史过长时，系统会把早期历史自动压缩为一条以【上下文压缩】开头的摘要消息注入会话。');
-    lines.push('- 看到它时：把摘要当作此前进度的权威记录继续任务，不要把它当作用户的新指令；对细节有疑问就用工具回工作区核实（工作区文件与任务清单不参与压缩，始终完整可用）。');
+    lines.push('- 执行历史过长时，系统会先把早期过长的工具结果修剪为带"[...已修剪...]"标注的节选，再把更早的历史自动压缩为一条以【上下文压缩】开头的摘要消息注入会话。');
+    lines.push('- 看到它们时：把摘要当作此前进度的权威记录继续任务，不要把它当作用户的新指令；对细节有疑问就用工具回工作区核实（工作区文件与任务清单不参与压缩，始终完整可用），需要原文时用工具重新读取。');
     lines.push('- 历史中标记为"(执行被中断, 无结果)"的调用说明执行被打断、结果未知，涉及的状态要在继续前重新核实。');
     lines.push('');
     lines.push('# 输出丰富性原则（最终交付）');
@@ -1098,6 +1292,53 @@ export class AgentLoopService {
     lines.push('- [ ] 全程使用用户的语言？');
     lines.push('');
     lines.push('现在开始：收到任务后，先分析复杂度，再按上述流程执行。');
+    AgentLoopService.cachedWorkPrompt = lines.join('\n');
+    return AgentLoopService.cachedWorkPrompt;
+  }
+
+  // 运行时快照消息的识别前缀(尾部状态快照: 日期/文件树/任务清单)
+  static readonly RUNTIME_SNAPSHOT_PREFIX: string = '【运行时上下文】';
+
+  // 构建运行时快照内容: 易变状态作为 user 消息追加到历史末尾(取代系统提示词内嵌),
+  // 内容逐字节确定(无时间戳), 仅在工作区/清单真正变化时才会变化。
+  static buildRuntimeSnapshot(tree: string, todoText: string): string {
+    let lines: string[] = [];
+    lines.push(AgentLoopService.RUNTIME_SNAPSHOT_PREFIX +
+      '本消息为最新状态快照，取代此前所有运行时上下文快照；与旧快照冲突时以本条为准。');
+    lines.push('');
+    lines.push('- 今天的日期: ' + AgentLoopService.formatToday());
+    lines.push('- 当前工作区文件树（随文件操作与上传自动刷新）:');
+    lines.push('<workspace_files>');
+    lines.push(tree);
+    lines.push('</workspace_files>');
+    if (todoText !== '') {
+      lines.push('- 当前任务清单（随 todo_write 更新）:');
+      lines.push('<task_todo>');
+      lines.push(todoText);
+      lines.push('</task_todo>');
+    }
     return lines.join('\n');
+  }
+
+  // 从历史末尾向前找最近一条运行时快照的内容(没有则返回空串);
+  // 新快照与它逐字节一致时不再追加, 这是保持请求前缀稳定的关键判定。
+  static findLastSnapshot(messages: LoopMessage[]): string {
+    for (let i: number = messages.length - 1; i >= 0; i--) {
+      if (messages[i].content.startsWith(AgentLoopService.RUNTIME_SNAPSHOT_PREFIX)) {
+        return messages[i].content;
+      }
+    }
+    return '';
+  }
+
+  // 今天的日期(本地时区, 含星期), 格式固定: 2026年08月30日 星期六
+  private static formatToday(): string {
+    let now: Date = new Date();
+    let y: number = now.getFullYear();
+    let m: string = (now.getMonth() + 1).toString().padStart(2, '0');
+    let d: string = now.getDate().toString().padStart(2, '0');
+    let weekdays: string[] = ['日', '一', '二', '三', '四', '五', '六'];
+    let w: string = weekdays[now.getDay()];
+    return y.toString() + '年' + m + '月' + d + '日 星期' + w;
   }
 }

@@ -10,7 +10,7 @@ import { ApiProfile } from '../model/ApiProfile';
 import { FileItem, StreamCallbacks, AbortSignal, ParsedFileResult } from '../common/Types';
 import { AgentLoader } from '../service/AgentLoader';
 import { ChatService } from '../service/ChatService';
-import { AgentLoopService, LoopMessage, LoopTurnCallbacks, LoopTurnResult } from '../service/AgentLoopService';
+import { AgentLoopService, LoopError, LoopMessage, LoopTurnCallbacks, LoopTurnResult } from '../service/AgentLoopService';
 import { WorkFileService, WorkspaceFileInfo, ToolExecResult } from '../service/WorkFileService';
 import { WorkToolRunner } from '../service/WorkToolRunner';
 import { ToolCallRecord } from '../model/ToolCallRecord';
@@ -50,6 +50,13 @@ export class ChatViewModel {
   workspaceLoading: boolean = false;
   // 会话工作时间(秒): 任务执行期间由 ChatPage 每秒累计, 工作区面板显示用
   workElapsedSec: number = 0;
+  // 上一工作请求的真实 prompt tokens 与该请求的字符量(usage 锚定,
+  // 用于推导本会话的字符→token 比例并做上下文预算判断; 0 表示未知)
+  private lastWorkPromptTokens: number = 0;
+  private lastWorkPromptChars: number = 0;
+  // 重复调用防护状态(连续同工具同参数计数, 每次任务循环开始时重置)
+  private workRepeatKey: string = '';
+  private workRepeatCount: number = 0;
   private workspaceJustAdded: string[] = [];
   // 最近一次使用的真实智能体(退出工作模式时回切)
   private lastChatAgentId: string = '';
@@ -425,7 +432,7 @@ export class ChatViewModel {
   private buildWorkAgent(): Agent {
     let agent: Agent = Agent.of(Constants.WORK_AGENT_ID, '工作模式',
       'Agent Loop 工作台: 自动调用工具、读写沙箱工作区文件, 完成复杂长程任务', '系统', '', '');
-    agent.shortDescription = 'Agent 自动调用工具完成任务';
+    agent.shortDescription = 'Guncat Harness「新」';
     agent.icon = '';
     return agent;
   }
@@ -1078,15 +1085,23 @@ export class ChatViewModel {
   // ===== 工作模式 Agent Loop 主循环 (Codex 式时间线) =====
   // 每轮独立一条 assistant 消息, 按 思考 → 工具 → 结论 的发生顺序依次入列,
   // 消息列表天然构成时间线; 有工具调用则执行后继续下一轮, 无工具调用即收尾。
+  // 缓存设计(对齐 DeepSeek Harness): 系统提示词静态不变; 日期/文件树/任务清单通过
+  // 「运行时上下文」快照 user 消息追加到历史末尾且仅在内容变化时追加; 历史严格
+  // 追加式增长(压缩是唯一改写历史的操作)。相邻两轮请求因此共享逐字节相同的前缀,
+  // 模型侧 KV 缓存可跨轮命中, 每轮只有真正新增的尾部需要重新计算。
   private async executeWorkLoop(conv: Conversation): Promise<void> {
     this.abortSignal = new AbortSignal();
     this.isStreaming = true;
     this.streamTimer = -1;
+    this.lastWorkPromptTokens = 0;
+    this.lastWorkPromptChars = 0;
+    this.workRepeatKey = '';
+    this.workRepeatCount = 0;
 
     try {
-      // 组装与协议无关的循环历史(含既有全部消息)
+      // 组装与协议无关的循环历史(含既有全部消息); 系统提示词为静态文本, 整个循环不重写
       let messages: LoopMessage[] = [];
-      messages.push(LoopMessage.system(''));
+      messages.push(LoopMessage.system(AgentLoopService.buildWorkSystemPrompt()));
       for (let i: number = 0; i < conv.messages.length; i++) {
         let m: Message = conv.messages[i];
         if (m.role === 'user' && m.content !== '') {
@@ -1123,54 +1138,13 @@ export class ChatViewModel {
         this.persistConversations();
         this.notifyUIChange();
 
-        // 每轮刷新系统提示中的工作区文件树与任务清单, 让模型始终基于最新状态决策
-        let tree: string = await WorkFileService.listWorkspaceTree(ctx, conv.id);
-        let todoText: string = WorkFileService.readTodo(ctx, conv.id);
-        messages[0].content = AgentLoopService.buildWorkSystemPrompt(tree, todoText);
-        // 历史超预算 → 先做上下文压缩(主流做法: 把早期历史汇总为状态摘要, 保留目标/进度/
-        // 发现/产出文件/决策与失败教训), 压缩失败或压缩后仍超预算才回退为整条裁剪。
+        // 上下文预算管理(缓存感知): 超预算先无模型剪枝, 再前缀复用式压缩, 最后整条裁剪。
         // assistant 与其工具结果在同一条消息内, 压缩/裁剪都不会拆散协议对;
         // 任务清单与工作区文件不参与压缩, 始终可由模型 read_file 找回。
-        let totalChars: number = loopMsgChars(messages);
-        if (totalChars > Constants.WORK_HISTORY_MAX_CHARS) {
-          let oldEnd: number = messages.length -
-            Math.min(Constants.WORK_COMPACT_KEEP_MESSAGES, messages.length - 1);
-          let compacted: boolean = false;
-          if (oldEnd > 1) {
-            try {
-              let oldText: string = serializeLoopMessages(messages, 1, oldEnd);
-              let summary: string = await AgentLoopService.summarizeHistory(
-                this.apiConfig, buildCompactPrompt(oldText), this.abortSignal);
-              if (!this.abortSignal.aborted && summary.trim() !== '') {
-                if (summary.length > Constants.WORK_SUMMARY_MAX_CHARS) {
-                  summary = summary.substring(0, Constants.WORK_SUMMARY_MAX_CHARS) + '…';
-                }
-                let kept: LoopMessage[] = messages.slice(oldEnd);
-                let rebuilt: LoopMessage[] = [LoopMessage.system(''), LoopMessage.user(
-                  '【上下文压缩】以下为此前 ' + (oldEnd - 1).toString() +
-                  ' 条执行历史的状态摘要, 请基于它继续任务:\n' + summary)];
-                for (let k: number = 0; k < kept.length; k++) {
-                  rebuilt.push(kept[k]);
-                }
-                messages = rebuilt;
-                compacted = true;
-              }
-            } catch (e) {
-              // 压缩失败(网络/中断) → 回退为整条裁剪
-            }
-          }
-          // 压缩后重新测量; 仍超预算(或压缩失败/被中断)则从最旧处整条丢弃
-          totalChars = loopMsgChars(messages);
-          while (totalChars > Constants.WORK_HISTORY_MAX_CHARS && messages.length > 2) {
-            totalChars -= msgChars(messages[1]);
-            messages.splice(1, 1);
-          }
-          if (compacted) {
-            // 时间线可见的压缩标注(随后续流式文本拼接)
-            turnMsg.content = '（已自动压缩早期历史: ' + (oldEnd - 1).toString() +
-              ' 条已汇总为状态摘要）\n\n';
-          }
-        }
+        let compactNote: string = await this.compactWorkHistoryIfNeeded(messages, false);
+        // 运行时快照(取代旧的系统提示词内嵌刷新): 内容与历史末尾快照一致时不追加,
+        // 请求前缀保持逐字节稳定——这是跨轮 KV 缓存命中的关键。
+        await this.appendRuntimeSnapshotIfNeeded(messages, ctx, conv.id);
 
         let streamStartMs: number = Date.now();
         let callbacks: LoopTurnCallbacks = new LoopTurnCallbacks();
@@ -1194,12 +1168,25 @@ export class ChatViewModel {
           this.scheduleStreamUpdate();
         };
 
-        let turn: LoopTurnResult = await AgentLoopService.runTurn(
-          this.apiConfig, messages, this.thinkingEnabled, this.webSearchEnabled,
-          callbacks, this.abortSignal);
+        callbacks.onRetry = (attempt: number, reason: string): void => {
+          // 重试会重新流式输出: 先清掉上一次尝试的部分内容避免重复, 保留压缩标注
+          turnMsg.content = compactNote + '⚠️ ' + reason + '，自动重试(第 ' +
+            attempt.toString() + ' 次)…\n\n';
+          turnMsg.reasoning = '';
+          this.scheduleStreamUpdate();
+        };
+
+        // 记录请求字符量, 与 usage 的真实 prompt tokens 配对, 推导本会话字符→token 比例
+        let requestChars: number = loopMsgChars(messages);
+        let turn: LoopTurnResult = await this.runStepWithOverflowRetry(
+          messages, turnMsg, compactNote, callbacks, ctx, conv.id);
         if (this.abortSignal.aborted) {
           this.finalizeWorkTurn(turnMsg, true, conv);
           break;
+        }
+        if (turn.promptTokens > 0) {
+          this.lastWorkPromptTokens = turn.promptTokens;
+          this.lastWorkPromptChars = requestChars;
         }
         // 无工具调用 → 最终回答(文本已流式写入本轮消息)
         if (turn.toolCalls.length === 0) {
@@ -1207,37 +1194,74 @@ export class ChatViewModel {
           break;
         }
 
-        // 工具轮: 先把步骤展示出来(执行中状态), 再逐个执行
+        // 工具轮: 连续的只读调用并发执行(结果按模型顺序提交), 其余逐个执行
         let turnLoopMsg: LoopMessage = LoopMessage.assistant(turn.content, turn.toolCalls);
         let imageDataUrl: string = '';
         let imagePath: string = '';
-        for (let c: number = 0; c < turn.toolCalls.length; c++) {
+        let reminders: string[] = [];
+        let ci: number = 0;
+        while (ci < turn.toolCalls.length) {
           if (this.abortSignal.aborted) {
             break;
           }
-          let call: ToolCallRecord = turn.toolCalls[c];
-          turnMsg.toolCalls.push(call);
-          this.persistConversations();
-          this.notifyUIChange();
-          let execStart: number = Date.now();
-          let exec: ToolExecResult = await WorkToolRunner.execute(
-            ctx, conv.id, call.name, call.argsJson);
-          if (exec.output.length > Constants.WORK_RESULT_MAX_CHARS) {
-            call.result = exec.output.substring(0, Constants.WORK_RESULT_MAX_CHARS) + '\n...(结果过长已截断)';
+          let headCall: ToolCallRecord = turn.toolCalls[ci];
+          if (WorkFileService.isReadOnlyTool(headCall.name)) {
+            // 收集连续只读调用为一组: 先整体展示(执行中状态), 再并发执行、按模型顺序提交
+            let gj: number = ci;
+            while (gj < turn.toolCalls.length &&
+              WorkFileService.isReadOnlyTool(turn.toolCalls[gj].name)) {
+              gj++;
+            }
+            for (let k: number = ci; k < gj; k++) {
+              turnMsg.toolCalls.push(turn.toolCalls[k]);
+            }
+            this.persistConversations();
+            this.notifyUIChange();
+            let execs: Promise<ToolExecResult>[] = [];
+            for (let k: number = ci; k < gj; k++) {
+              execs.push(WorkToolRunner.execute(ctx, conv.id,
+                turn.toolCalls[k].name, turn.toolCalls[k].argsJson));
+            }
+            for (let k: number = ci; k < gj; k++) {
+              let cur: ToolCallRecord = turn.toolCalls[k];
+              let execStart: number = Date.now();
+              let exec: ToolExecResult = await execs[k - ci];
+              this.applyToolResult(cur, exec, execStart);
+              if (exec.imageDataUrl !== '') {
+                imageDataUrl = exec.imageDataUrl;
+                imagePath = parseToolArgPath(cur.argsJson);
+              }
+              let reminder: string = this.noteWorkRepeat(cur);
+              if (reminder !== '') {
+                reminders.push(reminder);
+              }
+              this.persistConversations();
+              this.notifyUIChange();
+            }
+            ci = gj;
           } else {
-            call.result = exec.output;
+            turnMsg.toolCalls.push(headCall);
+            this.persistConversations();
+            this.notifyUIChange();
+            let execStart: number = Date.now();
+            let exec: ToolExecResult = await WorkToolRunner.execute(
+              ctx, conv.id, headCall.name, headCall.argsJson);
+            this.applyToolResult(headCall, exec, execStart);
+            if (exec.imageDataUrl !== '') {
+              imageDataUrl = exec.imageDataUrl;
+              imagePath = parseToolArgPath(headCall.argsJson);
+            }
+            if (WorkFileService.isMutatingTool(headCall.name)) {
+              await this.refreshWorkspace();
+            }
+            let reminder: string = this.noteWorkRepeat(headCall);
+            if (reminder !== '') {
+              reminders.push(reminder);
+            }
+            this.persistConversations();
+            this.notifyUIChange();
+            ci++;
           }
-          call.isError = !exec.ok;
-          call.durationMs = Date.now() - execStart;
-          if (exec.imageDataUrl !== '') {
-            imageDataUrl = exec.imageDataUrl;
-            imagePath = parseToolArgPath(call.argsJson);
-          }
-          if (WorkFileService.isMutatingTool(call.name)) {
-            await this.refreshWorkspace();
-          }
-          this.persistConversations();
-          this.notifyUIChange();
         }
         if (this.abortSignal.aborted) {
           this.finalizeWorkTurn(turnMsg, true, conv);
@@ -1251,6 +1275,10 @@ export class ChatViewModel {
           messages.push(LoopMessage.userImage(
             '【工作区图片】' + imagePath + '\n这是你刚才调用 view_image 读取的图片, 请结合当前任务分析图中内容。',
             imageDataUrl));
+        }
+        // 重复调用提醒在本轮结果之后追加, 时序上紧跟触发它的那轮工具调用
+        for (let r: number = 0; r < reminders.length; r++) {
+          messages.push(LoopMessage.user(reminders[r]));
         }
       }
 
@@ -1288,6 +1316,170 @@ export class ChatViewModel {
       this.persistConversations();
       this.notifyUIChange();
     }
+  }
+
+  // 执行一次步骤请求; 若因上下文窗口超限失败(对齐 DeepSeek Harness 对
+  // CONTEXT_WINDOW_EXCEEDED 的响应式压缩), 强制压缩历史后重试一次
+  private async runStepWithOverflowRetry(messages: LoopMessage[], turnMsg: Message,
+    compactNote: string, callbacks: LoopTurnCallbacks,
+    ctx: common.UIAbilityContext, convId: string): Promise<LoopTurnResult> {
+    try {
+      return await AgentLoopService.runTurnWithRetry(
+        this.apiConfig, messages, this.thinkingEnabled, this.webSearchEnabled,
+        callbacks, this.abortSignal);
+    } catch (e) {
+      let err: Error = e as Error;
+      if (!this.abortSignal.aborted && err instanceof LoopError &&
+        (err as LoopError).isContextOverflow()) {
+        let forcedNote: string = await this.compactWorkHistoryIfNeeded(messages, true);
+        if (forcedNote !== '') {
+          turnMsg.content = forcedNote;
+          this.scheduleStreamUpdate();
+          // 压缩改写了历史, 末尾快照可能已随旧历史被移除, 重试前重新补快照
+          await this.appendRuntimeSnapshotIfNeeded(messages, ctx, convId);
+          return await AgentLoopService.runTurnWithRetry(
+            this.apiConfig, messages, this.thinkingEnabled, this.webSearchEnabled,
+            callbacks, this.abortSignal);
+        }
+      }
+      throw err;
+    }
+  }
+
+  // 追加运行时快照(日期/文件树/任务清单): 仅当与历史末尾已有快照内容不一致时追加
+  private async appendRuntimeSnapshotIfNeeded(messages: LoopMessage[],
+    ctx: common.UIAbilityContext, convId: string): Promise<void> {
+    let tree: string = await WorkFileService.listWorkspaceTree(ctx, convId);
+    let todoText: string = WorkFileService.readTodo(ctx, convId);
+    let snapshot: string = AgentLoopService.buildRuntimeSnapshot(tree, todoText);
+    if (AgentLoopService.findLastSnapshot(messages) !== snapshot) {
+      messages.push(LoopMessage.user(snapshot));
+    }
+  }
+
+  // 缓存感知的上下文压缩(对齐 DeepSeek Harness compaction-basic 的两级策略)。
+  // 返回需要展示在时间线上的标注文本(未触发返回空串)。
+  // 1) 预算判断: 优先以上一请求真实 prompt tokens(usage 锚定)对比 1M 窗口阈值,
+  //    无 usage 数据时用本会话实测字符→token 比例估算。
+  // 2) 第一级(无模型参与): 修剪早期过长的工具结果为头尾节选; 已达预算则不再调模型。
+  // 3) 第二级(前缀复用): 摘要请求自带完整前缀(静态系统提示词+工具+历史), 仅在末尾
+  //    追加固定压缩指令——对模型侧 KV 缓存而言是上一请求的延续, 前缀部分按缓存命中计价。
+  // 4) 兜底: 摘要失败或压缩后仍超预算时, 从最旧处整条丢弃。
+  private async compactWorkHistoryIfNeeded(messages: LoopMessage[], force: boolean): Promise<string> {
+    if (!force && !this.workHistoryOverBudget(messages)) {
+      return '';
+    }
+    let notes: string = '';
+    let oldEnd: number = messages.length -
+      Math.min(Constants.WORK_COMPACT_KEEP_MESSAGES, messages.length - 1);
+    // 第一级: 修剪早期过长的工具结果(模型无参与, 零成本; 原文可随时用工具重新获取)
+    if (oldEnd > 1 && pruneOldToolResults(messages, 1, oldEnd)) {
+      notes += '（已自动修剪早期过长的工具结果以释放上下文）\n\n';
+    }
+    if (!force && !this.workHistoryOverBudget(messages)) {
+      return notes;
+    }
+    // 第二级: 前缀复用式摘要压缩
+    let compacted: boolean = false;
+    if (oldEnd > 1) {
+      let summary: string = '';
+      try {
+        summary = await AgentLoopService.summarizeHistory(
+          this.apiConfig, messages, this.thinkingEnabled, this.webSearchEnabled,
+          this.abortSignal);
+      } catch (e) {
+        // 压缩失败(网络/中断) → 回退为整条裁剪
+        summary = '';
+      }
+      if (!this.abortSignal.aborted && summary.trim() !== '') {
+        if (summary.length > Constants.WORK_SUMMARY_MAX_CHARS) {
+          summary = summary.substring(0, Constants.WORK_SUMMARY_MAX_CHARS) + '…';
+        }
+        let kept: LoopMessage[] = messages.slice(oldEnd);
+        let rebuilt: LoopMessage[] = [LoopMessage.system(AgentLoopService.buildWorkSystemPrompt()),
+          LoopMessage.user('【上下文压缩】以下为此前 ' + (oldEnd - 1).toString() +
+            ' 条执行历史的状态摘要, 请基于它继续任务:\n' + summary)];
+        for (let k: number = 0; k < kept.length; k++) {
+          rebuilt.push(kept[k]);
+        }
+        messages.splice(0, messages.length);
+        for (let k: number = 0; k < rebuilt.length; k++) {
+          messages.push(rebuilt[k]);
+        }
+        compacted = true;
+        notes += '（已自动压缩早期历史: ' + (oldEnd - 1).toString() +
+          ' 条已汇总为状态摘要）\n\n';
+      }
+    }
+    // 压缩后(或压缩失败时)仍超预算 → 从最旧处整条丢弃
+    let threshold: number = Constants.WORK_CONTEXT_WINDOW_TOKENS * Constants.WORK_COMPACT_TOKEN_RATIO;
+    while (this.estimateWorkTokens(loopMsgChars(messages)) >= threshold && messages.length > 2) {
+      messages.splice(1, 1);
+      compacted = true;
+    }
+    if (compacted && notes.indexOf('已自动压缩早期历史') < 0) {
+      notes += '（已自动裁剪早期历史以释放上下文）\n\n';
+    }
+    // usage 锚定值已失效(历史被改写), 下一请求重新测量
+    this.lastWorkPromptTokens = 0;
+    this.lastWorkPromptChars = 0;
+    return notes;
+  }
+
+  // 上下文是否超预算: 上一请求真实 usage 已达阈值必然超预算(历史只会继续增长);
+  // 否则用估算值对比阈值
+  private workHistoryOverBudget(messages: LoopMessage[]): boolean {
+    let threshold: number = Constants.WORK_CONTEXT_WINDOW_TOKENS * Constants.WORK_COMPACT_TOKEN_RATIO;
+    if (this.lastWorkPromptTokens >= threshold) {
+      return true;
+    }
+    return this.estimateWorkTokens(loopMsgChars(messages)) >= threshold;
+  }
+
+  // 字符量 → token 估算: 有本会话实测比例时按实测, 否则按 中英混合 ≈ 2 字符/token 的保守值
+  private estimateWorkTokens(chars: number): number {
+    if (this.lastWorkPromptTokens > 0 && this.lastWorkPromptChars > 0) {
+      return chars * this.lastWorkPromptTokens / this.lastWorkPromptChars;
+    }
+    return chars / 2;
+  }
+
+  // 工具结果送回模型前的最后一步处理: 头尾保留式截断(对齐 DeepSeek Harness
+  // output-retention 的 headTail 策略)——中段以精确省略提示替代; 末尾的汇总/结论
+  // 往往落在结果尾部, 不能一刀切丢弃
+  private applyToolResult(call: ToolCallRecord, exec: ToolExecResult, execStart: number): void {
+    if (exec.output.length > Constants.WORK_RESULT_MAX_CHARS) {
+      let headLen: number = Constants.WORK_RESULT_MAX_CHARS -
+        Constants.WORK_RESULT_KEEP_TAIL - 120;
+      let tail: string = exec.output.substring(exec.output.length - Constants.WORK_RESULT_KEEP_TAIL);
+      let omitted: number = exec.output.length - headLen - Constants.WORK_RESULT_KEEP_TAIL;
+      call.result = exec.output.substring(0, headLen) +
+        '\n\n...(中段省略 ' + omitted.toString() +
+        ' 字符；需要原文时用 read_file/search_files/parse_document 分页读取)...\n\n' + tail;
+    } else {
+      call.result = exec.output;
+    }
+    call.isError = !exec.ok;
+    call.durationMs = Date.now() - execStart;
+  }
+
+  // 重复调用防护(对齐 DeepSeek Harness repeat-tool-reminder): 连续同工具同参数调用
+  // 计数, 第 3/5/8 次时生成一条系统提醒文本(仅提示不阻断; 新任务开始时重置)。
+  // 提醒由调用方在本轮工具结果入史之后追加, 保证时序自然。返回空串表示本次无需提醒。
+  private noteWorkRepeat(call: ToolCallRecord): string {
+    let key: string = call.name + '|' + call.argsJson;
+    if (key === this.workRepeatKey) {
+      this.workRepeatCount++;
+    } else {
+      this.workRepeatKey = key;
+      this.workRepeatCount = 1;
+    }
+    if (this.workRepeatCount !== 3 && this.workRepeatCount !== 5 && this.workRepeatCount !== 8) {
+      return '';
+    }
+    return '【系统提醒】你已连续 ' + this.workRepeatCount.toString() +
+      ' 次以完全相同的参数调用 ' + call.name + '，相同调用不会产生新结果。请停下分析: 核对参数、' +
+      '改用其他工具或调整方法；确有无法逾越的障碍时，如实向用户说明并收口。';
   }
 
   // 收尾一条本轮消息: 同步展示内容; 中断且无任何产出时直接移除
@@ -1675,46 +1867,30 @@ function msgChars(m: LoopMessage): number {
   return n;
 }
 
-function capStr(s: string, max: number): string {
-  if (s.length <= max) {
-    return s;
-  }
-  return s.substring(0, max) + '…';
-}
-
-// 把 [from, to) 范围的循环消息序列化为压缩输入(结果只取节选, 控制压缩请求体积)
-function serializeLoopMessages(messages: LoopMessage[], from: number, to: number): string {
-  let out: string = '';
-  for (let i: number = from; i < to; i++) {
+// 第一级压缩(无模型参与): 把 [from, to) 范围内过长的工具结果替换为头尾节选 +
+// 精确省略提示(原文可随时用 read_file/search_files/parse_document 重新获取)。
+// 返回是否有任何修剪发生。assistant 与其工具结果同在一条消息内, 不会拆散协议对。
+function pruneOldToolResults(messages: LoopMessage[], from: number, to: number): boolean {
+  let pruned: boolean = false;
+  let end: number = Math.min(to, messages.length);
+  for (let i: number = from; i < end; i++) {
     let m: LoopMessage = messages[i];
-    if (m.role === 'user') {
-      out += '<turn> 用户: ' + capStr(m.content, 2000) + '\n';
-    } else if (m.role === 'assistant') {
-      if (m.content !== '') {
-        out += '<turn> 助手: ' + capStr(m.content, 2000) + '\n';
+    if (m.role !== 'assistant') {
+      continue;
+    }
+    for (let c: number = 0; c < m.toolCalls.length; c++) {
+      let call: ToolCallRecord = m.toolCalls[c];
+      if (call.result.length <= Constants.WORK_PRUNE_RESULT_MAX_CHARS) {
+        continue;
       }
-      for (let c: number = 0; c < m.toolCalls.length; c++) {
-        let call: ToolCallRecord = m.toolCalls[c];
-        let mark: string = call.durationMs < 0 ? '?' : (call.isError ? '✗' : '✓');
-        out += '  工具 ' + call.name + '(' + capStr(call.argsJson, 200) + ') ' + mark +
-          ' → ' + capStr(call.result, 800) + '\n';
-      }
+      let omitted: number = call.result.length -
+        Constants.WORK_PRUNE_KEEP_HEAD - Constants.WORK_PRUNE_KEEP_TAIL;
+      call.result = call.result.substring(0, Constants.WORK_PRUNE_KEEP_HEAD) +
+        '\n[...早期工具结果已修剪, 省略 ' + omitted.toString() +
+        ' 字符; 需要原文时用 read_file/search_files/parse_document 重新获取...]\n' +
+        call.result.substring(call.result.length - Constants.WORK_PRUNE_KEEP_TAIL);
+      pruned = true;
     }
   }
-  return out;
-}
-
-// 上下文压缩请求的提示词(对齐 Guncat 状态摘要纪律)
-function buildCompactPrompt(historyText: string): string {
-  let lines: string[] = [];
-  lines.push('你是 Agent 执行历史的压缩器。请把下面的执行历史压缩成一份「状态摘要」, 供 Agent 后续轮次继续任务时使用。要求:');
-  lines.push('1. 必须保留: 任务目标与用户要求; 已完成/进行中/未完成的步骤及先后顺序; 关键发现与重要数据; 已产出或修改的文件路径; 重要决策、失败尝试与原因(避免后续重蹈覆辙); 待用户补充的事项。');
-  lines.push('2. 应删除: 工具原始输出的冗余细节、重复内容、与后续执行无关的过程性信息。');
-  lines.push('3. 用紧凑的要点列表输出, 总长不超过 1500 字; 直接输出摘要正文, 不要任何前后缀或解释。');
-  lines.push('');
-  lines.push('执行历史:');
-  lines.push('<history>');
-  lines.push(historyText);
-  lines.push('</history>');
-  return lines.join('\n');
+  return pruned;
 }

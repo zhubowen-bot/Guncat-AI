@@ -4,7 +4,7 @@
       "id": "guncat-3.0-mini",
       "name": "轻简模式",
       "description": "Guncat 3.0-Mini：回答更简洁的轻量全能智能体，适用于简单聊天或简单知识查询",
-      "shortDescription": "Guncat 3.0-Mini「新」",
+      "shortDescription": "Guncat 3.0-Mini",
       "icon": "icons/guncat-3.0-mini.png",
       "category": "通用智能体",
       "promptFile": "Guncat 3.0-Mini_prompt_EN.md"
@@ -13,7 +13,7 @@
       "id": "guncat-3.0-flash",
       "name": "效率模式",
       "description": "Guncat 3.0-Flash：专家级轻量全能智能体，融合多轮搜索、多步推理与行业领先的反幻觉体系，综合能力接近三倍体量的3.0-Pro",
-      "shortDescription": "Guncat 3.0-Flash「新」",
+      "shortDescription": "Guncat 3.0-Flash",
       "icon": "icons/guncat-3.0-flash.png",
       "category": "通用智能体",
       "promptFile": "Guncat 3.0-Flash_prompt_EN.md"
@@ -22,7 +22,7 @@
       "id": "guncat-3.0-pro",
       "name": "专家模式",
       "description": "Guncat 3.0-Pro：最强大的专家级单体化超级智能体，融合多轮搜索、多步推理、全系专家智能体能力与行业领先的反幻觉体系",
-      "shortDescription": "Guncat 3.0-Pro「新」",
+      "shortDescription": "Guncat 3.0-Pro",
       "icon": "icons/guncat-3.0-pro.png",
       "category": "通用智能体",
       "promptFile": "Guncat 3.0-Pro_prompt_EN.md"

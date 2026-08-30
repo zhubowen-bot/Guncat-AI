@@ -180,7 +180,7 @@ export class TextReaderService {
       extraParams: {
         'style': selected.style,
         'locate': 'CN',
-        'name': 'GuncatReader',
+        'name': 'Guncat Work Reader',
         'isBackStage': true
       }
     };

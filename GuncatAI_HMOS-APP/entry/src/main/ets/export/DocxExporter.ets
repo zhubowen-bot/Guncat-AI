@@ -10,7 +10,7 @@ export class DocxExporter {
   // 导出对话消息为 Word 文档, 返回保存的文件名; 用户取消时抛出错误
   static async exportToDocx(context: common.UIAbilityContext, markdown: string,
     defaultName: string): Promise<string> {
-    let title: string = defaultName !== '' ? defaultName : 'Guncat AI 对话导出';
+    let title: string = defaultName !== '' ? defaultName : 'Guncat Work 对话导出';
     let doc: OoxmlDocument = await OoxmlBuilder.build(title, markdown);
     let bytes: Uint8Array = DocxExporter.assembleZip(doc);
     return DocxExporter.saveViaPicker(context, bytes);

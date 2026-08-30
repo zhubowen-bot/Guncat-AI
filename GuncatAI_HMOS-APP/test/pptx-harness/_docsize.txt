@@ -1,0 +1,10 @@
+entry/src/main/resources/rawfile/skills/svg/SKILL.md -> 2189 chars OK (fences 2 BALANCED)
+entry/src/main/resources/rawfile/skills/svg/reference/svg-craft.md -> 2546 chars OK (fences 2 BALANCED)
+entry/src/main/resources/rawfile/skills/svg/reference/svg-recipes.md -> 4123 chars OK (fences 14 BALANCED)
+entry/src/main/resources/rawfile/skills/ppt/SKILL.md -> 2832 chars OK (fences 2 BALANCED)
+entry/src/main/resources/rawfile/skills/ppt/reference/deck-dsl.md -> 2929 chars OK (fences 4 BALANCED)
+entry/src/main/resources/rawfile/skills/ppt/reference/design-guide.md -> 1664 chars OK (fences 2 BALANCED)
+entry/src/main/resources/rawfile/skills/ppt/reference/themes.md -> 1144 chars OK (fences 2 BALANCED)
+README.md -> fences 18 BALANCED
+README_EN.md -> fences 18 BALANCED
+ALL OK

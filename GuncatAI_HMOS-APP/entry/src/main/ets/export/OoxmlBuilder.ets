@@ -696,8 +696,8 @@ export class OoxmlBuilder {
       'xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" ' +
       'xmlns:dcmitype="http://purl.org/dc/dcmitype/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">' +
       '<dc:title>' + XmlUtil.escape(title) + '</dc:title>' +
-      '<dc:creator>Guncat AI</dc:creator>' +
-      '<cp:lastModifiedBy>Guncat AI</cp:lastModifiedBy>' +
+      '<dc:creator>Guncat Work</dc:creator>' +
+      '<cp:lastModifiedBy>Guncat Work</cp:lastModifiedBy>' +
       '<dcterms:created xsi:type="dcterms:W3CDTF">' + now + '</dcterms:created>' +
       '<dcterms:modified xsi:type="dcterms:W3CDTF">' + now + '</dcterms:modified>' +
       '</cp:coreProperties>';
@@ -706,7 +706,7 @@ export class OoxmlBuilder {
   private buildAppXml(): string {
     return XML_HEAD + '<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties" ' +
       'xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes">' +
-      '<Application>Guncat AI</Application>' +
+      '<Application>Guncat Work</Application>' +
       '<DocSecurity>0</DocSecurity>' +
       '<ScaleCrop>false</ScaleCrop>' +
       '<LinksUpToDate>false</LinksUpToDate>' +

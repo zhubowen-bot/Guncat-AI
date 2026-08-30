@@ -35,6 +35,19 @@ export struct WorkspaceBar {
     return '';
   }
 
+  // 最近一条 assistant 消息的生成速度 (tok/s; 流式期间为实时估算值,
+  // 该轮 usage 返回后被精确值覆盖; 无数据返回空串)
+  private getSpeedText(): string {
+    let msgs: Message[] = this.vm.currentMessages;
+    for (let i: number = msgs.length - 1; i >= 0; i--) {
+      let m: Message = msgs[i];
+      if (m.role === 'assistant' && m.tokenSpeed > 0) {
+        return m.tokenSpeed.toFixed(1) + ' tok/s';
+      }
+    }
+    return '';
+  }
+
   build() {
     Column({ space: 8 }) {
       // 头部行: 标题 + 右侧上传 / 导出按钮
@@ -91,11 +104,18 @@ export struct WorkspaceBar {
       // 撑开剩余空间, 把统计行压到面板底部
       Blank()
 
-      // 底部统计行(左下角): 会话工作时间 + 缓存命中率
+      // 底部统计行(左下角): 会话工作时间 + 生成速度 + 缓存命中率
       Row({ space: 6 }) {
         // 会话工作时间: 任务执行中每秒走字, 停止后定格, 未执行过任务不显示
         if (this.vm.workElapsedSec > 0) {
           Text(this.formatWorkTime(this.vm.workElapsedSec))
+            .fontSize(11)
+            .fontColor(this.vm.isStreaming ?
+              $r('app.color.text_secondary') : $r('app.color.text_tertiary'))
+        }
+        // 生成速度: 流式期间实时刷新(面板随 workElapsedSec 每秒重渲染), 停止后定格
+        if (this.getSpeedText() !== '') {
+          Text(this.getSpeedText())
             .fontSize(11)
             .fontColor(this.vm.isStreaming ?
               $r('app.color.text_secondary') : $r('app.color.text_tertiary'))
