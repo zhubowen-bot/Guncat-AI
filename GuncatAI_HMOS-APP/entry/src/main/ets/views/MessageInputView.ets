@@ -6,6 +6,7 @@ export struct MessageInputView {
   @Prop isStreaming: boolean = false;
   @Prop @Watch('onParsingChange') isParsing: boolean = false;
   @Prop isListening: boolean = false;
+  @Prop placeholder: string = '输入消息...';
   private onSend: (text: string) => void = (_t: string): void => {};
   private onStop: () => void = (): void => {};
   private onFileUpload: () => void = (): void => {};
@@ -107,7 +108,7 @@ export struct MessageInputView {
   buildInputWrap() {
     Row() {
       TextArea({
-        placeholder: '输入消息...',
+        placeholder: this.placeholder,
         text: this.inputText
       })
         .layoutWeight(1)

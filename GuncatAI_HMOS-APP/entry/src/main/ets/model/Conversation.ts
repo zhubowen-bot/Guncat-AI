@@ -8,12 +8,15 @@ export class Conversation {
   title: string = '';
   messages: Message[] = [];
   createdAt: number = 0;
+  // 会话模式: 'chat' 聊天模式 | 'work' 工作模式(Agent Loop + 沙箱工作区); 旧数据缺省为 chat
+  mode: string = 'chat';
 
-  static create(agentId: string, title: string): Conversation {
+  static create(agentId: string, title: string, mode: string): Conversation {
     let conv: Conversation = new Conversation();
     conv.id = generateConversationId();
     conv.agentId = agentId;
     conv.title = title;
+    conv.mode = mode;
     conv.createdAt = new Date().getTime();
     return conv;
   }
@@ -24,6 +27,7 @@ export class Conversation {
     conv.agentId = (json['agentId'] as string) ?? '';
     conv.title = (json['title'] as string) ?? '';
     conv.createdAt = (json['createdAt'] as number) ?? 0;
+    conv.mode = (json['mode'] as string) ?? 'chat';
     let raw: Object = json['messages'];
     if (raw !== undefined) {
       let rawMessages: Object[] = raw as Object[];
@@ -46,7 +50,8 @@ export class Conversation {
       'agentId': this.agentId,
       'title': this.title,
       'messages': msgs,
-      'createdAt': this.createdAt
+      'createdAt': this.createdAt,
+      'mode': this.mode
     };
   }
 }

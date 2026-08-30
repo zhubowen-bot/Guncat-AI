@@ -4,7 +4,7 @@
 
 Guncat AI is a native HarmonyOS AI chat client built with ArkTS and ArkUI. Its primary interface is not hosted in a WebView.
 
-Current app version: `5.2.1`
+Current app version: `6.0.0`
 
 ## Features
 
@@ -30,7 +30,7 @@ Current app version: `5.2.1`
 
 ### Maintenance: per-agent deep-thinking default
 
-New conversations, app launches, and opening empty conversations reset the deep-thinking toggle by agent **name**. Configuration lives in `entry/src/main/ets/viewmodel/ChatViewModel.ts`:
+New conversations, app launches, and opening empty conversations reset the deep-thinking toggle by agent **name**. Configuration lives in `entry/src/main/ets/viewmodel/ChatViewModel.ets`:
 
 - The `defaultThinkingForAgent()` method: returns a boolean by `agent.name` (`false` = off by default, `true` = on by default); returning `null` leaves the toggle untouched (keeps the previous state)
 - Current defaults: Efficiency Mode `false`, Light & Simple Mode `false`, Expert Mode `true`
@@ -109,6 +109,17 @@ The final read-aloud implementation uses HarmonyOS CoreSpeechKit `textToSpeech`.
 - Supports creating, switching, and deleting conversations.
 - Follows the system light/dark theme, including system bars and Markdown styles.
 
+### Work mode (Agent Loop)
+
+Work mode is an **independent identity parallel to the chat agents** — the 🛠 "Work Mode" entry at the top of the agent list in the drawer. It opens an Agent loop with a per-conversation local sandbox workspace and tool-calling capability, allowing the agent to autonomously complete multi-step, long-horizon tasks. See "[Work mode architecture & maintenance guide](#work-mode-architecture--maintenance-guide)" below.
+
+- **Sandbox workspace**: each work conversation maps to `filesDir/workspaces/<convId>/`, with upload, `.zip` export, and clear actions. Everything stays inside the app sandbox plus system safe components (document picker) — **no new permissions**.
+- **14 local tools**: file CRUD (list/read/write/append/delete/create_dir/move/search), task checklist (`todo_write`), image viewing (`view_image`, routed to the main model's multimodal vision), PDF parsing (`parse_document` + automatic `read_file` routing), and Office generation (`write_docx` / `write_xlsx` / `write_pptx`).
+- **Local parsing engine**: `.docx/.xlsx/.pptx/.pdf` text is extracted entirely on-device — no multimodal parsing API and no quota consumption.
+- **Task checklist discipline**: complex tasks start with a `todo_write` checklist whose state is injected into the system prompt each turn and updated item by item.
+- **Codex-style timeline**: each turn is its own message, laid out chronologically as "thinking → tool steps → answer" inside a single-container timeline; tool steps expand to show arguments and results.
+- **Three-protocol tool calling**: OpenAI Completions / OpenAI Responses / Anthropic Messages all support streaming function calling; the web-search toggle remains in the tool row (the server-side search tool coexists with client tools).
+
 ### UI and motion (5.1.0)
 
 - Reworked the deep-thinking (reasoning) bar UI: it now renders as a standalone card above the bubble with uniform corner radii and a neutral light-gray background that blends with the chat area; the loading spinner sits directly to the right of the "Deep Thinking" label, and the separate "Thinking…" text was removed.
@@ -158,45 +169,82 @@ entry/src/main/ets/
 ├── entryability/
 │   └── EntryAbility.ets
 ├── pages/
-│   └── ChatPage.ets
+│   ├── ChatPage.ets                # Main page: chat + work-mode timeline + workspace panel wiring
+│   └── TableOcrPage.ets
 ├── views/
-│   ├── ChatBubbleView.ets
+│   ├── ChatBubbleView.ets          # Chat bubble (reasoning bar / tool-step timeline / WorkStepFormat)
+│   ├── WorkTurnView.ets            # One work-mode turn (thinking→tools→answer, no avatar)
+│   ├── WorkspaceBar.ets            # Work-mode workspace panel (list/upload/export/clear)
 │   ├── RichTextView.ets
 │   ├── MessageInputView.ets
 │   ├── AgentDrawerView.ets
 │   ├── SettingsPanel.ets
+│   ├── AboutPanel.ets
+│   ├── FlyInLaunchView.ets
+│   ├── ToastView.ets
 │   ├── FilePreviewBar.ets
 │   └── ImageLightbox.ets
 ├── viewmodel/
-│   └── ChatViewModel.ts
+│   └── ChatViewModel.ets           # Chat state + work-mode Agent Loop driver (note: .ets)
 ├── service/
-│   ├── ChatService.ts
+│   ├── ChatService.ts              # Three-protocol SSE (parsers exported for AgentLoopService)
+│   ├── AgentLoopService.ts         # Work mode: per-turn tool-calling request + system prompt
+│   ├── WorkToolRunner.ets          # Unified tool dispatch (capabilities requiring .ets modules)
+│   ├── WorkFileService.ts          # Sandbox workspace + file tools + tool schemas (toolDefs)
+│   ├── OfficeReader.ts             # Local docx/xlsx/pptx text extraction (zlib unpack + XML scan)
+│   ├── PdfTextExtractor.ts         # Local PDF text extraction (byte-level objects/pages/ToUnicode)
+│   ├── Flate.ts                    # Pure-TS DEFLATE/zlib inflate (SDK zlib is file-level only)
 │   ├── MultimodalService.ts
 │   ├── FileService.ts
+│   ├── FileUploadService.ts
+│   ├── AgentLoader.ts
+│   ├── TableOcrService.ts
 │   ├── TextReaderService.ets
 │   ├── BackgroundReaderService.ets
 │   └── VoiceInputService.ets
+├── export/
+│   ├── DocxExporter.ets            # Markdown→docx (includes buildDocxBytes for work mode)
+│   ├── XlsxExporter.ets            # Table→xlsx (includes buildXlsxFromRows)
+│   ├── PptxBuilder.ets             # Outline→pptx (section pages / two bullet levels / adaptive sizes)
+│   ├── OoxmlBuilder.ets / MarkdownParser.ets / OmmlConverter.ets / TableHtmlParser.ets / XmlUtil.ets
+│   └── ZipWriter.ts                # STORE-method zip writer (.ts: reusable from TS modules)
 ├── data/
 │   └── StorageManager.ts
 ├── model/
+│   ├── Message.ts / Conversation.ts / Attachment.ts / ToolCallRecord.ts
+│   └── Agent.ts / ApiConfig.ts / ApiProfile.ts / MultimodalConfig.ts
 └── common/
+    ├── Constants.ts / Types.ts / Utils.ts / MarkdownSanitizer.ts
 ```
 
 The project follows an MVVM-like separation:
 
 - View: ArkUI pages and components.
-- ViewModel: chat, attachment, configuration, and persistence state.
-- Service: SSE, file parsing, system sharing, TTS, and ASR.
-- Model: messages, conversations, attachments, agents, and API profiles.
+- ViewModel: chat, attachment, configuration, work-mode loop, and persistence state.
+- Service: SSE, Agent Loop, tool execution, local document parsing, system sharing, TTS, and ASR.
+- Model: messages, conversations, attachments, tool-call records, agents, and API profiles.
+
+> **File extension = dependency rule**: ArkTS forbids `.ts` files from importing `.ets` files (`.ets` may import `.ts`). Decide the extension before creating/moving a file based on dependency direction — capabilities referenced by `.ets` modules such as `ChatViewModel.ets` / `WorkToolRunner.ets` (e.g. Office generation, multimodal) must live in `.ets` files; pure logic (e.g. ZipWriter, PDF/Office parsing) can stay in `.ts` and be used from both sides.
 
 ### Data flow
 
 ```text
+[Chat mode]
 ChatService (SSE)
   → ChatViewModel
   → @Observed Message
   → @ObjectLink ChatBubbleView
   → RichTextView
+
+[Work mode] per loop turn
+User task → ChatViewModel.executeWorkLoop
+  → AgentLoopService.runTurn (three-protocol SSE + streamed tool-call accumulation)
+  → WorkToolRunner.execute → WorkFileService.executeTool
+      → OfficeReader / PdfTextExtractor (reading)
+      → DocxExporter / XlsxExporter / PptxBuilder (generation)
+  → Tool results written back to ToolCallRecord → injected into next request history
+  → one @Observed Message per turn (thinking/tools/answer)
+  → ChatPage.buildWorkTimeline → WorkTurnView
 ```
 
 ### Core components
@@ -205,25 +253,120 @@ ChatService (SSE)
    - Manages conversations, agent selection, API profiles, and editor state.
    - Handles sending, streaming responses, attachment parsing, and regeneration.
    - Coordinates persistence and state restoration.
+   - Work mode: `executeWorkLoop` drives the Agent loop (one message per turn, tool execution, image injection, history trimming).
 
 2. **ChatService**
    - Implements SSE streaming and request cancellation.
    - Supports Chat Completions and Responses API.
    - Parses response deltas and handles network/server errors.
 
-3. **MultimodalService**
+3. **AgentLoopService / WorkToolRunner / WorkFileService (work-mode trio)**
+   - `AgentLoopService`: one LLM turn — three-protocol request bodies (tool definitions, image messages), streamed tool-call accumulation, and the work-mode system prompt.
+   - `WorkToolRunner`: unified tool dispatch entry implementing capabilities that require `.ets` modules (write_docx/xlsx/pptx, parse_document).
+   - `WorkFileService`: all sandbox workspace file operations, file-tool implementations, tool schemas (`toolDefs()`), and workspace zip export.
+
+4. **MultimodalService**
    - Processes images, text, PDFs, and Office documents.
    - Supports pre-parsing, retries, and concurrency control.
    - Supports direct Responses API image/file input.
 
-4. **StorageManager**
+5. **OfficeReader / PdfTextExtractor / Flate (local parsing engine)**
+   - `OfficeReader`: unpacks OOXML and extracts `w:t`/`a:t`/`sharedStrings` text with tag-boundary checks.
+   - `PdfTextExtractor`: byte-level object table + ObjStm expansion + page-tree resource inheritance + ToUnicode CMap + content-stream text.
+   - `Flate`: pure-TS DEFLATE/zlib inflate (the SDK zlib only offers file-level APIs).
+
+6. **StorageManager**
    - Wraps Preferences storage.
    - Persists conversations, profiles, toggles, and reader preferences.
 
-5. **TextReaderService / BackgroundReaderService**
+7. **TextReaderService / BackgroundReaderService**
    - Discovers and manages CoreSpeechKit voices.
    - Controls reading, pause, seeking, and speed.
    - Uses AVSession and a continuous task for background audio.
+
+## Work mode architecture & maintenance guide
+
+Work mode is a standalone agent execution environment: a virtual agent + a per-conversation sandbox workspace + a multi-turn tool-calling loop. This section targets maintainers and covers module responsibilities, data flow, and extension recipes.
+
+### 1. Identity and conversation model
+
+- **Virtual agent**: `Constants.WORK_AGENT_ID = 'work'`. Injected at the top of the agent list on launch by `ChatViewModel.buildWorkAgent()` and rendered with a 🛠 badge by `AgentDrawerView` (special case for `id === 'work'`).
+- **Enter/exit**: tapping "Work Mode" in the drawer = `selectAgent('work')`; tapping any real agent exits (the tool-row Work Mode pill exits back to `lastChatAgentId`, the most recently used real agent).
+- **Conversation binding**: `Conversation.mode = 'chat' | 'work'`; work conversations keep `agentId = 'work'`, migrated automatically for legacy data on launch. Deleting a work conversation also deletes its sandbox workspace directory.
+- **Toggle differences**: entering work mode force-enables deep thinking (the toggle is hidden from the tool row); web search stays available (the server-side search tool is sent alongside client function tools); uploads and camera captures go into the workspace instead of chat attachments.
+- **Persistence**: conversation JSON gains `mode` and `Message.toolCalls` (`ToolCallRecord[]` with arguments/results/duration — the timeline and the LLM history are restored from these after restart). Workspace files themselves live in the sandbox `filesDir`, not in Preferences.
+
+### 2. Agent Loop (`ChatViewModel.executeWorkLoop`)
+
+```text
+for step in 1..WORK_MAX_STEPS(200, runaway safeguard):
+  1. Create a new assistant message (this turn's thinking/tools/answer attach to it)
+  2. Rebuild the system prompt = discipline + workspace file tree + task checklist (refreshed each turn)
+  3. AgentLoopService.runTurn (three-protocol streaming request, with tool definitions)
+  4. No tool calls → this turn is the final answer, stop
+  5. Tool calls → execute each one (WorkToolRunner), write results back into ToolCallRecord
+     - Mutating tools refresh the workspace file panel
+     - A successful view_image injects a multimodal user message (in-memory only)
+  6. This turn (assistant + tool results) enters the request history; continue
+```
+
+- **One message per turn** is the foundation of the timeline UI: the message list is naturally the chronological "thinking→tools→answer" stream, instead of one big aggregated message.
+- **Automatic context compaction**: when the request history exceeds `WORK_HISTORY_MAX_CHARS` (default 600K chars ≈ hundreds of thousands of tokens, sized for 1M-context models), the older history is summarized by the model into a compact "state digest" (goal/progress/key findings/produced files/decisions and failures, ≤2400 chars) that replaces the original history; the most recent 12 messages are kept verbatim. If compaction fails or the history is still over budget, the loop falls back to trimming oldest-first. The task checklist and workspace files are never compacted and can always be re-read via `read_file` — this is what lets long tasks survive context limits. The timeline shows an "early history compacted" note.
+- **Cancellation**: `stopStreaming()` calls both `ChatService.abort()` and `AgentLoopService.abort()`; an interrupted turn with no output is removed, otherwise a "⏹ Task stopped" note is appended.
+- **Step safeguard**: `WORK_MAX_STEPS(200)` exists purely as a runaway guard (preventing endless tool-call loops from burning tokens); normal long tasks never reach it — when triggered, a "send 'continue' to proceed" note is appended to the last message.
+
+### 3. Tool system (14 tools)
+
+Dispatch chain: `ChatViewModel` → `WorkToolRunner.execute()` (.ets entry) → Office generation/parse_document implemented locally, everything else delegated to `WorkFileService.executeTool()` (.ts).
+
+| Tool | Implementation | Notes |
+| --- | --- | --- |
+| `todo_write` | WorkFileService.toolTodoWrite | Writes `.todo.json`; accepts an array or an embedded JSON string |
+| `list_files` | WorkFileService.toolList | Recursive listing, dirs first, with sizes |
+| `read_file` | WorkFileService.toolRead | Plain text direct read; `.docx/.xlsx/.pptx`→OfficeReader, `.pdf`→PdfTextExtractor |
+| `write_file` / `append_file` | WorkFileService.toolWrite | Overwrite/append text (512KB cap, parent dirs auto-created) |
+| `delete_file` / `create_dir` / `move_file` | toolDelete / toolMkdir / toolMove | Recursive delete / mkdir / move (moveFileSync/moveDirSync) |
+| `search_files` | WorkFileService.toolSearch | Case-insensitive substring search over text files, with line numbers |
+| `view_image` | WorkFileService.toolViewImage | Image→dataUrl (≤8MB); the loop injects it as the next multimodal message |
+| `parse_document` | WorkToolRunner.toolParseDocument | Full PDF text (local, 3× output cap) |
+| `write_docx` | toolWriteDocx → DocxExporter.buildDocxBytes | Markdown→Word |
+| `write_xlsx` | toolWriteXlsx → XlsxExporter.buildXlsxFromRows | Markdown table/CSV/TSV→Excel |
+| `write_pptx` | toolWritePptx → PptxBuilder.buildPptxBytes | Outline→PPT (`#` content page / `##` section page / `-` bullets / indented `-` sub-bullets) |
+
+Path safety: every tool path passes through `resolveSafe()` — absolute paths, drive letters, and `..` traversal are rejected; operations stay inside `filesDir/workspaces/<convId>/`.
+
+### 4. Adding a new tool (5 places)
+
+1. `WorkFileService.toolDefs()`: register the schema (name/description/parameters) — this is what the model sees; use `props1`/`props2` to build property maps.
+2. `WorkFileService.dispatchTool()`: add the dispatch branch (for capabilities requiring `.ets` modules, dispatch from `WorkToolRunner.execute()` instead).
+3. Implement the executor returning a `ToolExecResult` (`ok`/`output`; `imageDataUrl` is reserved for view-image-style tools).
+4. `AgentLoopService.buildWorkSystemPrompt()`: document the tool and its discipline.
+5. If it mutates the workspace, register it in `WorkFileService.isMutatingTool()` (the workspace panel refreshes automatically after execution).
+
+### 5. Local parsing engine and the memory/main-thread red lines
+
+**Parsing chain**: `OfficeReader` (zlib.decompressFile unpacks OOXML → XML text-node extraction), `PdfTextExtractor` (byte-level object table → ObjStm sequential-value expansion → page-tree resource inheritance → ToUnicode CMap for CJK → content-stream `Tj/TJ` parsing → raw-stream fallback with diagnostics), `Flate` (pure-TS DEFLATE/zlib inflate).
+
+Three red lines learned from production incidents:
+
+1. **Never build large strings via per-character concatenation** (`s += x` loops are O(n²)) — this OOM'd the shared heap. Large fragments go through `bytesToString()`: bytes are copied into a UTF-16LE buffer and decoded natively with `util.TextDecoder`; `arrayBufferToBase64` likewise generates bytes numerically and decodes natively.
+2. **Heavy CPU parsing must yield the main thread in stages** — a fallback scan over every stream (including font programs) once triggered a THREAD_BLOCK_6S appfreeze. `PdfTextExtractor` uses `yieldNow()` (setTimeout 0) after the object table, between pages, and between fallback streams.
+3. **Every fragment conversion must be capped**: dict 64KB, ObjStm 2MB, CMap 1MB, content stream 4MB, single text decode 128KB, line buffer 100K chars, whole file 16MB — preventing pathological/malicious files from exhausting memory.
+
+### 6. ArkTS constraints learned the hard way
+
+- **`.ts` must not import `.ets`** (compile error 10605999). Draw the dependency direction before choosing an extension: `ChatViewModel.ets` needs Office generation/multimodal modules, so the ViewModel itself must be `.ets`; `WorkFileService.ts` can only depend on `.ts` (ZipWriter was therefore converted from .ets to .ts).
+- **`.ets` forbids anonymous object literal types** (arkts-no-obj-literals-as-types). Use named classes for cross-module structures (`ParsedFileResult`, `ToolExecResult`).
+- **Closures do not inherit null narrowing**: after `let conv: X | null` is null-checked, lambdas may still report "possibly null" — capture a non-null local (e.g. `let emptyConv: Conversation = conv`) before the closure.
+- **The directory-listing API is `listFileSync`** (this SDK has no `readdirSync`); `mkdirSync(path, true)` creates directories recursively.
+- **Imports must precede all other statements** (comments excepted).
+- Rewriting source files through PowerShell pipes re-encodes UTF-8 as GBK and corrupts Chinese text — always edit source files with an editor, never shell redirection.
+
+### 7. UI (Codex-style timeline)
+
+- `ChatPage.buildWorkTimeline`: in work mode the whole conversation renders as a **single-container timeline** — a unique 🛠 "Work Mode" header (with execution status) followed by user task cards (brand-colored) and `WorkTurnView` entries in message order.
+- `WorkTurnView` (`@ObjectLink Message`): collapsible thinking bar → compact tool-step rows (`✓/✗/spinner + N. toolName + arg summary`; tap to expand arguments and results) → answer body (RichTextView); action buttons appear only on the final turn; a 33ms flush timer syncs text and step states during streaming.
+- Chat mode keeps using `ChatBubbleView`; the two render paths do not interfere.
 
 ## Build requirements
 
@@ -302,6 +445,14 @@ You can also select content in Gallery or a file manager and choose Guncat AI fr
 - OpenAI Responses: on sends `reasoning: { "effort": "high" }`; off sends `reasoning: { "effort": "none" }`.
 - New conversations reset the toggle by agent name: off in Efficiency Mode, on in Expert Mode.
 
+### Work mode
+
+1. Tap the 🛠 "Work Mode" entry at the top of the drawer; the page title and empty state switch to work mode.
+2. Use the workspace panel's "Upload" to add files (or the camera button — photos go straight into the workspace).
+3. Describe the task in the editor; for complex tasks the agent first builds a task checklist, then executes it step by step with tool calls visible in the timeline.
+4. Tap any tool step to expand its arguments and results; "Export" packages the whole workspace into a `.zip`.
+5. When finished, the agent outputs a detailed summary (including produced file paths); switching to another agent exits work mode — the work conversation and workspace files are preserved.
+
 ### Read-aloud
 
 1. Tap the read-aloud action on an assistant message.
@@ -323,6 +474,7 @@ You can also select content in Gallery or a file manager and choose Guncat AI fr
 - `ohos.permission.INTERNET`: model API access.
 - `ohos.permission.MICROPHONE`: voice input.
 - `ohos.permission.KEEP_BACKGROUND_RUNNING`: continuous background audio for read-aloud.
+- Work mode: all file I/O happens inside the app sandbox (`filesDir/workspaces/`); picking/saving files uses system safe components (DocumentViewPicker) — **no new permissions**.
 - Share Kit: receiving images and files from other apps.
 - CoreSpeechKit: text-to-speech and speech recognition.
 - AVSession Kit: background media session.
@@ -335,6 +487,19 @@ You can also select content in Gallery or a file manager and choose Guncat AI fr
 - Items received from the system share sheet are never sent automatically; the user must tap Send.
 - Original attachments are not copied into permanent app storage.
 - Requests use HTTPS. Data-processing policies still depend on the configured model provider.
+
+## Version 6.0.0 (Work mode, Agent Loop)
+
+Alongside chat mode, this release adds an independent work mode: the 🛠 "Work Mode" virtual agent (top of the agent list, parallel to other agents) opens a conversation bound to a sandbox workspace, where the agent completes long-horizon tasks through a multi-turn tool-calling loop. Version bumped to 6.0.0 (`Constants.APP_VERSION` and `AppScope/app.json5` versionName 6.0.0 / versionCode 600 in sync).
+
+- **Identity and entry**: the `work` virtual agent is injected at the top of the list; the page title, empty state, and new-conversation ownership follow the selected agent automatically; work conversations use `agentId='work'` (legacy data migrated automatically) and deleting one cleans up its workspace.
+- **Agent Loop**: one message per turn (thinking→tools→answer in chronological order), three-protocol streaming function calling, a 200-turn runaway safeguard, automatic compaction of over-budget history into a state digest (falling back to oldest-first trimming), cancellation annotations, and empty-output cleanup; tool results are truncated before being sent back to the model.
+- **Task checklist**: the `todo_write` tool maintains `.todo.json`; the checklist state is injected into the system prompt every turn — plan first for complex tasks and progress item by item.
+- **14 local tools**: file CRUD/search, `view_image` (images are sent to the main model's multimodal vision), `parse_document` (local PDF), and the Office generation trio (`write_docx`/`write_xlsx`/`write_pptx`).
+- **Local parsing engine**: new `OfficeReader` (OOXML text extraction, fixing the `<w:t` prefix mismatch that leaked XML), `PdfTextExtractor` (byte-level object table / ObjStm expansion / page-tree resource inheritance / ToUnicode CJK mapping / content-stream parsing / fallback scan with diagnostics), and `Flate` (pure-TS DEFLATE inflate). The multimodal parsing API is no longer required.
+- **Codex-style timeline UI**: a single-container timeline (unique 🛠 header + task cards + per-turn "thinking→tools→answer"); tool steps expand to show arguments and results; intermediate turns hide action buttons; the workspace panel supports upload / zip export / clear.
+- **Stability fixes**: PDF parsing OOM (whole-file latin1 concatenation replaced with byte-level scanning + native utf-16le decoding); main-thread block appfreeze (parsing yields in stages and the fallback scan skips fonts/images/oversized streams with caps and pre-checks); the same O(n²) concatenation in `arrayBufferToBase64` was fixed as well.
+- The system prompt now follows the Guncat 3.0 discipline: planner/executor/final-verifier roles, gap-driven convergence, anti-hallucination, pre-delivery verification, and the output richness principle.
 
 ## Version 5.2.1
 

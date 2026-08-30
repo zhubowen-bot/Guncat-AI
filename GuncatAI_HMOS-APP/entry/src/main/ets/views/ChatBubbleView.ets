@@ -1,6 +1,53 @@
 import { Message } from '../model/Message';
 import { Attachment } from '../model/Attachment';
+import { ToolCallRecord } from '../model/ToolCallRecord';
 import { RichTextView } from './RichTextView';
+
+// 工具步骤的文本格式化(静态类, 供 @Builder 内调用; WorkTurnView 复用)
+export class WorkStepFormat {
+  static capText(text: string, max: number): string {
+    if (text.length <= max) {
+      return text;
+    }
+    return text.substring(0, max) + '...';
+  }
+
+  // 参数概要: 优先展示 path/from/to/query, content 只取开头
+  static summarizeArgs(call: ToolCallRecord): string {
+    try {
+      let parsed: Object = JSON.parse(call.argsJson);
+      if (typeof parsed === 'object' && parsed !== null && !(parsed instanceof Array)) {
+        let rec: Record<string, Object> = parsed as Record<string, Object>;
+        let keys: string[] = ['path', 'from', 'to', 'query', 'content'];
+        let parts: string[] = [];
+        for (let i: number = 0; i < keys.length; i++) {
+          let v: Object = rec[keys[i]];
+          if (typeof v === 'string' && (v as string) !== '') {
+            let val: string = v as string;
+            if (keys[i] === 'content') {
+              parts.push('content=' + WorkStepFormat.capText(val.replace(/\s+/g, ' '), 48));
+            } else {
+              parts.push(keys[i] + '=' + WorkStepFormat.capText(val, 80));
+            }
+          }
+        }
+        if (parts.length > 0) {
+          return parts.join(', ');
+        }
+      }
+    } catch (e) {
+      // 参数不是合法 JSON 时回退原文
+    }
+    return WorkStepFormat.capText(call.argsJson, 80);
+  }
+
+  static formatDuration(ms: number): string {
+    if (ms < 1000) {
+      return ms.toString() + 'ms';
+    }
+    return (ms / 1000).toFixed(1) + 's';
+  }
+}
 
 // 聊天气泡 (对齐 web 版本 .message / .bubble)
 @Component
@@ -17,6 +64,13 @@ export struct ChatBubbleView {
   @State private selectionTick: number = 0;
   // 深度思考条折叠状态 (默认折叠, 点击头部展开)
   @State private reasoningExpanded: boolean = false;
+  // 当前展开结果详情的工具步骤(工作模式, 单步展开)
+  @State private expandedStepId: string = '';
+  // 步骤状态刷新计数(流式中由 flushTimer 推进, 驱动步骤卡片重渲染)
+  @State private stepsTick: number = 0;
+  // 工作模式上下文: 工作会话中间轮次隐藏操作按钮、思考条改称"思考"
+  @Prop isWork: boolean = false;
+  @Prop isLastAssistant: boolean = false;
   // 流式也走 RichTextView (库内置流式增量渲染 + Worker 子线程解析)
   // visibleText 保留 33ms 节流, 作为 UI 缓冲, 避免每个 token 都触发整块重渲染
   @State visibleText: string = '';
@@ -32,6 +86,7 @@ export struct ChatBubbleView {
       this.flushTimer = -1;
       this.visibleText = this.message.content;
       this.visibleReasoning = this.message.reasoning;
+      this.stepsTick++;
     }
   }
 
@@ -48,6 +103,10 @@ export struct ChatBubbleView {
           const currentReasoning: string = this.message.reasoning;
           if (currentReasoning !== this.visibleReasoning) {
             this.visibleReasoning = currentReasoning;
+          }
+          // 工具步骤状态(执行中→完成)由 VM 原地更新, 用 tick 驱动卡片重渲染
+          if (this.message.toolCalls.length > 0) {
+            this.stepsTick++;
           }
         }
       }, 33);
@@ -161,9 +220,14 @@ export struct ChatBubbleView {
         .margin({ top: 4 })
 
       Column() {
-        // 深度思考条: 独立卡片置于气泡上方 (对齐 web 版本布局), 统一圆角 + 品牌淡色
+        // 思考条(Codex 式时间线: 思考在最前)
         if (this.isStreaming || this.message.reasoning !== '') {
           this.buildReasoningBar()
+        }
+
+        // 工具调用步骤(工作模式, 紧凑行, 单步点击展开参数与结果)
+        if (this.message.toolCalls.length > 0) {
+          this.buildToolSteps()
         }
 
         // 气泡本体
@@ -192,8 +256,9 @@ export struct ChatBubbleView {
             .margin({ bottom: 6 })
           }
 
-          // 操作按钮
-          if (!this.isStreaming && this.message.content !== '') {
+          // 操作按钮(工作模式仅最终消息显示, 中间轮次保持时间线干净)
+          if (!this.isStreaming && this.message.content !== '' &&
+            (!this.isWork || this.isLastAssistant)) {
             this.buildAIActions();
           }
         }
@@ -214,6 +279,76 @@ export struct ChatBubbleView {
     .alignItems(VerticalAlign.Top)
   }
 
+  // 工具调用步骤(Codex 式): 每步一行 [状态] 工具名 参数摘要, 点击展开参数与结果详情
+  @Builder
+  buildToolSteps() {
+    Column({ space: 4 }) {
+      ForEach(this.message.toolCalls, (call: ToolCallRecord, index: number) => {
+        Column({ space: 4 }) {
+          Row({ space: 6 }) {
+            if (call.durationMs >= 0) {
+              Text(call.isError ? '✗' : '✓')
+                .fontSize(11)
+                .fontColor(call.isError ? $r('app.color.danger') : $r('app.color.success'))
+            } else {
+              LoadingProgress()
+                .width(10)
+                .height(10)
+                .color($r('app.color.brand'))
+            }
+            Text((index + 1).toString() + '. ' + call.name)
+              .fontSize(12)
+              .fontWeight(FontWeight.Medium)
+              .fontColor($r('app.color.text_primary'))
+            Text(WorkStepFormat.summarizeArgs(call))
+              .fontSize(11)
+              .fontColor($r('app.color.text_secondary'))
+              .maxLines(1)
+              .textOverflow({ overflow: TextOverflow.Ellipsis })
+              .layoutWeight(1)
+            Text(this.expandedStepId === call.id ? '▴' : '▾')
+              .fontSize(10)
+              .fontColor($r('app.color.text_tertiary'))
+          }
+          .width('100%')
+          .padding({ left: 10, right: 10, top: 6, bottom: 6 })
+          .borderRadius(10)
+          .backgroundColor($r('app.color.input_bg'))
+          .onClick(() => {
+            this.expandedStepId = this.expandedStepId === call.id ? '' : call.id;
+          })
+
+          if (this.expandedStepId === call.id) {
+            Column({ space: 4 }) {
+              Text('参数')
+                .fontSize(10)
+                .fontColor($r('app.color.text_tertiary'))
+              Text(WorkStepFormat.capText(call.argsJson, 600))
+                .fontSize(11)
+                .fontColor($r('app.color.text_secondary'))
+                .width('100%')
+              Text(call.isError ? '错误' : '结果')
+                .fontSize(10)
+                .fontColor($r('app.color.text_tertiary'))
+              Text(WorkStepFormat.capText(call.result === '' ? '(执行中...)' : call.result, 800))
+                .fontSize(11)
+                .fontColor(call.isError ? $r('app.color.danger') : $r('app.color.text_secondary'))
+                .width('100%')
+            }
+            .width('100%')
+            .padding(10)
+            .borderRadius(10)
+            .backgroundColor($r('app.color.input_bg'))
+          }
+        }
+        .width('100%')
+      }, (call: ToolCallRecord) => call.id + '#' + call.durationMs.toString() + '#' +
+        call.result.length.toString() + '#' + this.stepsTick.toString())
+    }
+    .width('100%')
+    .margin({ bottom: 8 })
+  }
+
   // 深度思考条: 独立卡片置于气泡上方, 四角统一圆角 + 中性浅灰底色(与中间聊天区非有色系协调).
   // 流式中在"深度思考"文字右侧显示转圈动画 (不再单独显示"思考中…"文字).
   // 右侧实时显示 token 速度(流式中按已输出字符实时估算, 流式结束后由 API usage 精确替换)
@@ -222,7 +357,7 @@ export struct ChatBubbleView {
   buildReasoningBar() {
     Column() {
       Row() {
-        Text('深度思考')
+        Text(this.isWork ? '思考' : '深度思考')
           .fontSize(13)
           .fontWeight(FontWeight.Medium)
           .fontColor($r('app.color.brand'))

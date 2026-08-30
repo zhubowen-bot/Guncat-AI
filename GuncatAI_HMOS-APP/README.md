@@ -4,7 +4,7 @@
 
 Guncat AI 是使用 ArkTS 与 ArkUI 开发的原生 HarmonyOS AI 对话客户端，代替了原有的 WebView 承载主界面的旧方案。
 
-当前应用版本：`5.2.1`
+当前应用版本：`6.0.0`
 
 ## 主要功能
 
@@ -30,7 +30,7 @@ Guncat AI 是使用 ArkTS 与 ArkUI 开发的原生 HarmonyOS AI 对话客户端
 
 ### 维护：智能体深度思考默认值
 
-新建对话 / 每次启动 / 打开空对话时，应用按智能体**名称**重置深度思考开关，配置位于 `entry/src/main/ets/viewmodel/ChatViewModel.ts`：
+新建对话 / 每次启动 / 打开空对话时，应用按智能体**名称**重置深度思考开关，配置位于 `entry/src/main/ets/viewmodel/ChatViewModel.ets`：
 
 - `defaultThinkingForAgent()` 方法：按 `agent.name` 返回布尔（`false` = 默认关闭，`true` = 默认开启），返回 `null` 表示不重置（沿用上次状态）
 - 当前默认值：效率模式 `false`、轻简模式 `false`、专家模式 `true`
@@ -109,6 +109,17 @@ Guncat AI 是使用 ArkTS 与 ArkUI 开发的原生 HarmonyOS AI 对话客户端
 - 支持新建、切换和删除对话。
 - 跟随系统切换深色/浅色主题，并同步状态栏、导航栏和 Markdown 样式。
 
+### 工作模式（Agent Loop）
+
+工作模式是**与聊天智能体平行的独立身份**（侧边栏智能体列表顶部的 🛠「工作模式」项），进入后进入一个具备本地沙箱工作区与工具调用能力的 Agent 循环，可自主完成多步骤长程任务。完整架构见下文「[工作模式架构与维护指南](#工作模式架构与维护指南)」。
+
+- **沙箱工作区**：每个工作会话对应 `filesDir/workspaces/<convId>/` 目录，支持上传文件、导出 `.zip` 打包、清空；全程应用沙箱内读写 + 系统安全组件选/存文件，无新增权限。
+- **14 个本地工具**：文件 CRUD（list/read/write/append/delete/create_dir/move/search）、任务清单（todo_write）、图片查看（view_image，走主模型多模态）、PDF 解析（parse_document + read_file 自动路由）、Office 生成（write_docx / write_xlsx / write_pptx）。
+- **本地解析引擎**：`.docx/.xlsx/.pptx/.pdf` 全部在设备本地抽取文本，不依赖多模态解析 API、不消耗配额。
+- **任务清单纪律**：复杂任务先 `todo_write` 建清单，状态注入系统提示，逐项推进、完成后更新。
+- **Codex 式时间线**：每轮独立消息按「思考 → 工具步骤 → 正文」时序排列，单容器时间线 UI，工具步骤可展开查看参数与结果。
+- **三协议工具调用**：OpenAI Completions / OpenAI Responses / Anthropic Messages 均支持流式 function-calling；联网搜索开关在工具行保留（服务端搜索工具与客户端工具并存）。
+
 ### UI 与动效（5.1.0）
 
 - 深度思考条 UI 重做：独立卡片置于气泡上方，四角统一圆角、中性浅灰配色，与整体灰调协调；「深度思考」文字右侧显示流式转圈动画，不再单独显示「思考中…」文字。
@@ -158,45 +169,82 @@ entry/src/main/ets/
 ├── entryability/
 │   └── EntryAbility.ets
 ├── pages/
-│   └── ChatPage.ets
+│   ├── ChatPage.ets                # 主页：聊天 + 工作模式时间线 + 工作区面板接线
+│   └── TableOcrPage.ets
 ├── views/
-│   ├── ChatBubbleView.ets
+│   ├── ChatBubbleView.ets          # 聊天气泡（含深度思考条 / 工具步骤时间线 / WorkStepFormat）
+│   ├── WorkTurnView.ets            # 工作模式时间线的单轮渲染（思考→工具→正文，无头像）
+│   ├── WorkspaceBar.ets            # 工作模式工作区面板（文件列表/上传/导出/清空）
 │   ├── RichTextView.ets
 │   ├── MessageInputView.ets
 │   ├── AgentDrawerView.ets
 │   ├── SettingsPanel.ets
+│   ├── AboutPanel.ets
+│   ├── FlyInLaunchView.ets
+│   ├── ToastView.ets
 │   ├── FilePreviewBar.ets
 │   └── ImageLightbox.ets
 ├── viewmodel/
-│   └── ChatViewModel.ts
+│   └── ChatViewModel.ets           # 聊天状态 + 工作模式 Agent Loop 驱动（注意是 .ets）
 ├── service/
-│   ├── ChatService.ts
+│   ├── ChatService.ts              # 三协议 SSE 流式（解析函数已导出供 AgentLoopService 复用）
+│   ├── AgentLoopService.ts         # 工作模式：三协议 tool-calling 单轮请求 + 系统提示词
+│   ├── WorkToolRunner.ets          # 工作模式工具统一分发入口（Office 生成等 .ets 能力）
+│   ├── WorkFileService.ts          # 沙箱工作区 + 文件类工具实现 + 工具 Schema（toolDefs）
+│   ├── OfficeReader.ts             # docx/xlsx/pptx 本地文本抽取（zlib 解包 + XML 扫描）
+│   ├── PdfTextExtractor.ts         # 本地 PDF 文本抽取（字节层对象表/页面树/ToUnicode/内容流）
+│   ├── Flate.ts                    # 纯 TS 实现的 DEFLATE/zlib inflate（SDK zlib 仅文件级 API）
 │   ├── MultimodalService.ts
 │   ├── FileService.ts
+│   ├── FileUploadService.ts
+│   ├── AgentLoader.ts
+│   ├── TableOcrService.ts
 │   ├── TextReaderService.ets
 │   ├── BackgroundReaderService.ets
 │   └── VoiceInputService.ets
+├── export/
+│   ├── DocxExporter.ets            # Markdown→docx（含工作模式用的 buildDocxBytes）
+│   ├── XlsxExporter.ets            # 表格→xlsx（含 buildXlsxFromRows）
+│   ├── PptxBuilder.ets             # 大纲→pptx（分节页/两级要点/自适应字号）
+│   ├── OoxmlBuilder.ets / MarkdownParser.ets / OmmlConverter.ets / TableHtmlParser.ets / XmlUtil.ets
+│   └── ZipWriter.ts                # STORE 方式 zip 写入器（.ts：供 TS 模块打包工作区复用）
 ├── data/
 │   └── StorageManager.ts
 ├── model/
+│   ├── Message.ts / Conversation.ts / Attachment.ts / ToolCallRecord.ts
+│   └── Agent.ts / ApiConfig.ts / ApiProfile.ts / MultimodalConfig.ts
 └── common/
+    ├── Constants.ts / Types.ts / Utils.ts / MarkdownSanitizer.ts
 ```
 
 项目采用类似 MVVM 的分层方式：
 
 - View：ArkUI 页面与组件。
-- ViewModel：集中管理聊天、附件、配置和持久化状态。
-- Service：负责 SSE、文件解析、系统分享、TTS 和 ASR 等能力。
-- Model：消息、对话、附件、智能体及 API 配置模型。
+- ViewModel：集中管理聊天、附件、配置、工作模式循环和持久化状态。
+- Service：负责 SSE、Agent Loop、工具执行、本地文档解析、系统分享、TTS 和 ASR 等能力。
+- Model：消息、对话、附件、工具调用记录、智能体及 API 配置模型。
+
+> **扩展名即依赖规则**：ArkTS 禁止 `.ts` 文件导入 `.ets` 文件（`.ets` 可以导入 `.ts`）。新建/移动文件时先看依赖方向再定扩展名——需要被 `ChatViewModel.ets` / `WorkToolRunner.ets` 等 `.ets` 模块引用的能力（如 Office 生成、多模态）必须放在 `.ets`；纯逻辑工具（如 ZipWriter、PDF/Office 解析）放 `.ts` 即可被两侧复用。
 
 ### 数据流
 
 ```text
+【聊天模式】
 ChatService (SSE)
   → ChatViewModel
   → @Observed Message
   → @ObjectLink ChatBubbleView
   → RichTextView
+
+【工作模式】每轮循环
+用户任务 → ChatViewModel.executeWorkLoop
+  → AgentLoopService.runTurn（三协议 SSE + 流式工具调用累积）
+  → WorkToolRunner.execute → WorkFileService.executeTool
+      → OfficeReader / PdfTextExtractor（读取）
+      → DocxExporter / XlsxExporter / PptxBuilder（生成）
+  → 工具结果回填 ToolCallRecord → 注入下一轮请求历史
+  → 每轮一条 @Observed Message（思考/工具/文本）
+  → ChatPage.buildWorkTimeline → WorkTurnView
 ```
 
 ### 核心组件
@@ -206,6 +254,7 @@ ChatService (SSE)
    - 管理对话列表、智能体选择、API 配置和输入状态。
    - 处理消息发送、流式响应、附件解析与重新生成。
    - 负责持久化存储和状态恢复。
+   - 工作模式：`executeWorkLoop` 驱动 Agent 循环（每轮一条消息、工具执行、图片注入、上下文自动压缩）。
 
 2. **ChatService**
    
@@ -213,22 +262,118 @@ ChatService (SSE)
    - 支持 Chat Completions 与 Responses API。
    - 解析增量回答并处理网络及服务端错误。
 
-3. **MultimodalService**
+3. **AgentLoopService / WorkToolRunner / WorkFileService（工作模式三件套）**
+   
+   - `AgentLoopService`：单轮 LLM 请求——三协议请求体构建（含工具定义、图片消息）、流式工具调用累积、工作模式系统提示词。
+   - `WorkToolRunner`：工具统一分发入口，实现需要 `.ets` 模块的能力（write_docx/xlsx/pptx、parse_document）。
+   - `WorkFileService`：沙箱工作区全部文件操作、文件类工具实现、工具 Schema（`toolDefs()`）、工作区打包导出。
+
+4. **MultimodalService**
    
    - 处理图片、文本、PDF 和 Office 文档。
    - 支持预解析、重试与并发控制。
    - 支持 Responses API 图片和文件直传。
 
-4. **StorageManager**
+5. **OfficeReader / PdfTextExtractor / Flate（本地解析引擎）**
+   
+   - `OfficeReader`：解包 OOXML 并按标签边界抽取 `w:t`/`a:t`/`sharedStrings` 文本。
+   - `PdfTextExtractor`：字节层对象表 + ObjStm 展开 + 页面树资源继承 + ToUnicode CMap + 内容流文本。
+   - `Flate`：纯 TS 的 DEFLATE/zlib 解压（SDK zlib 只有文件级 API，无法按缓冲区解压）。
+
+6. **StorageManager**
    
    - 封装 Preferences 本地存储。
    - 管理对话、配置、开关和朗读偏好。
 
-5. **TextReaderService / BackgroundReaderService**
+7. **TextReaderService / BackgroundReaderService**
    
    - 查询和管理 CoreSpeechKit 音色。
    - 管理朗读、暂停、进度跳转与语速。
    - 通过 AVSession 和长时任务维持后台音频会话。
+
+## 工作模式架构与维护指南
+
+工作模式是独立的 Agent 执行环境：一个虚拟智能体 + 一个每会话独立的沙箱工作区 + 一个多轮工具调用循环。本节面向维护者，说明各模块职责、数据流与扩展方法。
+
+### 1. 身份与会话模型
+
+- **虚拟智能体**：`Constants.WORK_AGENT_ID = 'work'`。启动时由 `ChatViewModel.buildWorkAgent()` 注入智能体列表顶部，与 agents.json 智能体**平行**展示（`AgentDrawerView` 对 `id === 'work'` 特判渲染 🛠 徽标）。
+- **进入/退出**：侧边栏点击「工作模式」= `selectAgent('work')`；点击任意真实智能体即退出（`lastChatAgentId` 记录最近使用的真实智能体，供工具行的工作模式胶囊退出时回切）。
+- **会话绑定**：`Conversation.mode = 'chat' | 'work'`；工作会话 `agentId` 固定为 `'work'`，启动时对旧数据自动迁移。删除工作会话会同步清理沙箱工作区目录。
+- **开关差异**：进入工作模式强制开启深度思考（工具行不显示该开关）；联网搜索保留（服务端搜索工具与客户端函数工具并存下发）；上传/拍照直接进入工作区而非聊天附件。
+- **持久化**：会话 JSON 新增 `mode` 与 `Message.toolCalls`（`ToolCallRecord[]`，含调用参数/结果/耗时，重启后据此还原时间线与 LLM 历史）。工作区文件本体存沙箱 `filesDir`，不进 Preferences。
+
+### 2. Agent Loop（`ChatViewModel.executeWorkLoop`）
+
+```text
+for step in 1..WORK_MAX_STEPS(200, 防失控保险):
+  1. 新建一条 assistant 消息（本轮的思考/工具/文本都挂在它上面）
+  2. 重建系统提示词 = 工作模式纪律 + 工作区文件树 + 任务清单（每轮刷新）
+  3. AgentLoopService.runTurn(三协议流式请求, 含工具定义)
+  4. 无工具调用 → 本轮即最终回答，结束
+  5. 有工具调用 → 逐个执行（WorkToolRunner），结果写回 ToolCallRecord
+     - 变更类工具执行后刷新工作区文件列表
+     - view_image 成功后注入一条携带图片的多模态 user 消息（仅内存）
+  6. 本轮(assistant + 工具结果)进入请求历史，继续下一轮
+```
+
+- **每轮一条消息**是时间线 UI 的数据基础：消息列表天然按「思考→工具→正文」时序排列，不再复用单条大消息。
+- **上下文自动压缩**：请求历史超过 `WORK_HISTORY_MAX_CHARS`（默认 60 万字符 ≈ 数十万 token，适配 1M 级上下文）时，自动把早期历史交给模型压缩成一份「状态摘要」（任务目标/进度/关键发现/产出文件/决策与失败教训，≤2400 字），替换原历史后继续执行；保留最近 12 条原样。压缩失败或压缩后仍超预算才回退为从最旧处整条丢弃。任务清单与工作区文件不参与压缩，始终可被模型 `read_file` 找回——这是长任务跨上下文存续状态的关键。时间线上会标注「已自动压缩早期历史」。
+- **中断**：`stopStreaming()` 同时调用 `ChatService.abort()` 与 `AgentLoopService.abort()`；中断轮若无产出则移除消息，否则追加「⏹ 任务已手动停止」。
+- **步数保险**：`WORK_MAX_STEPS(200)` 仅作为失控保护（防止工具调用死循环持续消耗），正常长任务触不到；触发后在最后一条消息标注「发送“继续”可接着执行」。
+
+### 3. 工具系统（14 个）
+
+分发链：`ChatViewModel` → `WorkToolRunner.execute()`（.ets 入口）→ Office 生成/parse_document 就地实现，其余委托 `WorkFileService.executeTool()`（.ts）。
+
+| 工具 | 实现位置 | 说明 |
+| --- | --- | --- |
+| `todo_write` | WorkFileService.toolTodoWrite | 任务清单写入 `.todo.json`，支持数组/内嵌 JSON 字符串两种传参 |
+| `list_files` | WorkFileService.toolList | 递归列目录，目录优先排序，含大小 |
+| `read_file` | WorkFileService.toolRead | 文本直读；`.docx/.xlsx/.pptx`→OfficeReader，`.pdf`→PdfTextExtractor |
+| `write_file` / `append_file` | WorkFileService.toolWrite | 覆盖/追加写文本（512KB 上限，自动建父目录） |
+| `delete_file` / `create_dir` / `move_file` | WorkFileService.toolDelete/toolMkdir/toolMove | 递归删除/建目录/移动（moveFileSync/moveDirSync） |
+| `search_files` | WorkFileService.toolSearch | 文本类文件大小写不敏感子串搜索，带行号 |
+| `view_image` | WorkFileService.toolViewImage | 图片→dataUrl（≤8MB），由循环注入下一条多模态消息 |
+| `parse_document` | WorkToolRunner.toolParseDocument | PDF 完整文本（本地，3 倍输出上限） |
+| `write_docx` | WorkToolRunner.toolWriteDocx → DocxExporter.buildDocxBytes | Markdown→Word |
+| `write_xlsx` | WorkToolRunner.toolWriteXlsx → XlsxExporter.buildXlsxFromRows | Markdown 表格/CSV/TSV→Excel |
+| `write_pptx` | WorkToolRunner.toolWritePptx → PptxBuilder.buildPptxBytes | 大纲→PPT（`#`内容页 / `##`分节页 / `-`要点 / 缩进`-`二级要点） |
+
+路径安全：所有工具路径经 `resolveSafe()` 校验——拒绝绝对路径、盘符与 `..` 穿越，只能在 `filesDir/workspaces/<convId>/` 内操作。
+
+### 4. 新增工具的步骤（4 处）
+
+1. `WorkFileService.toolDefs()`：登记工具 Schema（名称/描述/参数），这是模型看到的定义；`props1`/`props2` 构造属性表。
+2. `WorkFileService.dispatchTool()`：加入分发分支（需要 `.ets` 能力时改在 `WorkToolRunner.execute()` 分发）。
+3. 实现执行函数：返回 `ToolExecResult`（`ok`/`output`；`imageDataUrl` 仅供 view_image 类工具注入视觉消息）。
+4. `AgentLoopService.buildWorkSystemPrompt()`：补充工具说明与使用纪律。
+5. 若会改变工作区内容，登记 `WorkFileService.isMutatingTool()`（执行后自动刷新工作区面板）。
+
+### 5. 本地解析引擎与内存/主线程红线
+
+**解析链**：`OfficeReader`（zlib.decompressFile 解包 OOXML → XML 文本节点抽取）、`PdfTextExtractor`（字节层对象表扫描 → ObjStm 顺序值展开 → 页面树资源继承 → ToUnicode CMap 映射 CJK → 内容流 `Tj/TJ` 解析 → 全流扫描兜底 + 诊断信息）、`Flate`（纯 TS DEFLATE/zlib 解压，SDK zlib 只有文件级 API）。
+
+维护时必须守住三条红线（每条都有过线上事故）：
+
+1. **禁止大字符串逐字符拼接**（`s += x` 循环 O(n²)）——曾把共享堆打爆（OOM）。大片段统一走 `bytesToString()`：字节拷入 UTF-16LE 缓冲后用 `util.TextDecoder` 一次性原生解码；`arrayBufferToBase64` 同样是全数值化生成 + 原生解码。
+2. **重 CPU 解析必须分阶段让出主线程**——曾在兜底扫描全量解析字体流时触发 THREAD_BLOCK_6S appfreeze。`PdfTextExtractor` 用 `yieldNow()`（setTimeout 0）在对象表构建后、每页之间、兜底每个流之间让出；兜底扫描跳过字体/图片/超大流并做内容预检。
+3. **所有片段转换必须设上限**：字典 64KB、ObjStm 2MB、CMap 1MB、内容流 4MB、单条文本解码 128KB、单行缓冲 100K 字符、整文件 16MB——防止异常/恶意文件打爆内存。
+
+### 6. ArkTS 落地约束（踩过的坑）
+
+- **`.ts` 不得 import `.ets`**（编译错误 10605999）。选扩展名前先画依赖方向：`ChatViewModel.ets` 需要引用 Office 生成/多模态等 `.ets` 模块，因此 ViewModel 本身必须是 `.ets`；`WorkFileService.ts` 只能依赖 `.ts`（ZipWriter 因此从 .ets 改成了 .ts）。
+- **`.ets` 禁止匿名对象字面量类型**（arkts-no-obj-literals-as-types）。跨模块返回结构用命名类（如 `ParsedFileResult`、`ToolExecResult`）。
+- **闭包不继承可空变量的收窄**：`let conv: X | null` 判空后，在 lambda 里仍可能报 possibly null——先落成非空局部量（如 `let emptyConv: Conversation = conv`）再进闭包。
+- **目录列举 API 是 `listFileSync`**（该 SDK 无 `readdirSync`）；`mkdirSync(path, true)` 支持递归建目录。
+- **import 必须置于文件最前**（注释除外），且所有 import 语句先于其他语句。
+- PowerShell 管道改文件内容会把 UTF-8 按 GBK 重写导致中文乱码——修改源码一律用编辑工具，不用 shell 重写。
+
+### 7. UI（Codex 式时间线）
+
+- `ChatPage.buildWorkTimeline`：工作模式下整个会话渲染为**单容器时间线**——顶部唯一 🛠「工作模式」标识（含执行状态），下方按消息顺序排列：用户任务卡（品牌色）与 `WorkTurnView`。
+- `WorkTurnView`（`@ObjectLink Message`）：思考折叠条 → 工具步骤紧凑行（`✓/✗/spinner + 序号. 工具名 + 参数摘要`，点击展开参数与结果）→ 正文（RichTextView）；仅最终轮显示复制/导出/重新执行按钮；流式期间 33ms flush 定时器同步文本与步骤状态。
+- 聊天模式完全沿用 `ChatBubbleView`，两条渲染路径互不影响。
 
 ## 构建要求
 
@@ -306,6 +451,14 @@ hvigorw --mode module -p product=default -p module=entry@default -p buildMode=de
 - DeepSeek / OpenAI Responses：打开时发送 `reasoning: { "effort": "high" }`。
 - 适用于支持对应参数的 OpenAI Responses API 模型。
 
+### 工作模式
+
+1. 侧边栏点击顶部 🛠「工作模式」进入，主页面标题与空态随之切换为工作模式。
+2. 需要材料时通过工作区面板「上传」添加文件（或用拍照按钮，照片直接进入工作区）。
+3. 在输入框描述任务；复杂任务 Agent 会先建立任务清单，再逐项调用工具执行，时间线中可实时查看每一步。
+4. 点击任意工具步骤可展开查看参数与执行结果；右上角「导出」把整个工作区打包为 `.zip` 保存。
+5. 完成后 Agent 输出详尽总结（含产出文件路径）；侧边栏切换到其他智能体即退出工作模式，工作会话与工作区文件保留。
+
 ### 朗读
 
 1. 点击助手消息的朗读操作。
@@ -327,6 +480,7 @@ hvigorw --mode module -p product=default -p module=entry@default -p buildMode=de
 - `ohos.permission.INTERNET`：访问模型 API。
 - `ohos.permission.MICROPHONE`：语音输入。
 - `ohos.permission.KEEP_BACKGROUND_RUNNING`：朗读后台音频长时任务。
+- 工作模式：文件读写全部在应用沙箱（`filesDir/workspaces/`）内完成，文件选择/保存走系统安全组件（DocumentViewPicker），**未新增任何权限**。
 - Share Kit：接收其他应用分享的图片和文件。
 - CoreSpeechKit：文本朗读与语音识别。
 - AVSession Kit：后台媒体会话。
@@ -339,6 +493,19 @@ hvigorw --mode module -p product=default -p module=entry@default -p buildMode=de
 - 从系统分享接收的内容不会自动发送，必须由用户主动点击发送。
 - 原始附件不会作为永久文件复制到应用数据中。
 - 网络请求使用 HTTPS，实际数据处理政策以所配置的模型服务商为准。
+
+## 6.0.0 更新（工作模式 Agent Loop）
+
+在聊天模式之外新增独立的工作模式：以 🛠「工作模式」虚拟智能体（侧边栏列表顶部，与智能体平行）为入口，每个工作会话绑定一个沙箱工作区，Agent 通过多轮工具调用循环自主完成长程任务。版本升至 6.0.0（`Constants.APP_VERSION` 与 `AppScope/app.json5` versionName 6.0.0 / versionCode 600 同步）。
+
+- **身份与入口**：`work` 虚拟智能体注入列表顶部；主页面标题/空态/新建对话归属随当前智能体自动切换；工作会话 `agentId='work'`（旧数据自动迁移），删除会话同步清理工作区。
+- **Agent Loop**：每轮一条消息（思考→工具→正文按时序排列），三协议流式 function-calling，200 轮防失控保险，历史超预算自动压缩为状态摘要（失败回退整条裁剪），中断标注、空产出清理；工具结果截断送回模型。
+- **任务清单**：`todo_write` 工具维护 `.todo.json`，清单状态每轮注入系统提示，复杂任务先规划、逐项推进。
+- **14 个本地工具**：文件 CRUD/搜索、`view_image`（图片经多模态消息送给主模型视觉）、`parse_document`（本地 PDF）、Office 生成三件套（`write_docx`/`write_xlsx`/`write_pptx`）。
+- **本地解析引擎**：新增 `OfficeReader`（OOXML 文本抽取，修复 `<w:t` 前缀误匹配导致的 XML 泄漏）、`PdfTextExtractor`（字节层对象表/ObjStm 展开/页面树资源继承/ToUnicode CJK 映射/内容流解析/兜底扫描与诊断）、`Flate`（纯 TS DEFLATE 解压）。不再依赖多模态解析 API。
+- **Codex 式时间线 UI**：单容器时间线（唯一 🛠 标识 + 任务卡 + 逐轮「思考→工具→正文」），工具步骤可展开参数与结果，中间轮隐藏操作按钮；工作区面板支持上传/导出 zip/清空。
+- **稳定性修复**：PDF 解析 OOM（整文件 latin1 拼接改为字节层扫描 + utf-16le 原生转换）；主线程阻塞 appfreeze（解析分阶段 yield、兜底扫描跳过字体/图片/超大流并限量限预检）；`arrayBufferToBase64` 同类 O(n²) 拼接一并修复。
+- 系统提示词对齐 Guncat 3.0 纪律：规划者/执行者/终验者、缺口驱动收口、反幻觉、交付前验证、输出丰富性原则。
 
 ## 5.2.1 更新
 

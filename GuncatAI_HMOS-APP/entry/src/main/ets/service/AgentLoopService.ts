@@ -1,0 +1,1103 @@
+// AgentLoopService: 工作模式 Agent Loop 的单轮 LLM 调用
+// 在 ChatService 的三种 SSE 协议基础上扩展 function-calling:
+//   openai-completions → delta.tool_calls 增量累积 + role:'tool' 结果回传
+//   openai-responses   → response.output_item.done(function_call) + function_call_output 回传
+//   anthropic-messages → content_block tool_use / input_json_delta + tool_result 回传
+// 循环驱动(执行工具/步数控制/历史裁剪)在 ChatViewModel.executeWorkLoop 中。
+import { http } from '@kit.NetworkKit';
+import { AgentLoader } from './AgentLoader';
+import { StreamAccumulator, getProtocol,
+  extractChatCompletionsDelta, extractChatCompletionsReasoning, extractChatCompletionsUsage,
+  extractResponsesDelta, extractResponsesReasoning, extractResponsesUsage, extractResponsesFailure,
+  extractAnthropicDelta, extractAnthropicReasoning, extractAnthropicUsage, extractAnthropicFailure,
+  deriveStreamStats } from './ChatService';
+import { WorkFileService } from './WorkFileService';
+import { ApiConfig } from '../model/ApiConfig';
+import { ToolCallRecord } from '../model/ToolCallRecord';
+import { AbortSignal } from '../common/Types';
+import { Constants } from '../common/Constants';
+
+// 与协议无关的循环消息: assistant 消息的工具调用与执行结果都挂在 toolCalls 上
+// (构建协议请求体时再拆分为 assistant(tool_calls) + tool/function_call_output/tool_result 消息)
+// imageDataUrl 仅用于 user 消息携带工作区图片(view_image 工具注入), 不持久化。
+export class LoopMessage {
+  role: string = 'user'; // 'system' | 'user' | 'assistant'
+  content: string = '';
+  toolCalls: ToolCallRecord[] = [];
+  imageDataUrl: string = '';
+
+  static system(content: string): LoopMessage {
+    let m: LoopMessage = new LoopMessage();
+    m.role = 'system';
+    m.content = content;
+    return m;
+  }
+
+  static user(content: string): LoopMessage {
+    let m: LoopMessage = new LoopMessage();
+    m.role = 'user';
+    m.content = content;
+    return m;
+  }
+
+  // 携带图片的用户消息(view_image 注入)
+  static userImage(content: string, imageDataUrl: string): LoopMessage {
+    let m: LoopMessage = new LoopMessage();
+    m.role = 'user';
+    m.content = content;
+    m.imageDataUrl = imageDataUrl;
+    return m;
+  }
+
+  // assistant 消息(可能带文字与工具调用); 结果字段由调用方在执行后填入同一实例
+  static assistant(content: string, calls: ToolCallRecord[]): LoopMessage {
+    let m: LoopMessage = new LoopMessage();
+    m.role = 'assistant';
+    m.content = content;
+    m.toolCalls = calls;
+    return m;
+  }
+}
+
+// 单轮模型返回
+export class LoopTurnResult {
+  content: string = '';
+  reasoning: string = '';
+  toolCalls: ToolCallRecord[] = [];
+  tokenSpeed: number = -1;
+  cacheHitRate: number = -1;
+}
+
+// 单轮流式回调(与 StreamCallbacks 同构; onReasoning 传入本轮已累积的完整思考文本)
+export class LoopTurnCallbacks {
+  onToken: (text: string) => void = (_text: string): void => {};
+  onReasoning: (text: string) => void = (_text: string): void => {};
+  onUsage: (tokenSpeed: number, cacheHitRate: number) => void =
+    (_speed: number, _hit: number): void => {};
+}
+
+// 流式工具调用累积器: completions/responses/anthropic 三种协议统一汇入
+class ToolCallAccumulator {
+  calls: ToolCallRecord[] = [];
+  // 协议内 index(completions 的 delta.index / anthropic 的 block index) → calls 下标
+  keyMap: number[] = [];
+
+  // 取 key 对应的记录, 不存在则用 maker 创建并登记
+  patch(key: number, maker: () => ToolCallRecord): ToolCallRecord {
+    for (let i: number = 0; i < this.keyMap.length; i++) {
+      if (this.keyMap[i] === key) {
+        return this.calls[i];
+      }
+    }
+    let rec: ToolCallRecord = maker();
+    this.calls.push(rec);
+    this.keyMap.push(key);
+    return rec;
+  }
+
+  // 无显式 index 的协议(responses)直接整块追加
+  append(rec: ToolCallRecord): void {
+    this.calls.push(rec);
+    this.keyMap.push(-1 - this.calls.length);
+  }
+
+  find(key: number): ToolCallRecord | null {
+    for (let i: number = 0; i < this.keyMap.length; i++) {
+      if (this.keyMap[i] === key) {
+        return this.calls[i];
+      }
+    }
+    return null;
+  }
+}
+
+export class AgentLoopService {
+  private static activeRequest: http.HttpRequest | null = null;
+  private static cachedToolDefs: Record<string, Object>[] = [];
+
+  private static getToolDefs(): Record<string, Object>[] {
+    if (AgentLoopService.cachedToolDefs.length === 0) {
+      AgentLoopService.cachedToolDefs = WorkFileService.toolDefs();
+    }
+    return AgentLoopService.cachedToolDefs;
+  }
+
+  // 执行循环中的一轮: 流式返回文本/思考, 并累积工具调用; 结束后由调用方检查 toolCalls 决定继续或收尾。
+  // includeTools=false 时请求不带工具定义(用于上下文压缩等纯文本辅助调用)。
+  static async runTurn(config: ApiConfig, messages: LoopMessage[],
+    thinkingEnabled: boolean, webSearchEnabled: boolean,
+    callbacks: LoopTurnCallbacks, abortSignal: AbortSignal,
+    includeTools: boolean = true): Promise<LoopTurnResult> {
+    let protocol: string = getProtocol(config.provider);
+    let path: string;
+    if (protocol === 'responses') {
+      path = Constants.RESPONSES_PATH;
+    } else if (protocol === 'anthropic') {
+      let trimmedBase: string = config.baseUrl.replace(/\/+$/, '');
+      if (trimmedBase.endsWith('/v1') || trimmedBase.endsWith('/anthropic/v1')) {
+        path = Constants.MESSAGES_PATH;
+      } else if (trimmedBase === 'https://api.deepseek.com' || trimmedBase === 'http://api.deepseek.com') {
+        path = Constants.ANTHROPIC_DEEPSEEK_MESSAGES_PATH;
+      } else {
+        path = Constants.ANTHROPIC_V1_MESSAGES_PATH;
+      }
+    } else {
+      path = Constants.CHAT_COMPLETIONS_PATH;
+    }
+    let url: string = config.baseUrl.replace(/\/+$/, '') + path;
+
+    let tools: Record<string, Object>[] = includeTools ? AgentLoopService.getToolDefs() : [];
+    let body: Record<string, Object>;
+    if (protocol === 'responses') {
+      body = AgentLoopService.buildResponsesBody(config, messages, tools, thinkingEnabled, webSearchEnabled);
+    } else if (protocol === 'anthropic') {
+      body = AgentLoopService.buildAnthropicBody(config, messages, tools, thinkingEnabled, webSearchEnabled);
+    } else {
+      body = AgentLoopService.buildCompletionsBody(config, messages, tools, thinkingEnabled, webSearchEnabled);
+    }
+    let bodyStr: string = JSON.stringify(body);
+
+    let httpRequest: http.HttpRequest = http.createHttp();
+    AgentLoopService.activeRequest = httpRequest;
+    let acc: StreamAccumulator = new StreamAccumulator();
+    let lineBuffer: string = '';
+    let settled: boolean = false;
+    let statusCode: number = 0;
+    let dataEnded: boolean = false;
+    let failedMsg: string = '';
+    let startTime: number = Date.now();
+    let result: LoopTurnResult = new LoopTurnResult();
+    let callAcc: ToolCallAccumulator = new ToolCallAccumulator();
+
+    // 单条 SSE 数据分发: 按协议解析文本/思考/工具调用/usage; 协议失败抛错由外层 reject
+    let handleSseLine = (sseData: string): void => {
+      if (protocol === 'responses') {
+        let fail: string = extractResponsesFailure(sseData);
+        if (fail !== '') {
+          failedMsg = fail;
+          throw new Error(fail);
+        }
+        let delta: string = extractResponsesDelta(sseData);
+        if (delta !== '') {
+          result.content += delta;
+          callbacks.onToken(delta);
+        }
+        let reasoning: string = extractResponsesReasoning(sseData);
+        if (reasoning !== '') {
+          result.reasoning += reasoning;
+          callbacks.onReasoning(result.reasoning);
+        }
+        AgentLoopService.collectResponsesToolItem(sseData, callAcc);
+        let usageObj: Record<string, Object> | null = extractResponsesUsage(sseData);
+        if (usageObj !== null) {
+          let stats: number[] = deriveStreamStats(usageObj, Date.now() - startTime);
+          result.tokenSpeed = stats[0];
+          result.cacheHitRate = stats[1];
+          callbacks.onUsage(stats[0], stats[1]);
+        }
+      } else if (protocol === 'anthropic') {
+        let fail: string = extractAnthropicFailure(sseData);
+        if (fail !== '') {
+          failedMsg = fail;
+          throw new Error(fail);
+        }
+        let delta: string = extractAnthropicDelta(sseData);
+        if (delta !== '') {
+          result.content += delta;
+          callbacks.onToken(delta);
+        }
+        let reasoning: string = extractAnthropicReasoning(sseData);
+        if (reasoning !== '') {
+          result.reasoning += reasoning;
+          callbacks.onReasoning(result.reasoning);
+        }
+        AgentLoopService.collectAnthropicToolEvent(sseData, callAcc);
+        let usageObj: Record<string, Object> | null = extractAnthropicUsage(sseData);
+        if (usageObj !== null) {
+          let stats: number[] = deriveStreamStats(usageObj, Date.now() - startTime);
+          result.tokenSpeed = stats[0];
+          result.cacheHitRate = stats[1];
+          callbacks.onUsage(stats[0], stats[1]);
+        }
+      } else {
+        let delta: string = extractChatCompletionsDelta(sseData);
+        if (delta !== '') {
+          result.content += delta;
+          callbacks.onToken(delta);
+        }
+        let reasoning: string = extractChatCompletionsReasoning(sseData);
+        if (reasoning !== '') {
+          result.reasoning += reasoning;
+          callbacks.onReasoning(result.reasoning);
+        }
+        AgentLoopService.collectCompletionsToolDelta(sseData, callAcc);
+        let usageObj: Record<string, Object> | null = extractChatCompletionsUsage(sseData);
+        if (usageObj !== null) {
+          let stats: number[] = deriveStreamStats(usageObj, Date.now() - startTime);
+          result.tokenSpeed = stats[0];
+          result.cacheHitRate = stats[1];
+          callbacks.onUsage(stats[0], stats[1]);
+        }
+      }
+    };
+
+    try {
+      await new Promise<void>((resolve: () => void, reject: (e: Error) => void) => {
+        httpRequest.on('dataReceive', (data: ArrayBuffer) => {
+          if (abortSignal.aborted) {
+            return;
+          }
+          try {
+            let chunk: string = acc.append(data);
+            lineBuffer += chunk;
+            let lines: string[] = lineBuffer.split('\n');
+            if (lineBuffer.endsWith('\n')) {
+              lineBuffer = '';
+            } else {
+              lineBuffer = lines.pop() as string;
+            }
+            for (let i: number = 0; i < lines.length; i++) {
+              let line: string = lines[i];
+              let trimmed: string = line.trim();
+              if (trimmed === '' || trimmed === Constants.SSE_DONE_TOKEN) {
+                continue;
+              }
+              if (!trimmed.startsWith(Constants.SSE_DATA_PREFIX)) {
+                continue;
+              }
+              let sseData: string = trimmed.substring(Constants.SSE_DATA_PREFIX.length);
+              handleSseLine(sseData);
+            }
+          } catch (e) {
+            let err: Error = e as Error;
+            reject(err);
+          }
+        });
+
+        httpRequest.on('dataEnd', () => {
+          if (lineBuffer !== '') {
+            let trimmed: string = lineBuffer.trim();
+            if (trimmed.startsWith(Constants.SSE_DATA_PREFIX) && trimmed !== Constants.SSE_DONE_TOKEN) {
+              try {
+                handleSseLine(trimmed.substring(Constants.SSE_DATA_PREFIX.length));
+              } catch (e) {
+                let err: Error = e as Error;
+                if (!settled) {
+                  settled = true;
+                  reject(err);
+                }
+                return;
+              }
+            }
+            lineBuffer = '';
+          }
+          dataEnded = true;
+          if (statusCode >= 200 && statusCode < 300 && !settled) {
+            settled = true;
+            resolve();
+          }
+        });
+
+        let headers: Record<string, string> = {
+          'Content-Type': 'application/json'
+        };
+        if (protocol === 'anthropic') {
+          headers['x-api-key'] = config.apiKey;
+          headers['anthropic-version'] = '2023-06-01';
+          headers['Accept'] = 'text/event-stream';
+        } else {
+          headers['Authorization'] = 'Bearer ' + config.apiKey;
+        }
+        httpRequest.requestInStream(url, {
+          method: http.RequestMethod.POST,
+          header: headers,
+          extraData: bodyStr,
+          connectTimeout: 30000,
+          readTimeout: 300000,
+          usingProtocol: http.HttpProtocol.HTTP1_1
+        }).then((code: number) => {
+          statusCode = code;
+          if (abortSignal.aborted) {
+            return;
+          }
+          if (code < 200 || code >= 300) {
+            if (!settled) {
+              settled = true;
+              let msg: string = '';
+              if (code === 401) {
+                msg = 'API Key 无效，请检查设置';
+              } else if (code === 429) {
+                msg = '请求过于频繁，请稍后再试';
+              } else if (code >= 400 && code < 500) {
+                msg = 'API 请求错误 (' + code + ')，请检查配置';
+              } else if (code >= 500) {
+                msg = '服务器错误 (' + code + ')，请稍后再试';
+              } else {
+                msg = '请求失败，状态码: ' + code;
+              }
+              reject(new Error(msg));
+            }
+            return;
+          }
+          if (dataEnded && !settled) {
+            settled = true;
+            resolve();
+          }
+        }).catch((err: Error) => {
+          if (abortSignal.aborted) {
+            if (!settled) {
+              settled = true;
+              resolve();
+            }
+            return;
+          }
+          if (!settled) {
+            settled = true;
+            reject(err);
+          }
+        });
+      });
+    } catch (e) {
+      let err: Error = e as Error;
+      if (!abortSignal.aborted) {
+        if (failedMsg === '' && err.message !== undefined) {
+          failedMsg = err.message;
+        }
+        if (failedMsg === '') {
+          failedMsg = '请求失败';
+        }
+        throw new Error(failedMsg);
+      }
+    } finally {
+      AgentLoopService.activeRequest = null;
+      try {
+        httpRequest.off('dataReceive');
+        httpRequest.off('dataEnd');
+        httpRequest.destroy();
+      } catch (e) {
+        // ignore
+      }
+    }
+    result.toolCalls = AgentLoopService.normalizeCalls(callAcc.calls);
+    return result;
+  }
+
+  // 中断当前轮请求(与 ChatService.abort 同构)
+  static abort(): void {
+    let req: http.HttpRequest | null = AgentLoopService.activeRequest;
+    if (req !== null) {
+      try {
+        req.destroy();
+      } catch (e) {
+        // ignore
+      }
+      AgentLoopService.activeRequest = null;
+    }
+  }
+
+  // 上下文压缩: 以纯文本请求(不带工具定义)让模型把早期执行历史汇总为状态摘要
+  static async summarizeHistory(config: ApiConfig, prompt: string,
+    abortSignal: AbortSignal): Promise<string> {
+    let messages: LoopMessage[] = [LoopMessage.user(prompt)];
+    let callbacks: LoopTurnCallbacks = new LoopTurnCallbacks();
+    let turn: LoopTurnResult = await AgentLoopService.runTurn(
+      config, messages, false, false, callbacks, abortSignal, false);
+    return turn.content;
+  }
+
+  // ===== 流式工具调用累积(按协议) =====
+
+  // completions: delta.tool_calls[{index, id?, function?:{name?, arguments?}}]
+  private static collectCompletionsToolDelta(sseData: string, acc: ToolCallAccumulator): void {
+    try {
+      let json: Object = JSON.parse(sseData);
+      if (typeof json !== 'object' || json === null) {
+        return;
+      }
+      let choices: Object = (json as Record<string, Object>)['choices'];
+      if (!(choices instanceof Array) || choices.length === 0) {
+        return;
+      }
+      let first: Object = choices[0];
+      if (typeof first !== 'object' || first === null) {
+        return;
+      }
+      let delta: Object = (first as Record<string, Object>)['delta'];
+      if (typeof delta !== 'object' || delta === null) {
+        return;
+      }
+      let rawCalls: Object = (delta as Record<string, Object>)['tool_calls'];
+      if (!(rawCalls instanceof Array)) {
+        return;
+      }
+      let arr: Object[] = rawCalls as Object[];
+      for (let i: number = 0; i < arr.length; i++) {
+        let item: Object = arr[i];
+        if (typeof item !== 'object' || item === null) {
+          continue;
+        }
+        let rec: Record<string, Object> = item as Record<string, Object>;
+        let rawIndex: Object = rec['index'];
+        let key: number = acc.calls.length;
+        if (typeof rawIndex === 'number') {
+          key = rawIndex as number;
+        }
+        let call: ToolCallRecord = acc.patch(key, (): ToolCallRecord => {
+          return ToolCallRecord.of('', '', '');
+        });
+        let id: Object = rec['id'];
+        if (typeof id === 'string' && (id as string) !== '') {
+          call.id = id as string;
+        }
+        let fn: Object = rec['function'];
+        if (typeof fn === 'object' && fn !== null) {
+          let fnRec: Record<string, Object> = fn as Record<string, Object>;
+          let name: Object = fnRec['name'];
+          if (typeof name === 'string' && (name as string) !== '') {
+            call.name = name as string;
+          }
+          let args: Object = fnRec['arguments'];
+          if (typeof args === 'string') {
+            call.argsJson += args as string;
+          }
+        }
+      }
+    } catch (e) {
+      // 单条 SSE 解析失败忽略
+    }
+  }
+
+  // responses: response.output_item.done 携带完整 function_call 项
+  private static collectResponsesToolItem(sseData: string, acc: ToolCallAccumulator): void {
+    try {
+      let json: Object = JSON.parse(sseData);
+      if (typeof json !== 'object' || json === null) {
+        return;
+      }
+      let type: Object = (json as Record<string, Object>)['type'];
+      if (typeof type !== 'string' || (type as string) !== 'response.output_item.done') {
+        return;
+      }
+      let item: Object = (json as Record<string, Object>)['item'];
+      if (typeof item !== 'object' || item === null) {
+        return;
+      }
+      let itemRec: Record<string, Object> = item as Record<string, Object>;
+      let itemType: Object = itemRec['type'];
+      if (typeof itemType !== 'string' || (itemType as string) !== 'function_call') {
+        return;
+      }
+      let callId: Object = itemRec['call_id'];
+      let itemId: Object = itemRec['id'];
+      let name: Object = itemRec['name'];
+      let args: Object = itemRec['arguments'];
+      let call: ToolCallRecord = ToolCallRecord.of(
+        typeof callId === 'string' ? callId as string :
+          (typeof itemId === 'string' ? itemId as string : AgentLoopService.genCallId()),
+        typeof name === 'string' ? name as string : '',
+        typeof args === 'string' ? args as string : ''
+      );
+      acc.append(call);
+    } catch (e) {
+      // ignore
+    }
+  }
+
+  // anthropic: content_block_start(tool_use) + input_json_delta 增量
+  private static collectAnthropicToolEvent(sseData: string, acc: ToolCallAccumulator): void {
+    try {
+      let json: Object = JSON.parse(sseData);
+      if (typeof json !== 'object' || json === null) {
+        return;
+      }
+      let type: Object = (json as Record<string, Object>)['type'];
+      if (typeof type !== 'string') {
+        return;
+      }
+      let eventType: string = type as string;
+      if (eventType === 'content_block_start') {
+        let rawIndex: Object = (json as Record<string, Object>)['index'];
+        let block: Object = (json as Record<string, Object>)['content_block'];
+        if (typeof block !== 'object' || block === null) {
+          return;
+        }
+        let blockRec: Record<string, Object> = block as Record<string, Object>;
+        let blockType: Object = blockRec['type'];
+        if (typeof blockType !== 'string' || (blockType as string) !== 'tool_use') {
+          return;
+        }
+        let key: number = acc.calls.length;
+        if (typeof rawIndex === 'number') {
+          key = rawIndex as number;
+        }
+        acc.patch(key, (): ToolCallRecord => {
+          let id: Object = blockRec['id'];
+          let name: Object = blockRec['name'];
+          return ToolCallRecord.of(
+            typeof id === 'string' ? id as string : AgentLoopService.genCallId(),
+            typeof name === 'string' ? name as string : '', '');
+        });
+      } else if (eventType === 'content_block_delta') {
+        let rawIndex: Object = (json as Record<string, Object>)['index'];
+        let delta: Object = (json as Record<string, Object>)['delta'];
+        if (typeof delta !== 'object' || delta === null || typeof rawIndex !== 'number') {
+          return;
+        }
+        let deltaRec: Record<string, Object> = delta as Record<string, Object>;
+        let deltaType: Object = deltaRec['type'];
+        if (typeof deltaType !== 'string' || (deltaType as string) !== 'input_json_delta') {
+          return;
+        }
+        let call: ToolCallRecord | null = acc.find(rawIndex as number);
+        if (call === null) {
+          return;
+        }
+        let partial: Object = deltaRec['partial_json'];
+        if (typeof partial === 'string') {
+          call.argsJson += partial as string;
+        }
+      }
+    } catch (e) {
+      // ignore
+    }
+  }
+
+  // 兜底补全: 缺名字的调用记录不送回(避免协议校验失败), 空 argsJson 填 '{}'
+  private static normalizeCalls(callAcc: ToolCallRecord[]): ToolCallRecord[] {
+    let out: ToolCallRecord[] = [];
+    for (let i: number = 0; i < callAcc.length; i++) {
+      let call: ToolCallRecord = callAcc[i];
+      if (call.name === '') {
+        continue;
+      }
+      if (call.id === '') {
+        call.id = AgentLoopService.genCallId();
+      }
+      if (call.argsJson.trim() === '') {
+        call.argsJson = '{}';
+      }
+      out.push(call);
+    }
+    return out;
+  }
+
+  private static genCallId(): string {
+    return 'call_' + Date.now().toString() + '_' + Math.floor(Math.random() * 100000).toString();
+  }
+
+  // ===== 协议请求体构建 =====
+
+  // openai Chat Completions: assistant(tool_calls) + role:'tool'
+  private static buildCompletionsBody(config: ApiConfig, messages: LoopMessage[],
+    tools: Record<string, Object>[], thinkingEnabled: boolean, webSearchEnabled: boolean): Record<string, Object> {
+    let msgs: Record<string, Object>[] = [];
+    let systemText: string = messages.length > 0 ? messages[0].content : '';
+    if (messages.length > 0 && messages[0].role === 'system' && systemText !== '') {
+      msgs.push({ role: 'system', content: systemText });
+    }
+    for (let i: number = 0; i < messages.length; i++) {
+      let m: LoopMessage = messages[i];
+      if (m.role === 'user') {
+        if (m.imageDataUrl !== '') {
+          // 携带工作区图片的多模态用户消息
+          let parts: Record<string, Object>[] = [];
+          if (m.content !== '') {
+            parts.push({ type: 'text', text: m.content });
+          }
+          parts.push({ type: 'image_url', image_url: { url: m.imageDataUrl } });
+          msgs.push({ role: 'user', content: parts });
+        } else {
+          msgs.push({ role: 'user', content: m.content });
+        }
+      } else if (m.role === 'assistant') {
+        if (m.toolCalls.length > 0) {
+          let callArr: Record<string, Object>[] = [];
+          for (let c: number = 0; c < m.toolCalls.length; c++) {
+            let call: ToolCallRecord = m.toolCalls[c];
+            callArr.push({
+              id: call.id,
+              type: 'function',
+              function: { name: call.name, arguments: call.argsJson === '' ? '{}' : call.argsJson }
+            });
+          }
+          msgs.push({
+            role: 'assistant',
+            content: m.content === '' ? null : m.content,
+            tool_calls: callArr
+          });
+          for (let c: number = 0; c < m.toolCalls.length; c++) {
+            let call: ToolCallRecord = m.toolCalls[c];
+            msgs.push({ role: 'tool', tool_call_id: call.id, content: call.result });
+          }
+        } else if (m.content !== '') {
+          msgs.push({ role: 'assistant', content: m.content });
+        }
+      }
+    }
+    let body: Record<string, Object> = {
+      model: config.model,
+      messages: msgs,
+      stream: true
+    };
+    let finalTools: Record<string, Object>[] = AgentLoopService.completionsTools(tools);
+    if (webSearchEnabled) {
+      // 服务端联网搜索工具与客户端函数工具并存(与 ChatService 行为一致)
+      finalTools.push({ type: 'web_search' });
+    }
+    if (finalTools.length > 0) {
+      body['tools'] = finalTools;
+      body['tool_choice'] = 'auto';
+    }
+    if (config.temperature !== null) {
+      body['temperature'] = config.temperature;
+    }
+    if (config.topP !== null) {
+      body['top_p'] = config.topP;
+    }
+    if (config.maxTokens !== null) {
+      body['max_tokens'] = config.maxTokens;
+    }
+    AgentLoopService.mergeExtraBody(body, config.extraBody);
+    // 深度思考开关(OpenAI 兼容格式), 工作模式强度调整为max
+    body['thinking'] = { type: thinkingEnabled ? 'enabled' : 'disabled' };
+    if (thinkingEnabled) {
+      body['reasoning_effort'] = 'max';
+    }
+    return body;
+  }
+
+  // openai Responses: function_call / function_call_output 输入项
+  private static buildResponsesBody(config: ApiConfig, messages: LoopMessage[],
+    tools: Record<string, Object>[], thinkingEnabled: boolean, webSearchEnabled: boolean): Record<string, Object> {
+    let input: Record<string, Object>[] = [];
+    let systemText: string = messages.length > 0 ? messages[0].content : '';
+    for (let i: number = 0; i < messages.length; i++) {
+      let m: LoopMessage = messages[i];
+      if (m.role === 'system') {
+        continue;
+      }
+      if (m.role === 'user') {
+        if (m.imageDataUrl !== '') {
+          let parts: Record<string, Object>[] = [];
+          if (m.content !== '') {
+            parts.push({ type: 'input_text', text: m.content });
+          }
+          parts.push({ type: 'input_image', image_url: m.imageDataUrl });
+          input.push({ role: 'user', content: parts });
+        } else {
+          input.push({ role: 'user', content: m.content });
+        }
+      } else if (m.role === 'assistant') {
+        if (m.content !== '') {
+          input.push({
+            role: 'assistant',
+            content: [{ type: 'output_text', text: m.content }]
+          });
+        }
+        for (let c: number = 0; c < m.toolCalls.length; c++) {
+          let call: ToolCallRecord = m.toolCalls[c];
+          input.push({
+            type: 'function_call',
+            call_id: call.id,
+            name: call.name,
+            arguments: call.argsJson === '' ? '{}' : call.argsJson
+          });
+        }
+        for (let c: number = 0; c < m.toolCalls.length; c++) {
+          let call: ToolCallRecord = m.toolCalls[c];
+          input.push({ type: 'function_call_output', call_id: call.id, output: call.result });
+        }
+      }
+    }
+    let finalTools: Record<string, Object>[] = AgentLoopService.responsesTools(tools);
+    if (webSearchEnabled) {
+      finalTools.push({ type: 'web_search' });
+    }
+    let body: Record<string, Object> = {
+      model: config.model,
+      input: input,
+      stream: true,
+      store: false
+    };
+    if (finalTools.length > 0) {
+      body['tools'] = finalTools;
+      body['tool_choice'] = 'auto';
+    }
+    if (systemText !== '') {
+      body['instructions'] = systemText;
+    }
+    if (config.temperature !== null) {
+      body['temperature'] = config.temperature;
+    }
+    if (config.topP !== null) {
+      body['top_p'] = config.topP;
+    }
+    if (config.maxTokens !== null) {
+      body['max_output_tokens'] = config.maxTokens;
+    }
+    AgentLoopService.mergeExtraBody(body, config.extraBody);
+    body['reasoning'] = { effort: thinkingEnabled ? 'max' : 'none' };
+    return body;
+  }
+
+  // anthropic: assistant(tool_use blocks) + user(tool_result blocks)
+  private static buildAnthropicBody(config: ApiConfig, messages: LoopMessage[],
+    tools: Record<string, Object>[], thinkingEnabled: boolean, webSearchEnabled: boolean): Record<string, Object> {
+    let msgs: Record<string, Object>[] = [];
+    let systemText: string = messages.length > 0 ? messages[0].content : '';
+    for (let i: number = 0; i < messages.length; i++) {
+      let m: LoopMessage = messages[i];
+      if (m.role === 'system') {
+        continue;
+      }
+      if (m.role === 'user') {
+        if (m.imageDataUrl !== '') {
+          let blocks: Object[] = [];
+          if (m.content !== '') {
+            blocks.push({ type: 'text', text: m.content });
+          }
+          let dm: string[] = AgentLoopService.splitDataUrl(m.imageDataUrl);
+          if (dm[1] !== '') {
+            blocks.push({
+              type: 'image',
+              source: { type: 'base64', media_type: dm[0], data: dm[1] }
+            });
+          }
+          AgentLoopService.appendAnthropicBlocks(msgs, 'user', blocks);
+        } else {
+          AgentLoopService.appendAnthropicText(msgs, 'user', m.content);
+        }
+      } else if (m.role === 'assistant') {
+        if (m.toolCalls.length > 0) {
+          let blocks: Object[] = [];
+          if (m.content !== '') {
+            blocks.push({ type: 'text', text: m.content });
+          }
+          for (let c: number = 0; c < m.toolCalls.length; c++) {
+            let call: ToolCallRecord = m.toolCalls[c];
+            blocks.push({
+              type: 'tool_use',
+              id: call.id,
+              name: call.name,
+              input: AgentLoopService.parseArgsObject(call.argsJson)
+            });
+          }
+          AgentLoopService.appendAnthropicBlocks(msgs, 'assistant', blocks);
+          let results: Object[] = [];
+          for (let c: number = 0; c < m.toolCalls.length; c++) {
+            let call: ToolCallRecord = m.toolCalls[c];
+            results.push({
+              type: 'tool_result',
+              tool_use_id: call.id,
+              content: call.result
+            });
+          }
+          AgentLoopService.appendAnthropicBlocks(msgs, 'user', results);
+        } else if (m.content !== '') {
+          AgentLoopService.appendAnthropicText(msgs, 'assistant', m.content);
+        }
+      }
+    }
+    let maxTokens: number = config.maxTokens !== null ? config.maxTokens : 8192;
+    let finalTools: Record<string, Object>[] = AgentLoopService.anthropicTools(tools);
+    if (webSearchEnabled) {
+      let searchTool: Record<string, Object> = {
+        type: 'web_search_20250305',
+        name: 'web_search',
+        max_uses: 5
+      };
+      finalTools.push(searchTool);
+    }
+    let body: Record<string, Object> = {
+      model: config.model,
+      messages: msgs,
+      stream: true,
+      max_tokens: maxTokens
+    };
+    if (finalTools.length > 0) {
+      body['tools'] = finalTools;
+    }
+    if (systemText !== '') {
+      body['system'] = systemText;
+    }
+    if (config.temperature !== null) {
+      body['temperature'] = config.temperature;
+    }
+    if (config.topP !== null) {
+      body['top_p'] = config.topP;
+    }
+    AgentLoopService.mergeExtraBody(body, config.extraBody);
+    // 深度思考开关(Anthropic 兼容格式), 工作模式强度调整为max
+    body['thinking'] = { type: thinkingEnabled ? 'enabled' : 'disabled' };
+    if (thinkingEnabled) {
+      body['output_config'] = { effort: 'max' };
+    }
+    return body;
+  }
+
+  private static completionsTools(tools: Record<string, Object>[]): Record<string, Object>[] {
+    let out: Record<string, Object>[] = [];
+    for (let i: number = 0; i < tools.length; i++) {
+      let def: Record<string, Object> = tools[i];
+      out.push({
+        type: 'function',
+        function: {
+          name: def['name'],
+          description: def['description'],
+          parameters: def['parameters']
+        }
+      });
+    }
+    return out;
+  }
+
+  private static responsesTools(tools: Record<string, Object>[]): Record<string, Object>[] {
+    let out: Record<string, Object>[] = [];
+    for (let i: number = 0; i < tools.length; i++) {
+      let def: Record<string, Object> = tools[i];
+      out.push({
+        type: 'function',
+        name: def['name'],
+        description: def['description'],
+        parameters: def['parameters']
+      });
+    }
+    return out;
+  }
+
+  private static anthropicTools(tools: Record<string, Object>[]): Record<string, Object>[] {
+    let out: Record<string, Object>[] = [];
+    for (let i: number = 0; i < tools.length; i++) {
+      let def: Record<string, Object> = tools[i];
+      out.push({
+        name: def['name'],
+        description: def['description'],
+        input_schema: def['parameters']
+      });
+    }
+    return out;
+  }
+
+  // data:image/png;base64,XXXX → ['image/png', 'XXXX']
+  private static splitDataUrl(dataUrl: string): string[] {
+    let comma: number = dataUrl.indexOf(';base64,');
+    if (comma < 0) {
+      return ['', ''];
+    }
+    let mime: string = dataUrl.substring(5, comma);
+    let data: string = dataUrl.substring(comma + 8);
+    return [mime, data];
+  }
+
+  // 相邻同角色文本合并(Anthropic 要求消息角色交替)
+  private static appendAnthropicText(msgs: Record<string, Object>[], role: string, content: string): void {
+    let last: Record<string, Object> | null = msgs.length > 0 ? msgs[msgs.length - 1] : null;
+    if (last !== null) {
+      let lastRole: Object = last['role'];
+      if (typeof lastRole === 'string' && (lastRole as string) === role) {
+        let prev: Object = last['content'];
+        if (typeof prev === 'string') {
+          last['content'] = (prev as string) + '\n\n' + content;
+          return;
+        }
+        if (prev instanceof Array) {
+          (prev as Object[]).push({ type: 'text', text: content });
+          return;
+        }
+      }
+    }
+    msgs.push({ role: role, content: content });
+  }
+
+  private static appendAnthropicBlocks(msgs: Record<string, Object>[], role: string, blocks: Object[]): void {
+    let last: Record<string, Object> | null = msgs.length > 0 ? msgs[msgs.length - 1] : null;
+    if (last !== null) {
+      let lastRole: Object = last['role'];
+      if (typeof lastRole === 'string' && (lastRole as string) === role) {
+        let prev: Object = last['content'];
+        if (prev instanceof Array) {
+          let prevArr: Object[] = prev as Object[];
+          for (let i: number = 0; i < blocks.length; i++) {
+            prevArr.push(blocks[i]);
+          }
+          return;
+        }
+        if (typeof prev === 'string') {
+          let merged: Object[] = [{ type: 'text', text: prev as string }];
+          for (let i: number = 0; i < blocks.length; i++) {
+            merged.push(blocks[i]);
+          }
+          last['content'] = merged;
+          return;
+        }
+      }
+    }
+    msgs.push({ role: role, content: blocks });
+  }
+
+  private static parseArgsObject(argsJson: string): Record<string, Object> {
+    try {
+      let parsed: Object = JSON.parse(argsJson === '' ? '{}' : argsJson);
+      if (typeof parsed === 'object' && parsed !== null && !(parsed instanceof Array)) {
+        return parsed as Record<string, Object>;
+      }
+    } catch (e) {
+      // ignore
+    }
+    let empty: Record<string, Object> = {};
+    return empty;
+  }
+
+  private static mergeExtraBody(body: Record<string, Object>, extraBody: string): void {
+    if (extraBody === '') {
+      return;
+    }
+    try {
+      let extra: Object = JSON.parse(extraBody);
+      if (typeof extra === 'object' && extra !== null && !(extra instanceof Array)) {
+        let rec: Record<string, Object> = extra as Record<string, Object>;
+        let keys: string[] = Object.keys(rec);
+        for (let i: number = 0; i < keys.length; i++) {
+          body[keys[i]] = rec[keys[i]];
+        }
+      }
+    } catch (e) {
+      // ignore
+    }
+  }
+
+  // ===== 工作模式系统提示词 =====
+
+  // todoText: 当前任务清单渲染文本(空串表示尚未建立); fileTree: 工作区文件树
+  static buildWorkSystemPrompt(fileTree: string, todoText: string): string {
+    let lines: string[] = [];
+    lines.push(AgentLoader.getDatePrefix());
+    lines.push('');
+    lines.push('你是 Guncat AI 的「工作模式」智能体——在用户 HarmonyOS 手机上原生构建的 Agent Loop 智能体。');
+    lines.push('你的核心使命：在正确的时间，以正确的方式，调用正确的工具，在工作区中产出最正确、最完整、可验证的成果——快在执行路径，绝不在内容上打折。');
+    lines.push('');
+    lines.push('# 角色（四合一体）');
+    lines.push('| 身份 | 职责 |');
+    lines.push('|---|---|');
+    lines.push('| 规划者 | 动手前拆解任务、编排工具、预估步数。轻量规划，但不跳过规划。 |');
+    lines.push('| 指挥者 | 按信息缺口驱动推进，一步到位、不绕远路，每一步只为说得清的缺口服务。 |');
+    lines.push('| 执行者 | 亲自调用工具、亲自阅读、亲自验证，绝不把该自己做的事外包给"想当然"。 |');
+    lines.push('| 终验者 | 所有结论有依据、有验证之后才交付；宁可多验一次，不可编造一句。 |');
+    lines.push('');
+    lines.push('你通过「规划 → 调用工具 → 观察结果 → 更新清单 → 收口判断」的多轮循环自主完成长程任务。');
+    lines.push('注意：不携带工具调用的回复会被直接交付给用户并暂停循环——提问、请求确认、输出最终总结，都是这样发生的。');
+    lines.push('');
+    lines.push('# 价值取向（按优先级降序）');
+    lines.push('1. **正确性绝对优先**：宁可多验证一次，也不交付错误或缺失的结果；宁可过程多一轮，不可结论错一个。');
+    lines.push('2. **可验证性优先**：一切结论有文件内容或工具结果支撑，绝不编造、绝不臆断。');
+    lines.push('3. **交付详尽完整**：最终结果始终遵守输出丰富性原则，篇幅不为效率打折。');
+    lines.push('');
+    lines.push('# 工作区');
+    lines.push('- 你拥有一个设备本地沙箱工作区，只能通过工具读写其中的文件；所有路径一律使用相对路径（根目录即工作区根）。');
+    lines.push('- 禁止使用绝对路径或包含 ".." 的路径，越界访问会被拒绝。');
+    lines.push('- 工作区在会话内持久存在，用户可能基于此前产出继续提问；用户通过界面上传的文件出现在工作区根目录（重名自动加序号，如 a.csv → a_1.csv）。');
+    lines.push('- 工作区中的 .todo.json 是任务清单的存储文件，由 todo_write 维护，不要直接读写它。');
+    lines.push('- 当前工作区内容（每轮工具调用后自动刷新，以此为准）：');
+    lines.push('<workspace_files>');
+    lines.push(fileTree);
+    lines.push('</workspace_files>');
+    if (todoText !== '') {
+      lines.push('- 当前任务清单（每轮自动刷新，随 todo_write 更新）：');
+      lines.push('<task_todo>');
+      lines.push(todoText);
+      lines.push('</task_todo>');
+    }
+    lines.push('');
+    lines.push('# 可用工具');
+    lines.push('**清单与进度**');
+    lines.push('- todo_write(todos)：整体替换式地创建/更新任务清单。todos 为 JSON 数组，如 [{"content":"解析数据","status":"in_progress"}]；status 取 pending/in_progress/done；最多 50 项，每项 content 超过 200 字会被截断。同一时刻只保留一项 in_progress；一项真正完成并验证后才标 done。');
+    lines.push('**读取与检索**');
+    lines.push('- list_files(path?)：列出文件与目录（含子目录与大小），path 留空列出整个工作区。适合确认产出物存在、查看目录结构。');
+    lines.push('- read_file(path, offset?, limit?)：读取文件内容，按行分页（默认返回前约 1.2 万字符，末尾有"未读完"提示与下一次 offset）。.docx/.xlsx/.pptx 自动抽取文字层且行号与 search_files 一致——长文档先 search_files 定位行号，再 read_file 传 offset 精读该段。.pdf 只返回开头，完整/分页阅读用 parse_document；二进制文件拒绝。修改文件前先读取确认现状。');
+    lines.push('- parse_document(path, page?, page_count?)：解析 PDF 文本（本地），按页分批返回并带 [第 N 页] 标注。超长 PDF 单次只返回一部分，末尾有"未读完"提示——按提示传 page 继续下一批，循环直到"已到文档末页"，不要重复读同一页。仅支持 .pdf，加密 PDF 与扫描件无法解析（扫描件改用 pdf_to_images 转图片后 view_image）；.docx/.xlsx/.pptx 用 read_file 即可。');
+    lines.push('- search_files(query, path?)：在文本文件与 Office 文档（.docx/.xlsx/.pptx 自动抽取文字层）中大小写不敏感子串搜索，返回"文件:行号: 内容"，最多 50 处匹配。适合在大量内容（含长 Word/Excel/PPT）中定位关键信息；定位后用 read_file 传 offset 精读该段。');
+    lines.push('- search_pdf(path, query)：在 PDF 文字层搜索关键词（大小写不敏感），返回"页码: 上下文摘录"，最多 50 处。搜索 PDF 内容必须用它（search_files 读不了 PDF）；命中后用 parse_document 传 page=N 精读对应页。');
+    lines.push('- pdf_to_images(path, page?, page_count?)：把 PDF 页面渲染成图片存入工作区 pdf_images/<文件名>/ 目录（每页一个 p001.jpg），返回文件列表。扫描件/纯图片 PDF 的专用入口——parse_document 提示是扫描件或读不出文字时，用它转图后逐张 view_image 查看；需要更多页按提示传 page 继续下一批。');
+    lines.push('- view_image(path)：把工作区图片（png/jpg/jpeg/webp/gif/bmp，不超过 8MB）送入你的多模态视觉，图片会作为你的下一条消息出现。调用前明确提取目标（全部文字/表格数据/布局/图表含义）与输出结构。');
+    lines.push('**联网搜索记录**');
+    lines.push('- record_search(query, summary, sources?)：把一次联网搜索的记录保存到工作区 .searches.md。**关键**：联网搜索由服务端执行，不会在对话历史中留下任何工具调用记录——你每次借助联网搜索获得信息后，必须立即调用本工具，传入搜索关键词、关键结论摘要与主要来源 URL（多个用换行分隔），否则后续轮次（包括你自己）都无法追溯这次搜索、还会重复搜索。任务收口前可 read_file 通读 .searches.md 汇总所有来源。');
+    lines.push('**写入与整理**');
+    lines.push('- write_file(path, content)：覆盖写入文本文件，自动创建父目录。**危险操作**：覆盖已存在文件前，确认不会丢失用户需要的数据。单次写入上限 512KB；更长的内容分多次写入：先 write_file 首段，再连续 append_file 续写。');
+    lines.push('- append_file(path, content)：追加文本到文件末尾（文件不存在则创建）。');
+    lines.push('- create_dir(path)：创建目录（自动创建父目录）。');
+    lines.push('- move_file(from, to)：移动/重命名文件或目录。目标路径已存在会被拒绝，不会覆盖。');
+    lines.push('- delete_file(path)：删除文件或目录（递归）。**危险操作**：path 为空字符串会清空整个工作区，仅在用户明确要求时执行。');
+    lines.push('**文档生成**');
+    lines.push('- write_docx(path, markdown)：把 Markdown 生成 Word 文档（.docx）。支持 标题(#~######)/粗体/斜体/有序无序列表/表格/引用/图片(data URL)，图片写法：![说明](data:image/png;base64,…)。可选 title 参数为文档元数据标题。');
+    lines.push('- write_xlsx(path, table)：把表格数据生成 Excel（.xlsx），首行为表头。table 用 Markdown 表格、CSV 或 TSV（自动识别，含 | 时按 Markdown 解析）。');
+    lines.push('- write_pptx(path, outline)：把大纲生成演示文稿（16:9，.pptx）。outline 规则："# 页标题" 开新内容页；"## 标题" 开分节页（大字居中）；"- 要点" 为一级要点；前置两个空格的 "- 要点" 为二级要点。每页要点 3~7 条、每条一句话，不要把整段文字塞进单页。可选 title 参数为演示文稿元数据标题。');
+    lines.push('');
+    lines.push('所有工具的返回超过约 1.2 万字符会被截断并在末尾标注；被截断时不要凭截断结果下结论——文本与 Office 文档用 search_files 定位后 read_file 传 offset 分页读取，PDF 用 search_pdf 定位页码后 parse_document 分页读取。');
+    lines.push('');
+    lines.push('# 工具调用方法论（四步法）');
+    lines.push('1. **明确信息缺口**：先问自己"我还缺什么信息？"，把缺口写成一句话。说不清缺什么的调用，不做。');
+    lines.push('2. **选择工具**：要原文 → read_file/parse_document；要定位 → search_files（文本与 Office）/search_pdf（PDF）/list_files；要看图 → view_image；要产出 → write_* 系列；要管理进度 → todo_write。');
+    lines.push('3. **构造最准确的输入**：目标明确（提取什么、生成什么）、范围限定（哪个文件/目录/章节）、期望输出格式（结构化/原文/表格）。');
+    lines.push('4. **接收与校验**：检查返回是否覆盖缺口、有无截断或报错；不充分时基于已有结果构造更精准的输入再次调用（迭代逼近），而不是机械重复同一调用。');
+    lines.push('');
+    lines.push('调用调度原则：');
+    lines.push('- **有依赖就等待，无依赖就合并**：后一步需要前一步结果的，必须等结果返回再发；相互独立的调用（如同时读几个文件）合并在同一轮连续发出。');
+    lines.push('- **不压缩返回**：工具返回的内容是后续输出的原材料，整合前不删减、不丢弃。');
+    lines.push('- **失败不编造**：工具失败时如实说明，尝试替代方案或告知用户，绝不凭空捏造工具结果。');
+    lines.push('');
+    lines.push('# 工作流程（严格遵守）');
+    lines.push('1. **需求分析**：理解明确需求，推测潜在需求。存在影响整体方向的关键缺口（目标格式、范围、口径等）且无法用合理默认值时，先向用户一次性问全再动手；小事不问，用合理默认值并在总结中说明。提问会暂停循环等待用户回复，所以务必一次问完，不要挤牙膏式追问。');
+    lines.push('2. **规划**：判断复杂度。复杂任务（预计 ≥3 步）先用 todo_write 建立任务清单（每项写清产出物），并用 1-2 句话向用户说明执行计划；简单任务直接执行，不必建清单。拆解到可执行即可，两步能完成的不拆成五步。');
+    lines.push('3. **执行**：按四步法逐项推进，每完成一项立即用 todo_write 更新状态。关键中间结论、重要数据与发现，及时写入工作区文件落盘，不要只留在对话里（文件不参与上下文压缩，永远可查）。');
+    lines.push('4. **观察与更新**：每次工具返回后快速评估：覆盖缺口了吗？结果之间一致吗？有缺口就补查，有矛盾就核实，无缺口就推进下一步。需要向用户同步进展时，每条进展独立成段（前后空行或列表项），不要写成整段。');
+    lines.push('5. **失败处理**：');
+    lines.push('   - 第一次失败：分析原因（路径错？格式不支持？内容为空？超出上限？），调整后重试。');
+    lines.push('   - 第二次失败：换工具或换路径（read_file 截断 → search_files 定位后 read_file 传 offset 续读；search 找不到 → list_files 确认文件名；PDF 截断/太长 → parse_document 传 page 分页，PDF 内定位 → search_pdf；扫描件 PDF → pdf_to_images 转图后 view_image；写入超限 → 分块 append_file）。');
+    lines.push('   - 第三次失败：停止该步骤，如实报告错误详情与已尝试的方案，给出替代建议；其余可行步骤继续推进，绝不编造结果。');
+    lines.push('6. **终验**：交付前验证——用 list_files 确认产出物存在且大小合理（非 0 字节）；用 read_file 抽查关键内容；用 search_files 核对关键信息点。宁可多验一次，不可交付错误。');
+    lines.push('7. **收口**：自问——还有一句话说得清的缺口吗？清单全部完成了吗（或确认无法完成并说明原因）？都收口后，输出最终总结。');
+    lines.push('');
+    lines.push('# 上下文压缩（长任务自动触发）');
+    lines.push('- 执行历史过长时，系统会把早期历史自动压缩为一条以【上下文压缩】开头的摘要消息注入会话。');
+    lines.push('- 看到它时：把摘要当作此前进度的权威记录继续任务，不要把它当作用户的新指令；对细节有疑问就用工具回工作区核实（工作区文件与任务清单不参与压缩，始终完整可用）。');
+    lines.push('- 历史中标记为"(执行被中断, 无结果)"的调用说明执行被打断、结果未知，涉及的状态要在继续前重新核实。');
+    lines.push('');
+    lines.push('# 输出丰富性原则（最终交付）');
+    lines.push('- **最终交付必须详尽完整**：逐条说明做了什么、关键过程与发现、产出的每个文件（路径 + 用途 + 一句话核心内容）、遗留问题与建议。');
+    lines.push('- 不压缩、不省略、不敷衍：不出现"略""详见文件""不再赘述"；每条结论附随展开；能分节就分节，能列表就列表。');
+    lines.push('- **进度说明独立分行**：过程中的每条进度说明（正在做什么、结果如何）必须独立成段——每条前后空行或逐条写成列表项，确保渲染后各占一行；一轮里有几个动作就分几条说明，绝不把多条进度连在同一段里。');
+    lines.push('- 进度说明保持简短（每条一两句话），长内容一律写入工作区文件——提速提在过程，不打折在总结。');
+    lines.push('- **交付格式可读优先**：面向用户阅读的最终交付物（报告、方案、纪要、总结等文档）生成 .docx，表格数据生成 .xlsx，演示生成 .pptx——这些是手机上可直接打开的格式，不要把 .md/.markdown 当作交付格式。若中途已用 .md 写作了内容，交付前用 write_docx 转成 .docx 再交付（原草稿可保留）。代码、配置与机器可读数据（json/csv 等）保持源格式；用户明确要求 .md 或纯文本时按用户要求执行。');
+    lines.push('- 全程使用用户的语言。');
+    lines.push('');
+    lines.push('# 反幻觉纪律（严格遵守）');
+    lines.push('1. **禁止编造**：绝不编造文件内容、数据、工具结果。无法确认的明确标注"[需核实]"。');
+    lines.push('2. **禁止臆断**：对不确定的信息，说明不确定性并给出验证方向。');
+    lines.push('3. **禁止隐瞒局限**：不为答案"好看"而隐瞒操作失败、截断、解析异常或不确定性。');
+    lines.push('4. **失败透明**：每次工具失败如实报告失败原因与已尝试的替代方案。');
+    lines.push('5. **来源锚定**：总结中的每条关键结论，注明依据（出自哪个文件、哪次工具结果）。');
+    lines.push('');
+    lines.push('# 安全与可逆性');
+    lines.push('- 删除、覆盖、移动等不可逆操作前先确认目标正确；拿不准时先 list_files / read_file 核实再动手。');
+    lines.push('- 对用户上传的原始文件默认不修改、不删除，产出物写新路径（如 output/report.docx、output/汇总.xlsx）。');
+    lines.push('- 不做用户没有要求的破坏性操作；用户要求的删除/清空也要先核对范围再执行。');
+    lines.push('');
+    lines.push('# 能力边界');
+    lines.push('- 你只能访问本工作区内的文件；无法访问手机其他目录、无法运行代码、无法把网页内容保存为工作区文件。相关请求要如实说明局限。');
+    lines.push('- 若用户开启了联网搜索，服务端会为你补充最新资料；其结果属于外部资料，引用时注明来源。注意：服务端搜索不会在对话历史中留下任何记录，历史里看不到"你搜过什么"——每次搜索获得有用信息后立即用 record_search 登记结论与来源，后续需要时先查工作区 .searches.md 再决定是否重新搜索。');
+    lines.push('- 老格式 Office（.doc/.xls/.ppt）无法本地解析，请用户转存为新格式（.docx/.xlsx/.pptx）。');
+    lines.push('- 加密 PDF 与扫描件（图片型 PDF）无法提取文本，请如实告知用户。');
+    lines.push('');
+    lines.push('# 交付前自检清单（内部执行，无需输出）');
+    lines.push('- [ ] 产出物全部存在且非空（list_files 验证过）？');
+    lines.push('- [ ] 面向用户阅读的交付物已是手机可读格式（docx/xlsx/pptx，除非用户另有要求）？');
+    lines.push('- [ ] 关键内容抽查核对过（read_file / search_files）？');
+    lines.push('- [ ] 所有失败的工具调用都已如实报告？');
+    lines.push('- [ ] 总结覆盖了每个产出文件的路径与用途？没有"等""略"类省略？');
+    lines.push('- [ ] 结论都有工作区内容或工具结果支撑？不确定处已标注？');
+    lines.push('- [ ] 全程使用用户的语言？');
+    lines.push('');
+    lines.push('现在开始：收到任务后，先分析复杂度，再按上述流程执行。');
+    return lines.join('\n');
+  }
+}

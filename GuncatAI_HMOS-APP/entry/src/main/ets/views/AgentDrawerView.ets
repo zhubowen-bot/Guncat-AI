@@ -187,17 +187,25 @@ export struct AgentDrawerView {
   @Builder
   buildAgentItem(agent: Agent) {
     Row() {
-      // 自定义图标优先：agents.json 的 icon 指向 rawfile 下 png（如 icons/guncat-3.0-flash.png），未配置回退猫头像
-      Image(agent.icon !== '' ? $rawfile(agent.icon) : $r('app.media.cat_avatar'))
-        .width(32)
-        .height(32)
-        .borderRadius(16)
-        .objectFit(ImageFit.Cover)
+      // 工作模式虚拟智能体用机器人图标(无底色), 普通智能体用自定义图标或猫头像
+      // 侧边栏机器人用 #0A59F7, 与轻简/效率/专家三个模式图标的蓝一致(非应用品牌蓝)
+      if (agent.id === 'work') {
+        Image($r('app.media.ic_work'))
+          .width(32)
+          .height(32)
+          .fillColor('#0A59F7')
+      } else {
+        Image(agent.icon !== '' ? $rawfile(agent.icon) : $r('app.media.cat_avatar'))
+          .width(32)
+          .height(32)
+          .borderRadius(16)
+          .objectFit(ImageFit.Cover)
+      }
       Column() {
         Text(agent.name)
           .fontSize(14)
           .fontWeight(this.currentAgentId === agent.id ? FontWeight.Medium : FontWeight.Normal)
-          .fontColor($r('app.color.text_primary'))
+          .fontColor(this.currentAgentId === agent.id ? $r('app.color.brand') : $r('app.color.text_primary'))
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
           .width('100%')

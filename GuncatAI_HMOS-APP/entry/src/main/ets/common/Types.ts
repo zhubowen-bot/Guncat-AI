@@ -94,6 +94,12 @@ export class AbortSignal {
   aborted: boolean = false;
 }
 
+// 多模态文件解析结果(命名类: .ets 侧不能用匿名对象字面量类型)
+export class ParsedFileResult {
+  content: string = '';
+  dataUrl: string = '';
+}
+
 // 智能体注册表项(来自 agents.json)
 export interface AgentConfigEntry {
   id: string;

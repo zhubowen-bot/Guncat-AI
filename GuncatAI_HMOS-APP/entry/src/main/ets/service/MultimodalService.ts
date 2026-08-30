@@ -3,6 +3,7 @@
 import { http } from '@kit.NetworkKit';
 import { MultimodalConfig } from '../model/MultimodalConfig';
 import { Constants } from '../common/Constants';
+import { ParsedFileResult } from '../common/Types';
 import { arrayBufferToBase64 } from '../common/Utils';
 
 const PARSE_SYSTEM_PROMPT: string = '请仅解析用户上传的文件内容，完整地返回文件中包含的信息。不要回答具体问题，不要执行额外任务，不要对原始信息进行压缩，只返回文件内容的解析结果。';
@@ -64,7 +65,7 @@ export class MultimodalService {
     fileName: string,
     fileBuffer: ArrayBuffer,
     fileType: string
-  ): Promise<{ content: string; dataUrl: string }> {
+  ): Promise<ParsedFileResult> {
     if (config.apiKey === '') {
       throw new Error('请先配置多模态解析 API 的密钥');
     }
@@ -153,7 +154,10 @@ export class MultimodalService {
       if (typeof content !== 'string') {
         throw new Error('多模态解析返回内容为空');
       }
-      return { content: content, dataUrl: dataUrl };
+      let result: ParsedFileResult = new ParsedFileResult();
+      result.content = content as string;
+      result.dataUrl = dataUrl;
+      return result;
     } finally {
       try {
         httpRequest.destroy();

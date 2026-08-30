@@ -11,7 +11,7 @@ import { StreamCallbacks, AbortSignal } from '../common/Types';
 import { Constants } from '../common/Constants';
 import { util } from '@kit.ArkTS';
 
-class StreamAccumulator {
+export class StreamAccumulator {
   buffer: ArrayBuffer = new ArrayBuffer(0);
   decoder: util.TextDecoder = util.TextDecoder.create('utf-8', { ignoreBOM: true });
   fullContent: string = '';
@@ -28,7 +28,7 @@ class StreamAccumulator {
   }
 }
 
-function getProtocol(provider: string): string {
+export function getProtocol(provider: string): string {
   if (provider === 'openai-responses') {
     return 'responses';
   }
@@ -414,7 +414,7 @@ function buildAnthropicBody(config: ApiConfig, agent: Agent | null,
   return body;
 }
 
-function extractChatCompletionsDelta(sseData: string): string {
+export function extractChatCompletionsDelta(sseData: string): string {
   try {
     let json: Object = JSON.parse(sseData);
     if (typeof json !== 'object' || json === null) {
@@ -442,7 +442,7 @@ function extractChatCompletionsDelta(sseData: string): string {
   }
 }
 
-function extractResponsesDelta(sseData: string): string {
+export function extractResponsesDelta(sseData: string): string {
   try {
     let json: Object = JSON.parse(sseData);
     if (typeof json !== 'object' || json === null) {
@@ -462,7 +462,7 @@ function extractResponsesDelta(sseData: string): string {
   }
 }
 
-function extractResponsesFailure(sseData: string): string {
+export function extractResponsesFailure(sseData: string): string {
   try {
     let json: Object = JSON.parse(sseData);
     if (typeof json !== 'object' || json === null) {
@@ -489,7 +489,7 @@ function extractResponsesFailure(sseData: string): string {
   }
 }
 
-function extractAnthropicDelta(sseData: string): string {
+export function extractAnthropicDelta(sseData: string): string {
   try {
     let json: Object = JSON.parse(sseData);
     if (typeof json !== 'object' || json === null) {
@@ -517,7 +517,7 @@ function extractAnthropicDelta(sseData: string): string {
   }
 }
 
-function extractAnthropicFailure(sseData: string): string {
+export function extractAnthropicFailure(sseData: string): string {
   try {
     let json: Object = JSON.parse(sseData);
     if (typeof json !== 'object' || json === null) {
@@ -542,7 +542,7 @@ function extractAnthropicFailure(sseData: string): string {
 
 // ===== 深度思考增量解析 (对齐 web 版本 extractXXXReasoning) =====
 
-function extractChatCompletionsReasoning(sseData: string): string {
+export function extractChatCompletionsReasoning(sseData: string): string {
   try {
     let json: Object = JSON.parse(sseData);
     if (typeof json !== 'object' || json === null) {
@@ -575,7 +575,7 @@ function extractChatCompletionsReasoning(sseData: string): string {
   }
 }
 
-function extractResponsesReasoning(sseData: string): string {
+export function extractResponsesReasoning(sseData: string): string {
   try {
     let json: Object = JSON.parse(sseData);
     if (typeof json !== 'object' || json === null) {
@@ -612,7 +612,7 @@ function extractResponsesReasoning(sseData: string): string {
   }
 }
 
-function extractAnthropicReasoning(sseData: string): string {
+export function extractAnthropicReasoning(sseData: string): string {
   try {
     let json: Object = JSON.parse(sseData);
     if (typeof json !== 'object' || json === null) {
@@ -642,7 +642,7 @@ function extractAnthropicReasoning(sseData: string): string {
 
 // ===== usage 解析 (对齐 web 版本 extractXXXUsage) =====
 
-function extractChatCompletionsUsage(sseData: string): Record<string, Object> | null {
+export function extractChatCompletionsUsage(sseData: string): Record<string, Object> | null {
   try {
     let json: Object = JSON.parse(sseData);
     if (typeof json !== 'object' || json === null) {
@@ -658,7 +658,7 @@ function extractChatCompletionsUsage(sseData: string): Record<string, Object> | 
   }
 }
 
-function extractResponsesUsage(sseData: string): Record<string, Object> | null {
+export function extractResponsesUsage(sseData: string): Record<string, Object> | null {
   try {
     let json: Object = JSON.parse(sseData);
     if (typeof json !== 'object' || json === null) {
@@ -681,7 +681,7 @@ function extractResponsesUsage(sseData: string): Record<string, Object> | null {
   }
 }
 
-function extractAnthropicUsage(sseData: string): Record<string, Object> | null {
+export function extractAnthropicUsage(sseData: string): Record<string, Object> | null {
   try {
     let json: Object = JSON.parse(sseData);
     if (typeof json !== 'object' || json === null) {
@@ -703,7 +703,7 @@ function extractAnthropicUsage(sseData: string): Record<string, Object> | null {
 
 // 由 API 返回的 usage 派生 token 速度(tok/s)与缓存命中率(0..1);
 // 只读返回值, 不做自创算法; 无对应字段时返回 -1.
-function deriveStreamStats(usage: Record<string, Object> | null, elapsedMs: number): number[] {
+export function deriveStreamStats(usage: Record<string, Object> | null, elapsedMs: number): number[] {
   let speed: number = -1;
   let hit: number = -1;
   if (usage === null) {

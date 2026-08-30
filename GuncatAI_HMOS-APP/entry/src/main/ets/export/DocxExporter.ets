@@ -16,6 +16,12 @@ export class DocxExporter {
     return DocxExporter.saveViaPicker(context, bytes);
   }
 
+  // 仅构建 .docx 字节(工作模式 write_docx 工具复用), 不弹保存面板
+  static async buildDocxBytes(title: string, markdown: string): Promise<Uint8Array> {
+    let doc: OoxmlDocument = await OoxmlBuilder.build(title, markdown);
+    return DocxExporter.assembleZip(doc);
+  }
+
   // 组装 zip 条目 -> docx 字节
   private static assembleZip(doc: OoxmlDocument): Uint8Array {
     let entries: ZipEntry[] = [];

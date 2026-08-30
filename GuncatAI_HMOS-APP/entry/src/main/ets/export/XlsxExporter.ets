@@ -18,10 +18,59 @@ export class XlsxExporter {
     return XlsxExporter.saveBytesViaPicker(context, bytes, '表格识别-' + XmlUtil.stamp(), '.xlsx');
   }
 
+  // 简单行数组 -> .xlsx 字节(工作模式 write_xlsx 工具复用); 首行作为表头加粗底色
+  static buildXlsxFromRows(rows: string[][]): Uint8Array {
+    let maxCols: number = 0;
+    for (let r: number = 0; r < rows.length; r++) {
+      if (rows[r].length > maxCols) {
+        maxCols = rows[r].length;
+      }
+    }
+    if (maxCols === 0) {
+      maxCols = 1;
+    }
+    let grid: (TableCellInfo | null)[][] = [];
+    let rowData: TableRowInfo[] = [];
+    for (let r: number = 0; r < rows.length; r++) {
+      let rowCells: (TableCellInfo | null)[] = [];
+      for (let c: number = 0; c < maxCols; c++) {
+        if (c < rows[r].length && rows[r][c] !== '') {
+          let cell: TableCellInfo = new TableCellInfo();
+          cell.text = rows[r][c];
+          cell.rowspan = 1;
+          cell.colspan = 1;
+          cell.isHeader = r === 0;
+          rowCells.push(cell);
+        } else {
+          rowCells.push(null);
+        }
+      }
+      grid.push(rowCells);
+      let meta: TableRowInfo = new TableRowInfo();
+      meta.cells = [];
+      meta.dataLines = 1;
+      meta.dataH = '';
+      rowData.push(meta);
+    }
+    // 空表也要有一行占位, 避免 sheetData 为空
+    if (grid.length === 0) {
+      let emptyRow: (TableCellInfo | null)[] = [];
+      for (let c: number = 0; c < maxCols; c++) {
+        emptyRow.push(null);
+      }
+      grid.push(emptyRow);
+      let meta: TableRowInfo = new TableRowInfo();
+      meta.cells = [];
+      meta.dataLines = 1;
+      meta.dataH = '';
+      rowData.push(meta);
+    }
+    return XlsxExporter.buildXlsx(grid, rowData, maxCols);
+  }
+
   // 通用保存: 字节 -> 系统保存面板写入 (docx/xlsx/html 共用)
   static async saveBytesViaPicker(context: common.UIAbilityContext, bytes: Uint8Array,
-    baseName: string, suffix: string): Promise<string> {
-    let fileName: string = baseName + suffix;
+    baseName: string, suffix: string): Promise<string> {    let fileName: string = baseName + suffix;
     let options: picker.DocumentSaveOptions = new picker.DocumentSaveOptions();
     options.newFileNames = [baseName];
     options.fileSuffixChoices = [suffix];

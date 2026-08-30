@@ -8,6 +8,8 @@ import { ToastView } from '../views/ToastView';
 import { ImageLightbox } from '../views/ImageLightbox';
 import { SettingsPanel } from '../views/SettingsPanel';
 import { AboutPanel } from '../views/AboutPanel';
+import { WorkspaceBar } from '../views/WorkspaceBar';
+import { WorkTurnView } from '../views/WorkTurnView';
 import { Message } from '../model/Message';
 import { Agent } from '../model/Agent';
 import { Conversation } from '../model/Conversation';
@@ -58,6 +60,8 @@ struct ChatPage {
   @State private toastVisible: boolean = false;
   @State private isListening: boolean = false;
   @State private refreshTick: number = 0;
+  // 工作模式工作区弹层开关(挂在"工作模式"胶囊上方)
+  @State private workspacePopupOpen: boolean = false;
   @State private previewItems: PreviewData[] = [];
   @State private readerVisible: boolean = false;
   @State private readerPhase: string = '';
@@ -73,6 +77,9 @@ struct ChatPage {
   // 消息列表滚动控制器 + 自动置底
   private messageScroller: Scroller = new Scroller();
   private toastTimer: number = -1;
+  // 会话工作时间计时: 工作模式任务执行期间每秒累计(秒数存 VM 供工作区面板显示), 切换/新建会话归零
+  private workTickTimer: number = -1;
+  private lastWorkConvId: string = '';
   private voiceInputService: VoiceInputService = new VoiceInputService();
   // 用户手指触摸滚动期间暂停自动置底, 松手后恢复
   // (避免 scrollTo 与进行中的手势冲突导致白屏)
@@ -102,6 +109,15 @@ struct ChatPage {
       await TextReaderService.stop();
     };
     this.vm.setStateChangeListener(() => {
+      // 切到非工作模式的智能体/会话时收起工作区弹层
+      if (!this.vm.workMode && this.workspacePopupOpen) {
+        this.workspacePopupOpen = false;
+      }
+      // 切换/新建会话时工作时间归零
+      if (this.vm.currentConversationId !== this.lastWorkConvId) {
+        this.lastWorkConvId = this.vm.currentConversationId;
+        this.vm.workElapsedSec = 0;
+      }
       this.rebuildPreviewItems();
       this.refreshTick++;
       // 每次 VM 状态变化触发置底 (对齐 web 版本自动滚动); 用户触摸时跳过, 松手后恢复
@@ -120,6 +136,19 @@ struct ChatPage {
         }
       }, 100);
     });
+    // 工作模式工作时间计时: 面板随开随关, 计时必须挂在常驻的 ChatPage 上才不中断
+    this.workTickTimer = setInterval((): void => {
+      if (!this.vm.workMode) {
+        return;
+      }
+      if (this.vm.currentConversationId !== this.lastWorkConvId) {
+        this.lastWorkConvId = this.vm.currentConversationId;
+        this.vm.workElapsedSec = 0;
+      }
+      if (this.vm.isStreaming) {
+        this.vm.workElapsedSec++;
+      }
+    }, 1000);
     // 流式期间每 100ms 置底一次 (revealedCount 在 ChatBubbleView 内部定时推进,
     // ChatPage 需要通过此 timer 确保 Scroll 跟随新字符出现)
     this.streamScrollTimer = setInterval(() => {
@@ -164,6 +193,10 @@ struct ChatPage {
     if (this.toastTimer !== -1) {
       clearTimeout(this.toastTimer);
       this.toastTimer = -1;
+    }
+    if (this.workTickTimer !== -1) {
+      clearInterval(this.workTickTimer);
+      this.workTickTimer = -1;
     }
     if (this.streamScrollTimer !== -1) {
       clearInterval(this.streamScrollTimer);
@@ -257,25 +290,65 @@ struct ChatPage {
             // 工具开关行
             Row() {
               this.buildModelSelector()
-              ToggleSwitch({
-                isOn: this.vm.thinkingEnabled,
-                label: '深度思考',
-                onChange: (v: boolean) => {
-                  this.vm.setThinkingEnabled(v);
-                  this.refreshTick++;
-                }
-              })
-              ToggleSwitch({
-                isOn: this.vm.webSearchEnabled,
-                label: '联网搜索',
-                toggleEnabled: true,
-                onChange: (v: boolean) => {
-                  this.vm.setWebSearchEnabled(v);
-                  this.refreshTick++;
-                }
-              })
-                // 联网搜索胶囊左侧加 10vp 间距, 避免两个胶囊贴在一起
-                .margin({ left: 10 })
+              if (this.vm.workMode) {
+                // 工作模式: 联网搜索摆在原深度思考的位置; 深度思考默认开启不再显示开关
+                ToggleSwitch({
+                  isOn: this.vm.webSearchEnabled,
+                  label: '联网搜索',
+                  toggleEnabled: true,
+                  onChange: (v: boolean) => {
+                    this.vm.setWebSearchEnabled(v);
+                    this.refreshTick++;
+                  }
+                })
+                  .margin({ left: 10 })
+                ToggleSwitch({
+                  isOn: true,
+                  label: '工作模式',
+                  // 点击不再直接退出工作模式, 而是在胶囊上方弹出工作区面板(退出入口在面板里)
+                  onChange: (_v: boolean) => {
+                    this.workspacePopupOpen = !this.workspacePopupOpen;
+                    if (this.workspacePopupOpen) {
+                      this.vm.refreshWorkspace().then(() => {
+                        this.refreshTick++;
+                      });
+                    }
+                  }
+                })
+                  .margin({ left: 10 })
+                  .bindPopup(this.workspacePopupOpen, {
+                    builder: this.buildWorkspacePopup,
+                    placement: Placement.Top,
+                    // 透明遮罩: 点击面板外任意区域即收起, 且不压暗页面
+                    mask: { color: Color.Transparent },
+                    showInSubWindow: false,
+                    onStateChange: (e: PopupStateChangeParam) => {
+                      if (this.workspacePopupOpen !== e.isVisible) {
+                        this.workspacePopupOpen = e.isVisible;
+                      }
+                    }
+                  })
+              } else {
+                ToggleSwitch({
+                  isOn: this.vm.thinkingEnabled,
+                  label: '深度思考',
+                  onChange: (v: boolean) => {
+                    this.vm.setThinkingEnabled(v);
+                    this.refreshTick++;
+                  }
+                })
+                ToggleSwitch({
+                  isOn: this.vm.webSearchEnabled,
+                  label: '联网搜索',
+                  toggleEnabled: true,
+                  onChange: (v: boolean) => {
+                    this.vm.setWebSearchEnabled(v);
+                    this.refreshTick++;
+                  }
+                })
+                  // 联网搜索胶囊左侧加 10vp 间距, 避免两个胶囊贴在一起
+                  .margin({ left: 10 })
+              }
             }
             .width('100%')
             .padding({ left: 12, right: 12, top: 8, bottom: 4 })
@@ -289,6 +362,7 @@ struct ChatPage {
               isStreaming: this.vm.isStreaming,
               isParsing: this.vm.isParsing,
               isListening: this.isListening,
+              placeholder: this.vm.workMode ? '描述任务...' : '输入消息...',
               onSend: (text: string) => {
                 this.handleSend(text);
               },
@@ -877,7 +951,9 @@ struct ChatPage {
         .fontWeight(FontWeight.Bold)
         .fontColor($r('app.color.text_primary'))
         .margin({ bottom: 12 })
-      Text(this.vm.currentAgent !== null ? this.vm.currentAgent.description : '选择一个智能体开始对话')
+      Text(this.vm.workMode ?
+        '工作模式: Agent 将自动调用工具、读写沙箱工作区文件, 完成复杂的长程任务' :
+        (this.vm.currentAgent !== null ? this.vm.currentAgent.description : '选择一个智能体开始对话'))
         .fontSize(14)
         .fontColor($r('app.color.text_secondary'))
         .textAlign(TextAlign.Center)
@@ -902,39 +978,47 @@ struct ChatPage {
   buildMessageList() {
     Scroll(this.messageScroller) {
       Column() {
-        ForEach(this.vm.currentMessages, (msg: Message) => {
-          ChatBubbleView({
-            message: msg,
-            isStreaming: this.vm.isStreaming &&
-              msg === this.vm.currentMessages[this.vm.currentMessages.length - 1] &&
-              msg.role === 'assistant',
-            onCopyPlain: (id: string) => {
-              this.vm.copyMessagePlain(id);
-              this.showToast('已复制');
-            },
-            onCopyMarkdown: (id: string) => {
-              this.vm.copyMessageMarkdown(id);
-              this.showToast('已复制 Markdown');
-            },
-            onSelectPartial: (id: string) => {
-              this.showToast('已开启，长按内容即可选择复制');
-            },
-            onRegenerate: (id: string) => {
-              this.vm.regenerateMessage(id);
-              this.refreshTick++;
-            },
-            onRead: (id: string) => {
-              this.vm.readMessage(id);
-            },
-            onExportWord: (id: string) => {
-              this.handleExportWord(id);
-            },
-            onImageTap: (url: string) => {
-              this.lightboxUrl = url;
-              this.lightboxVisible = true;
-            }
-          })
-        }, (msg: Message) => msg.id)
+        if (this.vm.workMode) {
+          this.buildWorkTimeline()
+        } else {
+          ForEach(this.vm.currentMessages, (msg: Message) => {
+            ChatBubbleView({
+              message: msg,
+              isStreaming: this.vm.isStreaming &&
+                msg === this.vm.currentMessages[this.vm.currentMessages.length - 1] &&
+                msg.role === 'assistant',
+              isWork: this.vm.workMode,
+              isLastAssistant: this.vm.currentMessages.length > 0 &&
+                msg === this.vm.currentMessages[this.vm.currentMessages.length - 1] &&
+                msg.role === 'assistant',
+              onCopyPlain: (id: string) => {
+                this.vm.copyMessagePlain(id);
+                this.showToast('已复制');
+              },
+              onCopyMarkdown: (id: string) => {
+                this.vm.copyMessageMarkdown(id);
+                this.showToast('已复制 Markdown');
+              },
+              onSelectPartial: (id: string) => {
+                this.showToast('已开启，长按内容即可选择复制');
+              },
+              onRegenerate: (id: string) => {
+                this.vm.regenerateMessage(id);
+                this.refreshTick++;
+              },
+              onRead: (id: string) => {
+                this.vm.readMessage(id);
+              },
+              onExportWord: (id: string) => {
+                this.handleExportWord(id);
+              },
+              onImageTap: (url: string) => {
+                this.lightboxUrl = url;
+                this.lightboxVisible = true;
+              }
+            })
+          }, (msg: Message) => msg.id)
+        }
         Blank().height(8)
       }
       .width('100%')
@@ -952,6 +1036,100 @@ struct ChatPage {
         this.userScrolling = false;
       }
     })
+  }
+
+  // 工作模式时间线: 单容器 + 单一标识, 用户任务与各轮 思考→工具→正文 按发生顺序排列
+  @Builder
+  buildWorkTimeline() {
+    Column({ space: 14 }) {
+      // 时间线头(全时间线唯一的标识, 不再逐轮出现头像)
+      Row({ space: 10 }) {
+        Column() {
+          Image($r('app.media.ic_work'))
+            .width(20)
+            .height(20)
+            .fillColor($r('app.color.brand'))
+        }
+        .width(38)
+        .height(38)
+        .borderRadius(12)
+        .backgroundColor($r('app.color.brand_light'))
+        .justifyContent(FlexAlign.Center)
+        .alignItems(HorizontalAlign.Center)
+
+        Column() {
+          Text('工作模式')
+            .fontSize(15)
+            .fontWeight(FontWeight.Bold)
+            .fontColor($r('app.color.text_primary'))
+          Text(this.vm.isStreaming ? '任务执行中...' : 'Agent 就绪, 描述任务或上传文件')
+            .fontSize(11)
+            .fontColor($r('app.color.text_secondary'))
+            .margin({ top: 2 })
+        }
+        .alignItems(HorizontalAlign.Start)
+        .layoutWeight(1)
+      }
+      .width('100%')
+      .alignItems(VerticalAlign.Center)
+
+      ForEach(this.vm.currentMessages, (msg: Message) => {
+        if (msg.role === 'user') {
+          this.buildWorkTaskCard(msg)
+        } else {
+          WorkTurnView({
+            message: msg,
+            isStreaming: this.vm.isStreaming &&
+              msg === this.vm.currentMessages[this.vm.currentMessages.length - 1],
+            isLastAssistant: msg === this.vm.currentMessages[this.vm.currentMessages.length - 1] &&
+              msg.role === 'assistant',
+            onCopyPlain: (id: string) => {
+              this.vm.copyMessagePlain(id);
+              this.showToast('已复制');
+            },
+            onCopyMarkdown: (id: string) => {
+              this.vm.copyMessageMarkdown(id);
+              this.showToast('已复制 Markdown');
+            },
+            onExportWord: (id: string) => {
+              this.handleExportWord(id);
+            },
+            onRegenerate: (id: string) => {
+              this.vm.regenerateMessage(id);
+              this.refreshTick++;
+            }
+          })
+        }
+      }, (msg: Message) => msg.id)
+    }
+    .width('100%')
+    .padding(14)
+    .backgroundColor($r('app.color.surface'))
+    .borderRadius(20)
+    .shadow({ radius: 16, color: '#14000000', offsetX: 0, offsetY: 4 })
+  }
+
+  @Builder
+  buildWorkTaskCard(msg: Message) {
+    Row({ space: 10 }) {
+      Text('任务')
+        .fontSize(10)
+        .fontWeight(FontWeight.Bold)
+        .fontColor($r('app.color.brand'))
+        .padding({ left: 8, right: 8, top: 3, bottom: 3 })
+        .borderRadius(8)
+        .backgroundColor($r('app.color.raised_surface'))
+      Text(msg.displayContent !== '' ? msg.displayContent : msg.content)
+        .fontSize(14)
+        .fontColor($r('app.color.text_primary'))
+        .lineHeight(21)
+        .layoutWeight(1)
+    }
+    .width('100%')
+    .padding(12)
+    .borderRadius(14)
+    .backgroundColor($r('app.color.brand_light'))
+    .alignItems(VerticalAlign.Top)
   }
 
   // 导出消息为 Word 文档
@@ -1130,9 +1308,50 @@ struct ChatPage {
   }
 
   private async handleFileUpload(): Promise<void> {
+    // 工作模式: 上传直接进入沙箱工作区, 不作为聊天附件
+    if (this.vm.workMode) {
+      await this.vm.uploadToWorkspace();
+      this.refreshTick++;
+      return;
+    }
     await this.vm.pickAndParseFiles();
     this.rebuildPreviewItems();
     this.refreshTick++;
+  }
+
+  // "工作模式"胶囊上方的工作区弹层
+  @Builder
+  buildWorkspacePopup() {
+    WorkspaceBar({
+      vm: this.vm,
+      onUpload: () => {
+        this.handleWorkspaceUpload();
+      },
+      onExport: () => {
+        this.handleWorkspaceExport();
+      }
+    })
+  }
+
+  // 工作区面板: 上传
+  private handleWorkspaceUpload(): void {
+    this.vm.uploadToWorkspace().then(() => {
+      this.refreshTick++;
+    });
+  }
+
+  // 工作区面板: 打包导出 zip
+  private handleWorkspaceExport(): void {
+    if (this.vm.workspaceFiles.length === 0) {
+      this.showToast('工作区为空, 无可导出内容');
+      return;
+    }
+    this.showToast('正在打包工作区...');
+    this.vm.exportWorkspaceZip().then((fileName: string) => {
+      this.showToast('已导出 ' + fileName);
+    }).catch((error: Error) => {
+      this.showToast('导出失败: ' + error.message);
+    });
   }
 
   // 快捷拍照: 系统相机拍照后加入附件

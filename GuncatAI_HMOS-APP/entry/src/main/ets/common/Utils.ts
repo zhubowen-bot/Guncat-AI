@@ -1,4 +1,6 @@
 // 简易 ID 生成器
+import { util } from '@kit.ArkTS';
+
 export function generateId(prefix: string): string {
   let timestamp: number = new Date().getTime();
   let random: number = Math.floor(Math.random() * 1000000);
@@ -267,33 +269,66 @@ export function isHttpUrl(url: string): boolean {
 }
 
 // 简单的 base64 编码(用于文件上传)
-let base64Chars: string = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+// 实现: 全数值化填入 ASCII 字节缓冲, 最后经 utf-16le 解码一次性转字符串。
+// 禁止逐字符拼接大字符串(曾引发 SharedHeap OOM 级别的内存放大)。
+const B64_ALPHABET: string = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+let b64Codes: Uint8Array | null = null;
+let b64Decoder: util.TextDecoder = util.TextDecoder.create('utf-16le', { ignoreBOM: true });
 
 export function arrayBufferToBase64(buf: ArrayBuffer): string {
   let bytes: Uint8Array = new Uint8Array(buf);
-  let result: string = '';
+  if (b64Codes === null) {
+    b64Codes = new Uint8Array(64);
+    for (let i: number = 0; i < 64; i++) {
+      b64Codes[i] = B64_ALPHABET.charCodeAt(i);
+    }
+  }
+  let table: Uint8Array = b64Codes as Uint8Array;
+  let outLen: number = Math.floor((bytes.length + 2) / 3) * 4;
+  let out: Uint8Array = new Uint8Array(outLen);
+  let o: number = 0;
   let i: number = 0;
   for (; i + 2 < bytes.length; i += 3) {
     let b1: number = bytes[i];
     let b2: number = bytes[i + 1];
     let b3: number = bytes[i + 2];
-    result += base64Chars.charAt(b1 >> 2);
-    result += base64Chars.charAt(((b1 & 0x3) << 4) | (b2 >> 4));
-    result += base64Chars.charAt(((b2 & 0xf) << 2) | (b3 >> 6));
-    result += base64Chars.charAt(b3 & 0x3f);
+    out[o] = table[b1 >> 2];
+    o++;
+    out[o] = table[((b1 & 0x3) << 4) | (b2 >> 4)];
+    o++;
+    out[o] = table[((b2 & 0xf) << 2) | (b3 >> 6)];
+    o++;
+    out[o] = table[b3 & 0x3f];
+    o++;
   }
-  if (i < bytes.length) {
+  let rem: number = bytes.length - i;
+  if (rem === 1) {
     let b1: number = bytes[i];
-    result += base64Chars.charAt(b1 >> 2);
-    if (i + 1 < bytes.length) {
-      let b2: number = bytes[i + 1];
-      result += base64Chars.charAt(((b1 & 0x3) << 4) | (b2 >> 4));
-      result += base64Chars.charAt((b2 & 0xf) << 2);
-      result += '=';
-    } else {
-      result += base64Chars.charAt((b1 & 0x3) << 4);
-      result += '==';
-    }
+    out[o] = table[b1 >> 2];
+    o++;
+    out[o] = table[(b1 & 0x3) << 4];
+    o++;
+    out[o] = 0x3D;
+    o++;
+    out[o] = 0x3D;
+    o++;
+  } else if (rem === 2) {
+    let b1: number = bytes[i];
+    let b2: number = bytes[i + 1];
+    out[o] = table[b1 >> 2];
+    o++;
+    out[o] = table[((b1 & 0x3) << 4) | (b2 >> 4)];
+    o++;
+    out[o] = table[(b2 & 0xf) << 2];
+    o++;
+    out[o] = 0x3D;
+    o++;
   }
-  return result;
+  // ASCII 字节 → 字符串: 每字节扩为 utf-16le 码元后原生解码(零字符串拼接)
+  let u16: Uint8Array = new Uint8Array(o * 2);
+  for (let k: number = 0; k < o; k++) {
+    u16[k * 2] = out[k];
+    u16[k * 2 + 1] = 0;
+  }
+  return b64Decoder.decodeToString(u16);
 }

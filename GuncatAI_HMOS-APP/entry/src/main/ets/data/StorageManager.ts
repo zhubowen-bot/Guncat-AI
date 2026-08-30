@@ -26,13 +26,21 @@ export class StorageManager {
       for (let i: number = 0; i < convs.length; i++) {
         arr.push(convs[i].toJson());
       }
-      let jsonStr: string;
       if (StorageManager.hasHeavyAttachments(convs)) {
         // 图片字节超阈值: 剥离附件 dataUrl/thumbnail 后持久化(保留文件名与解析文本)
-        let safeArr: Object[] = StorageManager.sanitizeConversations(arr);
-        jsonStr = JSON.stringify(safeArr);
-      } else {
+        arr = StorageManager.sanitizeConversations(arr);
+      }
+      // 工作模式长任务的 reasoning 会无限增长, 落盘前只保留末尾, 封顶序列化体积
+      StorageManager.capReasoning(arr);
+      let jsonStr: string = JSON.stringify(arr);
+      // 总体积仍超限(码元数按 1/2 折算近似 UTF-8 字节): 丢弃最旧的会话重试
+      // (toJson/sanitize 产物均为全新对象, 此处 shift 不会影响内存中的会话数据)
+      let maxUnits: number = Constants.LS_CONVERSATIONS_SAFE_BYTES / 2;
+      let guard: number = 0;
+      while (jsonStr.length > maxUnits && arr.length > 1 && guard < 64) {
+        arr.shift();
         jsonStr = JSON.stringify(arr);
+        guard++;
       }
       let prefs: preferences.Preferences = await getPreferences(context);
       await prefs.put(Constants.LS_KEY_CONVERSATIONS, jsonStr);
@@ -40,6 +48,27 @@ export class StorageManager {
     } catch (error) {
       // 保存失败(如仍超限)不抛出, 避免反复重试放大内存压力
       console.error('saveConversations failed: ' + JSON.stringify(error));
+    }
+  }
+
+  // 持久化前修剪思考文本: 单条消息只保留末尾 REASONING_SAVE_MAX_CHARS
+  // (toJson/sanitizeConversations 返回的都是全新对象, 原地修改不影响内存中的会话)
+  private static capReasoning(arr: Object[]): void {
+    for (let i: number = 0; i < arr.length; i++) {
+      let c: Record<string, Object> = arr[i] as Record<string, Object>;
+      let rawMsgs: Object = c['messages'];
+      if (rawMsgs === undefined || !(rawMsgs instanceof Array)) {
+        continue;
+      }
+      let msgs: Object[] = rawMsgs as Object[];
+      for (let j: number = 0; j < msgs.length; j++) {
+        let m: Record<string, Object> = msgs[j] as Record<string, Object>;
+        let r: Object = m['reasoning'];
+        if (typeof r === 'string' && (r as string).length > Constants.REASONING_SAVE_MAX_CHARS) {
+          m['reasoning'] = '…' +
+            (r as string).slice((r as string).length - Constants.REASONING_SAVE_MAX_CHARS);
+        }
+      }
     }
   }
 
@@ -101,13 +130,24 @@ export class StorageManager {
         });
       }
     }
+    // 工作模式的工具调用步骤原样保留(纯文本字段, 体积小)
+    let calls: Object[] = [];
+    let rawCalls: Object = m['toolCalls'];
+    if (rawCalls !== undefined && rawCalls instanceof Array) {
+      let rawCallArr: Object[] = rawCalls as Object[];
+      for (let i: number = 0; i < rawCallArr.length; i++) {
+        calls.push(rawCallArr[i]);
+      }
+    }
     return {
       'id': (m['id'] as string) ?? '',
       'role': (m['role'] as string) ?? '',
       'content': (m['content'] as string) ?? '',
       'displayContent': (m['displayContent'] as string) ?? '',
       'attachments': atts,
-      'timestamp': (m['timestamp'] as number) ?? 0
+      'timestamp': (m['timestamp'] as number) ?? 0,
+      'reasoning': (m['reasoning'] as string) ?? '',
+      'toolCalls': calls
     };
   }
 

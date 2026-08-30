@@ -1,4 +1,5 @@
 import { Attachment } from './Attachment';
+import { ToolCallRecord } from './ToolCallRecord';
 
 // 消息(对齐 web 版本的 message 字段)
 // 必须 @Observed 才能让 @ObjectLink 追踪属性变化 (流式输出时 content 增量更新)
@@ -10,6 +11,8 @@ export class Message {
   displayContent: string = '';
   attachments: Attachment[] = [];
   timestamp: number = 0;
+  // 工作模式(Agent Loop)中本条 assistant 消息发起的工具调用步骤; 聊天模式恒为空
+  toolCalls: ToolCallRecord[] = [];
   // 深度思考内容 (对齐 web 版本 msg.reasoning)
   reasoning: string = '';
   // 由 API 返回的 usage 派生的统计: token 速度(tok/s)与缓存命中率(0..1), -1 表示无返回值
@@ -58,6 +61,15 @@ export class Message {
       }
       msg.attachments = result;
     }
+    let rawCalls: Object = json['toolCalls'];
+    if (rawCalls !== undefined && rawCalls instanceof Array) {
+      let rawCallArr: Object[] = rawCalls as Object[];
+      let calls: ToolCallRecord[] = [];
+      for (let i: number = 0; i < rawCallArr.length; i++) {
+        calls.push(ToolCallRecord.fromJson(rawCallArr[i] as Record<string, Object>));
+      }
+      msg.toolCalls = calls;
+    }
     return msg;
   }
 
@@ -65,6 +77,10 @@ export class Message {
     let attArr: Object[] = [];
     for (let i: number = 0; i < this.attachments.length; i++) {
       attArr.push(this.attachments[i].toJson());
+    }
+    let callArr: Object[] = [];
+    for (let i: number = 0; i < this.toolCalls.length; i++) {
+      callArr.push(this.toolCalls[i].toJson());
     }
     return {
       'id': this.id,
@@ -75,7 +91,8 @@ export class Message {
       'timestamp': this.timestamp,
       'reasoning': this.reasoning,
       'tokenSpeed': this.tokenSpeed,
-      'cacheHitRate': this.cacheHitRate
+      'cacheHitRate': this.cacheHitRate,
+      'toolCalls': callArr
     };
   }
 }
