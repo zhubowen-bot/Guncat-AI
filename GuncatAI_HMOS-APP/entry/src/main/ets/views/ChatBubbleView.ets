@@ -38,6 +38,13 @@ export class WorkStepFormat {
           }
         }
         if (parts.length > 0) {
+          // 单参数时省略 "path=" 这类键名, 对齐 CLI 工具行 "Edit · 路径" 的观感
+          if (parts.length === 1) {
+            let eq: number = parts[0].indexOf('=');
+            if (eq >= 0) {
+              return parts[0].substring(eq + 1);
+            }
+          }
           return parts.join(', ');
         }
       }
@@ -52,6 +59,107 @@ export class WorkStepFormat {
       return ms.toString() + 'ms';
     }
     return (ms / 1000).toFixed(1) + 's';
+  }
+
+  // 工具类别图标: CLI 式行内工具行左端的彩色系单色小图标, 按工具名映射 sys.symbol
+  static iconRes(toolName: string): Resource {
+    switch (toolName) {
+      case 'read_file':
+      case 'read_ppt':
+      case 'parse_document':
+        return $r('sys.symbol.doc_text');
+      case 'write_file':
+      case 'write_docx':
+      case 'write_xlsx':
+      case 'write_pptx':
+      case 'write_csv':
+      case 'write_svg':
+        return $r('sys.symbol.doc_plaintext_and_pencil');
+      case 'append_file':
+      case 'edit_ppt':
+      case 'transform_file':
+        return $r('sys.symbol.pencil_tip');
+      case 'search_files':
+      case 'search_pdf':
+      case 'record_search':
+      case 'glob':
+        return $r('sys.symbol.magnifyingglass');
+      case 'list_files':
+        return $r('sys.symbol.folder');
+      case 'create_dir':
+        return $r('sys.symbol.folder_badge_plus');
+      case 'delete_file':
+        return $r('sys.symbol.trash');
+      case 'move_file':
+        return $r('sys.symbol.move');
+      case 'download_file':
+        return $r('sys.symbol.arrow_down_to_line');
+      case 'view_image':
+      case 'pdf_to_images':
+        return $r('sys.symbol.picture');
+      case 'todo_write':
+        return $r('sys.symbol.list_checkmark');
+      case 'list_skills':
+      case 'load_skill':
+        return $r('sys.symbol.list_book');
+      case 'bash':
+        return $r('sys.symbol.code');
+      default:
+        return $r('sys.symbol.wrench_and_screwdriver');
+    }
+  }
+
+  // 工具行的短显示名: 已知工具映射为动宾式短名, 未知工具回退原名
+  static displayName(toolName: string): string {
+    switch (toolName) {
+      case 'read_file':
+      case 'read_ppt':
+        return 'Read';
+      case 'parse_document':
+        return 'Parse';
+      case 'write_file':
+      case 'write_docx':
+      case 'write_xlsx':
+      case 'write_pptx':
+      case 'write_csv':
+      case 'write_svg':
+        return 'Write';
+      case 'append_file':
+        return 'Append';
+      case 'edit_ppt':
+        return 'Edit';
+      case 'transform_file':
+        return 'Transform';
+      case 'search_files':
+      case 'search_pdf':
+      case 'record_search':
+        return 'Search';
+      case 'glob':
+        return 'Glob';
+      case 'list_files':
+        return 'List';
+      case 'list_skills':
+        return 'Skills';
+      case 'load_skill':
+        return 'Skill';
+      case 'create_dir':
+        return 'Mkdir';
+      case 'delete_file':
+        return 'Delete';
+      case 'move_file':
+        return 'Move';
+      case 'download_file':
+        return 'Download';
+      case 'view_image':
+      case 'pdf_to_images':
+        return 'Image';
+      case 'todo_write':
+        return 'Todo';
+      case 'bash':
+        return 'Bash';
+      default:
+        return toolName;
+    }
   }
 }
 
@@ -231,7 +339,7 @@ export struct ChatBubbleView {
           this.buildReasoningBar()
         }
 
-        // 工具调用步骤(工作模式, 紧凑行, 单步点击展开参数与结果)
+        // 工具调用步骤(工作模式, CLI 式行内工具行, 单步点击展开参数与结果)
         if (this.message.toolCalls.length > 0) {
           this.buildToolSteps()
         }
@@ -285,66 +393,85 @@ export struct ChatBubbleView {
     .alignItems(VerticalAlign.Top)
   }
 
-  // 工具调用步骤(Codex 式): 每步一行 [状态] 工具名 参数摘要, 点击展开参数与结果详情
+  // 工具调用步骤(CLI 式行内样式): [图标] 工具名 · 参数摘要, 无底色块, 右端为耗时与展开箭头,
+  // 点击展开参数与结果详情(左侧细竖线挂载, 同样无底色)
   @Builder
   buildToolSteps() {
-    Column({ space: 4 }) {
-      ForEach(this.message.toolCalls, (call: ToolCallRecord, index: number) => {
-        Column({ space: 4 }) {
+    Column({ space: 2 }) {
+      ForEach(this.message.toolCalls, (call: ToolCallRecord) => {
+        Column({ space: 2 }) {
           Row({ space: 6 }) {
+            // 状态图标位: 完成显示工具类别图标(错误时红色), 执行中转圈
             if (call.durationMs >= 0) {
-              Text(call.isError ? '✗' : '✓')
-                .fontSize(11)
-                .fontColor(call.isError ? $r('app.color.danger') : $r('app.color.success'))
+              SymbolGlyph(WorkStepFormat.iconRes(call.name))
+                .fontSize(13)
+                .fontColor([call.isError ? $r('app.color.danger') : $r('app.color.text_secondary')])
             } else {
               LoadingProgress()
-                .width(10)
-                .height(10)
+                .width(11)
+                .height(11)
                 .color($r('app.color.brand'))
             }
-            Text((index + 1).toString() + '. ' + call.name)
+            Text(WorkStepFormat.displayName(call.name))
               .fontSize(12)
               .fontWeight(FontWeight.Medium)
-              .fontColor($r('app.color.text_primary'))
+              .fontColor($r('app.color.text_secondary'))
+            Text('·')
+              .fontSize(12)
+              .fontColor($r('app.color.text_tertiary'))
             Text(WorkStepFormat.summarizeArgs(call))
               .fontSize(11)
-              .fontColor($r('app.color.text_secondary'))
+              .fontColor($r('app.color.text_tertiary'))
               .maxLines(1)
               .textOverflow({ overflow: TextOverflow.Ellipsis })
               .layoutWeight(1)
-            Text(this.expandedStepId === call.id ? '▴' : '▾')
+            if (call.durationMs >= 0) {
+              if (call.isError) {
+                Text('失败')
+                  .fontSize(10)
+                  .fontColor($r('app.color.danger'))
+              } else {
+                Text(WorkStepFormat.formatDuration(call.durationMs))
+                  .fontSize(10)
+                  .fontColor($r('app.color.text_tertiary'))
+              }
+            }
+            SymbolGlyph(this.expandedStepId === call.id ? $r('sys.symbol.chevron_up') : $r('sys.symbol.chevron_down'))
               .fontSize(10)
-              .fontColor($r('app.color.text_tertiary'))
+              .fontColor([$r('app.color.text_tertiary')])
           }
           .width('100%')
-          .padding({ left: 10, right: 10, top: 6, bottom: 6 })
-          .borderRadius(10)
-          .backgroundColor($r('app.color.input_bg'))
+          // 水平 16 边距与正文(RichTextView 内边距)对齐, 工具行宽度即正文宽度
+          .padding({ left: 16, right: 16, top: 3, bottom: 3 })
           .onClick(() => {
             this.expandedStepId = this.expandedStepId === call.id ? '' : call.id;
           })
 
           if (this.expandedStepId === call.id) {
-            Column({ space: 4 }) {
-              Text('参数')
-                .fontSize(10)
-                .fontColor($r('app.color.text_tertiary'))
-              Text(WorkStepFormat.capText(call.argsJson, 600))
-                .fontSize(11)
-                .fontColor($r('app.color.text_secondary'))
-                .width('100%')
-              Text(call.isError ? '错误' : '结果')
-                .fontSize(10)
-                .fontColor($r('app.color.text_tertiary'))
-              Text(WorkStepFormat.capText(call.result === '' ? '(执行中...)' : call.result, 800))
-                .fontSize(11)
-                .fontColor(call.isError ? $r('app.color.danger') : $r('app.color.text_secondary'))
-                .width('100%')
+            // 外层定位到行内文字起点(16 边距 + 图标约 20), 细竖线挂在文字下方, 详情随正文宽度收窄
+            Column() {
+              Column({ space: 4 }) {
+                Text('参数')
+                  .fontSize(10)
+                  .fontColor($r('app.color.text_tertiary'))
+                Text(WorkStepFormat.capText(call.argsJson, 600))
+                  .fontSize(11)
+                  .fontColor($r('app.color.text_secondary'))
+                  .width('100%')
+                Text(call.isError ? '错误' : '结果')
+                  .fontSize(10)
+                  .fontColor($r('app.color.text_tertiary'))
+                Text(WorkStepFormat.capText(call.result === '' ? '(执行中...)' : call.result, 800))
+                  .fontSize(11)
+                  .fontColor(call.isError ? $r('app.color.danger') : $r('app.color.text_secondary'))
+                  .width('100%')
+              }
+              .alignItems(HorizontalAlign.Start)
+              .padding({ left: 10, right: 0, top: 6, bottom: 6 })
+              .border({ width: { left: 2 }, color: { left: $r('app.color.border') } })
             }
             .width('100%')
-            .padding(10)
-            .borderRadius(10)
-            .backgroundColor($r('app.color.input_bg'))
+            .padding({ left: 36, right: 16 })
           }
         }
         .width('100%')
@@ -355,63 +482,65 @@ export struct ChatBubbleView {
     .margin({ bottom: 8 })
   }
 
-  // 深度思考条: 独立卡片置于气泡上方, 四角统一圆角 + 中性浅灰底色(与中间聊天区非有色系协调).
-  // 流式中在"深度思考"文字右侧显示转圈动画 (不再单独显示"思考中…"文字).
-  // 右侧实时显示 token 速度(流式中按已输出字符实时估算, 流式结束后由 API usage 精确替换)
-  // 与缓存命中率(读取 API 返回的缓存 token 数, 无返回值不显示).
+  // 深度思考条(CLI 式行内样式): [图标] 思考标题, 无底色卡片, 与工具行同一套观感.
+  // 流式中在标题右侧显示转圈动画; 右端实时显示 token 速度(流式中按已输出字符实时估算,
+  // 流式结束后由 API usage 精确替换)与缓存命中率(读取 API 返回的缓存 token 数, 无返回值不显示).
   @Builder
   buildReasoningBar() {
     Column() {
-      Row() {
-        Text(this.isWork ? '思考' : '深度思考')
+      Row({ space: 6 }) {
+        SymbolGlyph($r('sys.symbol.lightbulb'))
           .fontSize(13)
+          .fontColor([$r('app.color.text_secondary')])
+        // 思考完成后在标题后固定缀一段"· 持续了几秒"(占位文案, 不接真实计时)
+        Text((this.isWork ? '思考' : '深度思考') + (this.isStreaming ? '' : ' · 持续了几秒'))
+          .fontSize(12)
           .fontWeight(FontWeight.Medium)
-          .fontColor($r('app.color.brand'))
+          .fontColor($r('app.color.text_secondary'))
         if (this.isStreaming) {
           LoadingProgress()
-            .width(12)
-            .height(12)
+            .width(11)
+            .height(11)
             .color($r('app.color.brand'))
-            .margin({ left: 6 })
         }
         Blank()
         if (this.message.tokenSpeed > 0) {
           Text(this.message.tokenSpeed.toFixed(1) + ' tok/s')
-            .fontSize(11)
-            .fontColor($r('app.color.text_secondary'))
+            .fontSize(10)
+            .fontColor($r('app.color.text_tertiary'))
         }
         if (this.message.cacheHitRate >= 0) {
           Text('缓存命中 ' + Math.round(this.message.cacheHitRate * 100).toString() + '%')
-            .fontSize(11)
-            .fontColor($r('app.color.text_secondary'))
+            .fontSize(10)
+            .fontColor($r('app.color.text_tertiary'))
             .margin({ left: 8 })
         }
-        Text(this.reasoningExpanded ? '▴' : '▾')
-          .fontSize(11)
-          .fontColor($r('app.color.text_tertiary'))
-          .margin({ left: 8 })
+        SymbolGlyph(this.reasoningExpanded ? $r('sys.symbol.chevron_up') : $r('sys.symbol.chevron_down'))
+          .fontSize(10)
+          .fontColor([$r('app.color.text_tertiary')])
       }
       .width('100%')
-      .padding({ left: 14, right: 14, top: 8, bottom: 8 })
+      // 水平 16 边距与正文(RichTextView 内边距)对齐
+      .padding({ left: 16, right: 16, top: 3, bottom: 3 })
       .onClick(() => {
         this.reasoningExpanded = !this.reasoningExpanded;
       })
 
       if (this.reasoningExpanded) {
-        Text(this.isStreaming ? this.visibleReasoning : this.message.reasoning)
-          .fontSize(13)
-          .fontColor($r('app.color.text_primary'))
-          .lineHeight(20)
-          .width('100%')
-          .padding({ left: 14, right: 14, bottom: 12, top: 4 })
+        // 展开正文: 外层定位到标题文字起点, 细竖线挂载, 无底色
+        Column() {
+          Text(this.isStreaming ? this.visibleReasoning : this.message.reasoning)
+            .fontSize(12)
+            .fontColor($r('app.color.text_secondary'))
+            .lineHeight(19)
+            .width('100%')
+        }
+        .alignItems(HorizontalAlign.Start)
+        .width('100%')
+        .padding({ left: 36, right: 16 })
       }
     }
     .width('100%')
-    // 中间聊天区属于非有色系: 中性浅灰底色, 极细描边(0.5)弱化存在感
-    .backgroundColor($r('app.color.surface_secondary'))
-    .border({ width: 0.5, color: $r('app.color.border') })
-    .borderRadius(14)
-    .shadow({ radius: 10, color: '#12000000', offsetX: 0, offsetY: 2 })
     .margin({ bottom: 8 })
   }
 

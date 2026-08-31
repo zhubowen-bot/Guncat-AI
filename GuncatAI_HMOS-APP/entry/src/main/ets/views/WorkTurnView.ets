@@ -119,7 +119,7 @@ export struct WorkTurnView {
         .width('100%')
         .alignItems(HorizontalAlign.Start)
       }
-      // 工具步骤(紧凑行, 点击展开参数与结果)
+      // 工具步骤(CLI 式行内工具行, 点击展开参数与结果)
       if (this.message.toolCalls.length > 0) {
         this.buildSteps()
       }
@@ -142,84 +142,64 @@ export struct WorkTurnView {
   @Builder
   private buildThinking() {
     Column() {
-      Row() {
-        Text(this.isStreaming ? '思考中...' : '思考')
+      Row({ space: 6 }) {
+        SymbolGlyph($r('sys.symbol.lightbulb'))
+          .fontSize(13)
+          .fontColor([$r('app.color.text_secondary')])
+        // 思考完成后在标题后固定缀一段"· 持续了几秒"(占位文案, 不接真实计时)
+        Text(this.isStreaming ? '思考中...' : '思考 · 持续了几秒')
           .fontSize(12)
           .fontWeight(FontWeight.Medium)
-          .fontColor($r('app.color.brand'))
+          .fontColor($r('app.color.text_secondary'))
         if (this.isStreaming) {
           LoadingProgress()
             .width(11)
             .height(11)
             .color($r('app.color.brand'))
-            .margin({ left: 6 })
         }
-        // 思考跑马灯: 占据标签右侧空白区, 单行滚动呈现最新思考内容, 两端渐隐避免截断突兀
+        // 思考跑马灯: 占据标签右侧空白区, 单行滚动呈现最新思考内容
         if (this.isStreaming && !this.reasoningExpanded && this.getMarqueeText() !== '') {
-          Stack() {
-            Scroll(this.marqueeScroller) {
-              Text(this.getMarqueeText())
-                .fontSize(11)
-                .fontColor($r('app.color.text_secondary'))
-                .maxLines(1)
-            }
-            .scrollable(ScrollDirection.Horizontal)
-            .scrollBar(BarState.Off)
-            .edgeEffect(EdgeEffect.None)
-            .align(Alignment.Start)
-            .width('100%')
-            .height('100%')
-
-            // 两端渐隐遮罩 (与思考条底色同色的渐变), 不拦截点击
-            Row() {
-              Row()
-                .width(20)
-                .height('100%')
-                .linearGradient({
-                  angle: 90,
-                  colors: [[$r('app.color.surface_secondary'), 0.0], ['#00F2F3F7', 1.0]]
-                })
-              Blank()
-              Row()
-                .width(20)
-                .height('100%')
-                .linearGradient({
-                  angle: 90,
-                  colors: [['#00F2F3F7', 0.0], [$r('app.color.surface_secondary'), 1.0]]
-                })
-            }
-            .width('100%')
-            .height('100%')
-            .hitTestBehavior(HitTestMode.None)
+          Scroll(this.marqueeScroller) {
+            Text(this.getMarqueeText())
+              .fontSize(11)
+              .fontColor($r('app.color.text_tertiary'))
+              .maxLines(1)
           }
-          .layoutWeight(1)
+          .scrollable(ScrollDirection.Horizontal)
+          .scrollBar(BarState.Off)
+          .edgeEffect(EdgeEffect.None)
+          .align(Alignment.Start)
           .height(16)
-          .margin({ left: 8 })
+          .layoutWeight(1)
         } else {
           Blank()
         }
-        Text(this.reasoningExpanded ? '▴ 收起' : '▾ 展开')
+        SymbolGlyph(this.reasoningExpanded ? $r('sys.symbol.chevron_up') : $r('sys.symbol.chevron_down'))
           .fontSize(10)
-          .fontColor($r('app.color.text_tertiary'))
+          .fontColor([$r('app.color.text_tertiary')])
       }
       .width('100%')
+      // 水平 16 边距与正文(RichTextView 内边距)对齐, 无底色卡片
+      .padding({ left: 16, right: 16, top: 3, bottom: 3 })
       .onClick(() => {
         this.reasoningExpanded = !this.reasoningExpanded;
       })
 
       if (this.reasoningExpanded) {
-        Text(this.isStreaming ? this.visibleReasoning : this.message.reasoning)
-          .fontSize(12)
-          .fontColor($r('app.color.text_secondary'))
-          .lineHeight(19)
-          .width('100%')
-          .padding({ top: 6 })
+        // 展开正文: 外层定位到标题文字起点, 无底色
+        Column() {
+          Text(this.isStreaming ? this.visibleReasoning : this.message.reasoning)
+            .fontSize(12)
+            .fontColor($r('app.color.text_secondary'))
+            .lineHeight(19)
+            .width('100%')
+        }
+        .alignItems(HorizontalAlign.Start)
+        .width('100%')
+        .padding({ left: 36, right: 16 })
       }
     }
     .width('100%')
-    .padding({ left: 10, right: 10, top: 7, bottom: 7 })
-    .borderRadius(10)
-    .backgroundColor($r('app.color.surface_secondary'))
   }
 
   private getMarqueeText(): string {
@@ -231,34 +211,40 @@ export struct WorkTurnView {
     return tail.replace(/[\r\n\t]+/g, ' ').trim();
   }
 
+  // 工具步骤(CLI 式行内样式): [图标] 工具名 · 参数摘要, 无底色块, 右端为状态/耗时与展开箭头,
+  // 点击展开参数与结果详情(左侧细竖线挂载, 同样无底色)
   @Builder
   private buildSteps() {
-    Column({ space: 4 }) {
-      ForEach(this.message.toolCalls, (call: ToolCallRecord, index: number) => {
-        Column({ space: 4 }) {
+    Column({ space: 2 }) {
+      ForEach(this.message.toolCalls, (call: ToolCallRecord) => {
+        Column({ space: 2 }) {
           Row({ space: 6 }) {
+            // 状态图标位: 完成显示工具类别图标(错误红色), 执行中转圈, 被打断则图标置灰
             if (call.durationMs >= 0) {
-              Text(call.isError ? '✗' : '✓')
-                .fontSize(11)
-                .fontColor(call.isError ? $r('app.color.danger') : $r('app.color.success'))
+              SymbolGlyph(WorkStepFormat.iconRes(call.name))
+                .fontSize(13)
+                .fontColor([call.isError ? $r('app.color.danger') : $r('app.color.text_secondary')])
             } else if (this.isStreaming || call.preparing) {
               LoadingProgress()
-                .width(10)
-                .height(10)
+                .width(11)
+                .height(11)
                 .color($r('app.color.brand'))
             } else {
               // 非流式消息上残留的未完成调用 = 执行被打断
-              Text('⏹')
-                .fontSize(11)
-                .fontColor($r('app.color.text_tertiary'))
+              SymbolGlyph(WorkStepFormat.iconRes(call.name))
+                .fontSize(13)
+                .fontColor([$r('app.color.text_tertiary')])
             }
-            Text((index + 1).toString() + '. ' + call.name)
+            Text(WorkStepFormat.displayName(call.name))
               .fontSize(12)
               .fontWeight(FontWeight.Medium)
-              .fontColor($r('app.color.text_primary'))
+              .fontColor($r('app.color.text_secondary'))
+            Text('·')
+              .fontSize(12)
+              .fontColor($r('app.color.text_tertiary'))
             Text(WorkStepFormat.summarizeArgs(call))
               .fontSize(11)
-              .fontColor($r('app.color.text_secondary'))
+              .fontColor($r('app.color.text_tertiary'))
               .maxLines(1)
               .textOverflow({ overflow: TextOverflow.Ellipsis })
               .layoutWeight(1)
@@ -266,41 +252,56 @@ export struct WorkTurnView {
               Text(this.stepStatusLabel(call))
                 .fontSize(10)
                 .fontColor($r('app.color.brand'))
+            } else if (call.durationMs < 0) {
+              // 执行被打断
+              Text('已中断')
+                .fontSize(10)
+                .fontColor($r('app.color.text_tertiary'))
+            } else if (call.isError) {
+              Text('失败')
+                .fontSize(10)
+                .fontColor($r('app.color.danger'))
+            } else {
+              Text(WorkStepFormat.formatDuration(call.durationMs))
+                .fontSize(10)
+                .fontColor($r('app.color.text_tertiary'))
             }
-            Text(this.expandedStepId === call.id ? '▴' : '▾')
+            SymbolGlyph(this.expandedStepId === call.id ? $r('sys.symbol.chevron_up') : $r('sys.symbol.chevron_down'))
               .fontSize(10)
-              .fontColor($r('app.color.text_tertiary'))
+              .fontColor([$r('app.color.text_tertiary')])
           }
           .width('100%')
-          .padding({ left: 10, right: 10, top: 6, bottom: 6 })
-          .borderRadius(10)
-          // 进行中的调用用品牌淡色底突出"正在执行/生成"状态
-          .backgroundColor(call.durationMs < 0 ? $r('app.color.brand_light') : $r('app.color.input_bg'))
+          // 水平 16 边距与正文(RichTextView 内边距)对齐, 工具行宽度即正文宽度
+          .padding({ left: 16, right: 16, top: 3, bottom: 3 })
           .onClick(() => {
             this.expandedStepId = this.expandedStepId === call.id ? '' : call.id;
           })
 
           if (this.expandedStepId === call.id) {
-            Column({ space: 4 }) {
-              Text('参数')
-                .fontSize(10)
-                .fontColor($r('app.color.text_tertiary'))
-              Text(WorkStepFormat.capText(call.argsJson, 600))
-                .fontSize(11)
-                .fontColor($r('app.color.text_secondary'))
-                .width('100%')
-              Text(call.isError ? '错误' : '结果')
-                .fontSize(10)
-                .fontColor($r('app.color.text_tertiary'))
-              Text(WorkStepFormat.capText(call.result === '' ? '(执行中...)' : call.result, 800))
-                .fontSize(11)
-                .fontColor(call.isError ? $r('app.color.danger') : $r('app.color.text_secondary'))
-                .width('100%')
+            // 外层定位到行内文字起点(16 边距 + 图标约 20), 细竖线挂在文字下方, 详情随正文宽度收窄
+            Column() {
+              Column({ space: 4 }) {
+                Text('参数')
+                  .fontSize(10)
+                  .fontColor($r('app.color.text_tertiary'))
+                Text(WorkStepFormat.capText(call.argsJson, 600))
+                  .fontSize(11)
+                  .fontColor($r('app.color.text_secondary'))
+                  .width('100%')
+                Text(call.isError ? '错误' : '结果')
+                  .fontSize(10)
+                  .fontColor($r('app.color.text_tertiary'))
+                Text(WorkStepFormat.capText(call.result === '' ? '(执行中...)' : call.result, 800))
+                  .fontSize(11)
+                  .fontColor(call.isError ? $r('app.color.danger') : $r('app.color.text_secondary'))
+                  .width('100%')
+              }
+              .alignItems(HorizontalAlign.Start)
+              .padding({ left: 10, right: 0, top: 6, bottom: 6 })
+              .border({ width: { left: 2 }, color: { left: $r('app.color.border') } })
             }
             .width('100%')
-            .padding(10)
-            .borderRadius(10)
-            .backgroundColor($r('app.color.input_bg'))
+            .padding({ left: 36, right: 16 })
           }
         }
         .width('100%')

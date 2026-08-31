@@ -111,7 +111,7 @@ Guncat Work 是使用 ArkTS 与 ArkUI 开发的原生 HarmonyOS AI 对话客户�
 
 ### 工作模式（Agent Loop）
 
-工作模式是**与聊天智能体平行的独立身份**（侧边栏智能体列表顶部的 🛠「工作模式」项），进入后进入一个具备本地沙箱工作区与工具调用能力的 Agent 循环，可自主完成多步骤长程任务。完整架构见下文「[工作模式架构与维护指南](#工作模式架构与维护指南)」。
+工作模式是**与聊天智能体平行的独立身份**（侧边栏「聊天模式」标题上方的「Agent模式」分组中的 🛠「工作模式」项），进入后进入一个具备本地沙箱工作区与工具调用能力的 Agent 循环，可自主完成多步骤长程任务。完整架构见下文「[工作模式架构与维护指南](#工作模式架构与维护指南)」。
 
 - **沙箱工作区**：每个工作会话对应 `filesDir/workspaces/<convId>/` 目录，支持上传文件、导出 `.zip` 打包、清空；全程应用沙箱内读写 + 系统安全组件选/存文件，无新增权限。
 - **25 个本地工具**：文件 CRUD（list/read/write/append/delete/create_dir/move/search，search_files 支持 glob 文件名过滤）、任务清单（todo_write）、图片查看（view_image，走主模型多模态）、网络下载（download_file，把链接文件拉进工作区）、PDF 解析（parse_document + read_file 自动路由）、Office 生成（write_docx / write_xlsx / write_csv）、数据管道（transform_file，大文件本地清洗/转换/互转，数据不经模型上下文）、PPT 读写编辑（write_pptx / read_ppt / edit_ppt，基于 Deck JSON 中间层）、SVG 生图（write_svg，矢量出图 + PNG 预览）、技能系统（list_skills / load_skill，按需加载领域操作指南）。
@@ -326,7 +326,7 @@ ChatService (SSE)
 
 ### 1. 身份与会话模型
 
-- **虚拟智能体**：`Constants.WORK_AGENT_ID = 'work'`。启动时由 `ChatViewModel.buildWorkAgent()` 注入智能体列表顶部，与 agents.json 智能体**平行**展示（`AgentDrawerView` 对 `id === 'work'` 特判渲染 🛠 徽标）。
+- **虚拟智能体**：`Constants.WORK_AGENT_ID = 'work'`。启动时由 `ChatViewModel.buildWorkAgent()` 注入智能体列表顶部；`AgentDrawerView` 将其拆为独立的「Agent模式」分组展示在「聊天模式」标题上方，与聊天智能体**平行**展示（对 `id === 'work'` 特判渲染 🛠 徽标）。
 - **进入/退出**：侧边栏点击「工作模式」= `selectAgent('work')`；点击任意真实智能体即退出（`lastChatAgentId` 记录最近使用的真实智能体，供工具行的工作模式胶囊退出时回切）。
 - **会话绑定**：`Conversation.mode = 'chat' | 'work'`；工作会话 `agentId` 固定为 `'work'`，启动时对旧数据自动迁移。删除工作会话会同步清理沙箱工作区目录。
 - **开关差异**：进入工作模式强制开启深度思考（工具行不显示该开关）；联网搜索保留（服务端搜索工具与客户端函数工具并存下发）；上传/拍照直接进入工作区而非聊天附件。
@@ -569,8 +569,9 @@ description 同时承担两个职责：系统提示词触发提示的展开、`l
 ### 7. UI（Codex 式时间线）
 
 - `ChatPage.buildWorkTimeline`：工作模式下整个会话渲染为**单容器时间线**——顶部唯一 🛠「工作模式」标识（含执行状态），下方按消息顺序排列：用户任务卡（品牌色）与 `WorkTurnView`。
-- `WorkTurnView`（`@ObjectLink Message`）：思考折叠条 → 工具步骤紧凑行（`✓/✗/spinner + 序号. 工具名 + 参数摘要`，点击展开参数与结果）→ 正文（RichTextView）；仅最终轮显示复制/导出/重新执行按钮；流式期间 33ms flush 定时器同步文本与步骤状态。
-- 聊天模式完全沿用 `ChatBubbleView`，两条渲染路径互不影响。
+- `WorkTurnView`（`@ObjectLink Message`）：CLI 式行内思考条（`图标 + 思考`，流式转圈 + 跑马灯，完成后标题缀「· 持续了几秒」占位文案，无底色）→ CLI 式行内工具行（`工具图标 + 短名 · 参数摘要 + 状态/耗时`，无底色块，点击展开参数与结果，展开区以左侧细竖线挂载）→ 正文（RichTextView）；思考/工具行带 16vp 水平边距，宽度与正文对齐；仅最终轮显示复制/导出/重新执行按钮；流式期间 33ms flush 定时器同步文本与步骤状态。
+- 聊天模式完全沿用 `ChatBubbleView`（深度思考条同样为无底色行内样式），两条渲染路径互不影响。
+- `WorkspaceBar`：工作区弹层（文件列表 + 上传/导出 zip/删除）；文件行按扩展名映射类别图标（`sys.symbol`：图片/表格/演示文稿/PDF/压缩包/代码/音视频等），未知类型回退通用文档图标。
 
 ## 构建要求
 

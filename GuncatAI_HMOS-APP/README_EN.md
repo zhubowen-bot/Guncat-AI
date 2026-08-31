@@ -111,7 +111,7 @@ The final read-aloud implementation uses HarmonyOS CoreSpeechKit `textToSpeech`.
 
 ### Work mode (Agent Loop)
 
-Work mode is an **independent identity parallel to the chat agents** — the 🛠 "Work Mode" entry at the top of the agent list in the drawer. It opens an Agent loop with a per-conversation local sandbox workspace and tool-calling capability, allowing the agent to autonomously complete multi-step, long-horizon tasks. See "[Work mode architecture & maintenance guide](#work-mode-architecture--maintenance-guide)" below.
+Work mode is an **independent identity parallel to the chat agents** — the 🛠 "Work Mode" entry in its own "Agent Mode" group above the "Chat Mode" section header in the drawer. It opens an Agent loop with a per-conversation local sandbox workspace and tool-calling capability, allowing the agent to autonomously complete multi-step, long-horizon tasks. See "[Work mode architecture & maintenance guide](#work-mode-architecture--maintenance-guide)" below.
 
 - **Sandbox workspace**: each work conversation maps to `filesDir/workspaces/<convId>/`, with upload, `.zip` export, and clear actions. Everything stays inside the app sandbox plus system safe components (document picker) — **no new permissions**.
 - **25 local tools**: file CRUD (list/read/write/append/delete/create_dir/move/search, with `glob` filename filtering on search_files), task checklist (`todo_write`), image viewing (`view_image`, routed to the main model's multimodal vision), web download (`download_file`, pulls linked files into the workspace), PDF parsing (`parse_document` + automatic `read_file` routing), Office generation (`write_docx` / `write_xlsx` / `write_csv`), data pipeline (`transform_file`, local cleaning/transformation/conversion of large files without entering model context), PPT read/write/edit (`write_pptx` / `read_ppt` / `edit_ppt`, on a Deck JSON intermediate layer), SVG image generation (`write_svg`, vector output + PNG preview), and the skill system (`list_skills` / `load_skill`, on-demand domain guides).
@@ -319,7 +319,7 @@ Work mode is a standalone agent execution environment: a virtual agent + a per-c
 
 ### 1. Identity and conversation model
 
-- **Virtual agent**: `Constants.WORK_AGENT_ID = 'work'`. Injected at the top of the agent list on launch by `ChatViewModel.buildWorkAgent()` and rendered with a 🛠 badge by `AgentDrawerView` (special case for `id === 'work'`).
+- **Virtual agent**: `Constants.WORK_AGENT_ID = 'work'`. Injected at the top of the agent list on launch by `ChatViewModel.buildWorkAgent()`; `AgentDrawerView` splits it into its own "Agent Mode" group above the "Chat Mode" section header, parallel to the chat agents, with a 🛠 badge (special case for `id === 'work'`).
 - **Enter/exit**: tapping "Work Mode" in the drawer = `selectAgent('work')`; tapping any real agent exits (the tool-row Work Mode pill exits back to `lastChatAgentId`, the most recently used real agent).
 - **Conversation binding**: `Conversation.mode = 'chat' | 'work'`; work conversations keep `agentId = 'work'`, migrated automatically for legacy data on launch. Deleting a work conversation also deletes its sandbox workspace directory.
 - **Toggle differences**: entering work mode force-enables deep thinking (the toggle is hidden from the tool row); web search stays available (the server-side search tool is sent alongside client function tools); uploads and camera captures go into the workspace instead of chat attachments.
@@ -563,8 +563,9 @@ Three red lines learned from production incidents:
 ### 7. UI (Codex-style timeline)
 
 - `ChatPage.buildWorkTimeline`: in work mode the whole conversation renders as a **single-container timeline** — a unique 🛠 "Work Mode" header (with execution status) followed by user task cards (brand-colored) and `WorkTurnView` entries in message order.
-- `WorkTurnView` (`@ObjectLink Message`): collapsible thinking bar → compact tool-step rows (`✓/✗/spinner + N. toolName + arg summary`; tap to expand arguments and results) → answer body (RichTextView); action buttons appear only on the final turn; a 33ms flush timer syncs text and step states during streaming.
-- Chat mode keeps using `ChatBubbleView`; the two render paths do not interfere.
+- `WorkTurnView` (`@ObjectLink Message`): CLI-style inline thinking row (`icon + label`, spinner/marquee while streaming, the label gains a static "· 持续了几秒" suffix once done, no fill) → CLI-style inline tool rows (`tool icon + short name · arg summary + status/duration`, no filled background; tap to expand arguments and results, the expanded block hangs off a thin left rule) → answer body (RichTextView); thinking/tool rows carry a 16vp horizontal inset so their width matches the body text; action buttons appear only on the final turn; a 33ms flush timer syncs text and step states during streaming.
+- Chat mode keeps using `ChatBubbleView` (its thinking bar uses the same fill-free inline style); the two render paths do not interfere.
+- `WorkspaceBar`: workspace popup (file list + upload/export zip/delete); file rows map the extension to a category icon (`sys.symbol`: image/table/slides/PDF/archive/code/audio/video etc.), unknown types fall back to a generic doc icon.
 
 ## Build requirements
 

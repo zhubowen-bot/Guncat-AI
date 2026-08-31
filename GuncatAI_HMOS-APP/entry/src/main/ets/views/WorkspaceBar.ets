@@ -4,6 +4,105 @@ import { ChatViewModel } from '../viewmodel/ChatViewModel';
 import { WorkFileService, WorkspaceFileInfo } from '../service/WorkFileService';
 import { Message } from '../model/Message';
 
+// 工作区文件行按扩展名映射类别图标(sys.symbol), 未知类型回退通用文档图标
+export class WorkspaceFileIcons {
+  static iconFor(path: string): Resource {
+    let dot: number = path.lastIndexOf('.');
+    let ext: string = dot >= 0 ? path.substring(dot + 1).toLowerCase() : '';
+    switch (ext) {
+      case 'png':
+      case 'jpg':
+      case 'jpeg':
+      case 'gif':
+      case 'webp':
+      case 'bmp':
+      case 'svg':
+      case 'heic':
+        return $r('sys.symbol.picture');
+      case 'pdf':
+        return $r('sys.symbol.pdf_doc');
+      case 'zip':
+      case 'rar':
+      case '7z':
+      case 'tar':
+      case 'gz':
+      case 'tgz':
+        return $r('sys.symbol.doc_zipper');
+      case 'docx':
+      case 'doc':
+      case 'rtf':
+      case 'odt':
+        return $r('sys.symbol.doc_text');
+      case 'pptx':
+      case 'ppt':
+        return $r('sys.symbol.rectangle_stack');
+      case 'xlsx':
+      case 'xls':
+      case 'csv':
+      case 'tsv':
+        return $r('sys.symbol.grid');
+      case 'md':
+      case 'markdown':
+        return $r('sys.symbol.text_and_arrow_down');
+      case 'txt':
+      case 'log':
+      case 'yaml':
+      case 'yml':
+      case 'toml':
+      case 'ini':
+      case 'conf':
+      case 'cfg':
+      case 'properties':
+      case 'env':
+      case 'plist':
+        return $r('sys.symbol.doc_plaintext');
+      case 'json':
+      case 'xml':
+      case 'html':
+      case 'htm':
+      case 'css':
+      case 'js':
+      case 'jsx':
+      case 'ts':
+      case 'tsx':
+      case 'py':
+      case 'java':
+      case 'kt':
+      case 'kts':
+      case 'swift':
+      case 'c':
+      case 'cpp':
+      case 'h':
+      case 'hpp':
+      case 'cs':
+      case 'go':
+      case 'rs':
+      case 'rb':
+      case 'php':
+      case 'sql':
+      case 'sh':
+      case 'bat':
+      case 'gradle':
+        return $r('sys.symbol.code');
+      case 'mp3':
+      case 'wav':
+      case 'm4a':
+      case 'aac':
+      case 'flac':
+      case 'ogg':
+        return $r('sys.symbol.waveform');
+      case 'mp4':
+      case 'mov':
+      case 'avi':
+      case 'mkv':
+      case 'webm':
+        return $r('sys.symbol.movie');
+      default:
+        return $r('sys.symbol.doc');
+    }
+  }
+}
+
 @Component
 export struct WorkspaceBar {
   @ObjectLink vm: ChatViewModel;
@@ -52,10 +151,9 @@ export struct WorkspaceBar {
     Column({ space: 8 }) {
       // 头部行: 标题 + 右侧上传 / 导出按钮
       Row({ space: 6 }) {
-        Image($r('app.media.ic_folder'))
-          .width(14)
-          .height(14)
-          .fillColor($r('app.color.brand'))
+        SymbolGlyph($r('sys.symbol.folder'))
+          .fontSize(15)
+          .fontColor([$r('app.color.brand')])
         Text(this.getHeaderTitle())
           .fontSize(12)
           .fontWeight(FontWeight.Medium)
@@ -159,10 +257,10 @@ export struct WorkspaceBar {
   @Builder
   private buildFileRow(item: WorkspaceFileInfo) {
     Row({ space: 8 }) {
-      Image(item.isDir ? $r('app.media.ic_folder') : $r('app.media.ic_file'))
-        .width(14)
-        .height(14)
-        .fillColor($r('app.color.brand'))
+      // 目录用文件夹图标, 文件按扩展名映射类别图标
+      SymbolGlyph(item.isDir ? $r('sys.symbol.folder') : WorkspaceFileIcons.iconFor(item.path))
+        .fontSize(14)
+        .fontColor([$r('app.color.brand')])
       Text(item.path)
         .fontSize(12)
         .fontColor($r('app.color.text_primary'))

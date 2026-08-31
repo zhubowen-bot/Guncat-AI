@@ -72,7 +72,7 @@ export struct AgentDrawerView {
             .justifyContent(FlexAlign.Center)
           }
           .width('100%')
-          .height(46)
+          .height(38)
           .borderRadius(18)
           .backgroundColor($r('app.color.brand_light'))
           .onClick(() => {
@@ -81,7 +81,7 @@ export struct AgentDrawerView {
         }
         .width('100%')
         .padding({ left: 14, right: 14 })
-        .margin({ top: 14, bottom: 18 })
+        .margin({ top: 10, bottom: 8 })
 
         // 工具: 表格提取
         Column() {
@@ -101,7 +101,7 @@ export struct AgentDrawerView {
             .justifyContent(FlexAlign.Center)
           }
           .width('100%')
-          .height(46)
+          .height(38)
           .borderRadius(18)
           .backgroundColor($r('app.color.raised_surface'))
           .shadow({ radius: 12, color: '#12000000', offsetX: 0, offsetY: 3 })
@@ -111,11 +111,30 @@ export struct AgentDrawerView {
         }
         .width('100%')
         .padding({ left: 14, right: 14 })
-        .margin({ bottom: 18 })
+        .margin({ bottom: 10 })
 
-        // 智能体列表
+        // Agent引擎分组(独立小节, 置于「聊天模式」标题上方; 小标题与条目样式和聊天模式完全一致)
         Column() {
-          Text('智能体')
+          Text('Agent引擎')
+            .fontSize(12)
+            .fontWeight(FontWeight.Medium)
+            .fontColor($r('app.color.text_secondary'))
+            .letterSpacing(0.5)
+            .width('100%')
+            .padding({ left: 20, right: 20, top: 4, bottom: 10 })
+          Column() {
+            ForEach(this.workAgents(), (agent: Agent) => {
+              this.buildAgentItem(agent);
+            }, (agent: Agent) => agent.id)
+          }
+          .width('100%')
+          .padding({ left: 14, right: 14 })
+        }
+        .width('100%')
+
+        // 聊天引擎列表
+        Column() {
+          Text('聊天引擎')
             .fontSize(12)
             .fontWeight(FontWeight.Medium)
             .fontColor($r('app.color.text_secondary'))
@@ -123,7 +142,7 @@ export struct AgentDrawerView {
             .width('100%')
             .padding({ left: 20, right: 20, top: 4, bottom: 10 })
           List() {
-            ForEach(this.agents, (agent: Agent) => {
+            ForEach(this.chatAgents(), (agent: Agent) => {
               ListItem() {
                 this.buildAgentItem(agent);
               }
@@ -182,6 +201,28 @@ export struct AgentDrawerView {
     .alignContent(Alignment.Start)
     // 空白区域不拦截点击，让下方的全屏 scrim 能响应关闭
     .hitTestBehavior(HitTestMode.Transparent)
+  }
+
+  // Agent模式分组: 抽取 work 虚拟智能体, 作为独立小节展示在「聊天模式」标题上方
+  private workAgents(): Agent[] {
+    let list: Agent[] = [];
+    for (let i: number = 0; i < this.agents.length; i++) {
+      if (this.agents[i].id === 'work') {
+        list.push(this.agents[i]);
+      }
+    }
+    return list;
+  }
+
+  // 聊天智能体分组: 排除 work 虚拟项
+  private chatAgents(): Agent[] {
+    let list: Agent[] = [];
+    for (let i: number = 0; i < this.agents.length; i++) {
+      if (this.agents[i].id !== 'work') {
+        list.push(this.agents[i]);
+      }
+    }
+    return list;
   }
 
   @Builder
