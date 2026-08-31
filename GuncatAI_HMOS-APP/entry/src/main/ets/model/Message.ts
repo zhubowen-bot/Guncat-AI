@@ -12,6 +12,7 @@ export class Message {
   attachments: Attachment[] = [];
   timestamp: number = 0;
   // 工作模式(Agent Loop)中本条 assistant 消息发起的工具调用步骤; 聊天模式恒为空
+  // 流式期间记录随 onToolCalls 即时进入该列表(preparing 态), 时间线得以实时展示
   toolCalls: ToolCallRecord[] = [];
   // 深度思考内容 (对齐 web 版本 msg.reasoning)
   reasoning: string = '';

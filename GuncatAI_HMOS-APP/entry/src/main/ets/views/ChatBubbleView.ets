@@ -14,6 +14,12 @@ export class WorkStepFormat {
 
   // 参数概要: 优先展示 path/from/to/query, content 只取开头
   static summarizeArgs(call: ToolCallRecord): string {
+    // 流式生成中的参数不是完整 JSON: 大参数整段解析(失败也要扫到末尾)开销大,
+    // 先用结尾字符廉价判断, 未收口直接回退原文展示
+    let trimmed: string = call.argsJson.trim();
+    if (trimmed !== '' && !trimmed.endsWith('}')) {
+      return WorkStepFormat.capText(call.argsJson, 80);
+    }
     try {
       let parsed: Object = JSON.parse(call.argsJson);
       if (typeof parsed === 'object' && parsed !== null && !(parsed instanceof Array)) {

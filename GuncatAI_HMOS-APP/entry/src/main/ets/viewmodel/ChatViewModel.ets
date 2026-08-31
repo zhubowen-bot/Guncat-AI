@@ -1099,8 +1099,9 @@ export class ChatViewModel {
   }
 
   // ===== 工作模式 Agent Loop 主循环 (Codex 式时间线) =====
-  // 每轮独立一条 assistant 消息, 按 思考 → 工具 → 结论 的发生顺序依次入列,
-  // 消息列表天然构成时间线; 有工具调用则执行后继续下一轮, 无工具调用即收尾。
+  // 每轮独立一条 assistant 消息; 模型每轮按 思考 → 叙述文字 → 工具调用 的顺序流式输出,
+  // 工具调用在生成参数过程中即以 preparing 态进入时间线(WorkTurnView 按此顺序渲染),
+  // 执行期间保持可见, 结果写回后翻转为完成态。有工具调用则执行后继续下一轮, 无则收尾。
   // 缓存设计(对齐 DeepSeek Harness): 系统提示词静态不变; 日期/文件树/任务清单通过
   // 「运行时上下文」快照 user 消息追加到历史末尾且仅在内容变化时追加; 历史严格
   // 追加式增长(压缩是唯一改写历史的操作)。相邻两轮请求因此共享逐字节相同的前缀,
@@ -1174,6 +1175,18 @@ export class ChatViewModel {
           this.updateLiveTokenSpeed(turnMsg, streamStartMs);
           this.scheduleStreamUpdate();
         };
+        callbacks.onToolCalls = (calls: ToolCallRecord[]): void => {
+          // 模型生成调用参数的过程中即时同步到时间线(preparing 态),
+          // 由 WorkTurnView 的流式定时器在 33ms 内上屏, 不等整轮响应结束
+          for (let i: number = 0; i < calls.length; i++) {
+            let call: ToolCallRecord = calls[i];
+            if (call.name === '' || turnMsg.toolCalls.indexOf(call) >= 0) {
+              continue;
+            }
+            turnMsg.toolCalls.push(call);
+            call.preparing = true;
+          }
+        };
         callbacks.onUsage = (speed: number, hit: number): void => {
           if (speed > 0) {
             turnMsg.tokenSpeed = speed;
@@ -1189,13 +1202,17 @@ export class ChatViewModel {
           turnMsg.content = compactNote + '⚠️ ' + reason + '，自动重试(第 ' +
             attempt.toString() + ' 次)…\n\n';
           turnMsg.reasoning = '';
+          turnMsg.toolCalls = [];
           this.scheduleStreamUpdate();
         };
 
         // 记录请求字符量, 与 usage 的真实 prompt tokens 配对, 推导本会话字符→token 比例
         let requestChars: number = loopMsgChars(messages);
         let turn: LoopTurnResult = await this.runStepWithOverflowRetry(
-          messages, turnMsg, compactNote, callbacks, ctx, conv.id);
+          messages, turnMsg, compactNote, callbacks, ctx, conv.id, (): void => {
+            // 上下文超限强制压缩后重试: 清掉上一次尝试已流出的部分工具行
+            turnMsg.toolCalls = [];
+          });
         if (this.abortSignal.aborted) {
           this.finalizeWorkTurn(turnMsg, true, conv);
           break;
@@ -1229,12 +1246,15 @@ export class ChatViewModel {
               gj++;
             }
             for (let k: number = ci; k < gj; k++) {
-              turnMsg.toolCalls.push(turn.toolCalls[k]);
+              this.ensureToolRecordOnTimeline(turnMsg, turn.toolCalls[k]);
             }
             this.persistConversations();
             this.notifyUIChange();
+            // 先让"执行中"工具行上屏, 再开始可能长时间占用主线程的同步工具执行
+            await this.sleep(30);
             let execs: Promise<ToolExecResult>[] = [];
             for (let k: number = ci; k < gj; k++) {
+              turn.toolCalls[k].preparing = false;
               execs.push(WorkToolRunner.execute(ctx, conv.id,
                 turn.toolCalls[k].name, turn.toolCalls[k].argsJson));
             }
@@ -1256,9 +1276,11 @@ export class ChatViewModel {
             }
             ci = gj;
           } else {
-            turnMsg.toolCalls.push(headCall);
+            this.ensureToolRecordOnTimeline(turnMsg, headCall);
             this.persistConversations();
             this.notifyUIChange();
+            await this.sleep(30);
+            headCall.preparing = false;
             let execStart: number = Date.now();
             let exec: ToolExecResult = await WorkToolRunner.execute(
               ctx, conv.id, headCall.name, headCall.argsJson);
@@ -1302,10 +1324,8 @@ export class ChatViewModel {
       if (!this.abortSignal.aborted && step >= Constants.WORK_MAX_STEPS && conv.messages.length > 0) {
         let last: Message = conv.messages[conv.messages.length - 1];
         if (last.role === 'assistant') {
-          let note: string = '⏹ 已连续执行 ' + Constants.WORK_MAX_STEPS.toString() +
-            ' 轮工具调用(防失控保险), 发送"继续"可接着执行。';
-          last.content = last.content === '' ? note : last.content + '\n\n' + note;
-          last.displayContent = last.content;
+          this.appendTurnNote(last, '⏹ 已连续执行 ' + Constants.WORK_MAX_STEPS.toString() +
+            ' 轮工具调用(防失控保险), 发送"继续"可接着执行。');
         }
       }
     } catch (e) {
@@ -1314,8 +1334,7 @@ export class ChatViewModel {
         let msg: string = err.message !== undefined ? err.message : '任务执行失败';
         let last: Message | null = conv.messages.length > 0 ? conv.messages[conv.messages.length - 1] : null;
         if (last !== null && last.role === 'assistant') {
-          last.content = last.content === '' ? '⚠️ ' + msg : last.content + '\n\n⚠️ ' + msg;
-          last.displayContent = last.content;
+          this.appendTurnNote(last, '⚠️ ' + msg);
         } else {
           let errMsg: Message = Message.ofAssistant(generateMessageId(), '⚠️ ' + msg);
           errMsg.displayContent = errMsg.content;
@@ -1335,10 +1354,12 @@ export class ChatViewModel {
   }
 
   // 执行一次步骤请求; 若因上下文窗口超限失败(对齐 DeepSeek Harness 对
-  // CONTEXT_WINDOW_EXCEEDED 的响应式压缩), 强制压缩历史后重试一次
+  // CONTEXT_WINDOW_EXCEEDED 的响应式压缩), 强制压缩历史后重试一次。
+  // onForcedRetry: 重试前清掉上一次尝试已流出的部分工具行
   private async runStepWithOverflowRetry(messages: LoopMessage[], turnMsg: Message,
     compactNote: string, callbacks: LoopTurnCallbacks,
-    ctx: common.UIAbilityContext, convId: string): Promise<LoopTurnResult> {
+    ctx: common.UIAbilityContext, convId: string,
+    onForcedRetry: () => void): Promise<LoopTurnResult> {
     try {
       return await AgentLoopService.runTurnWithRetry(
         this.apiConfig, messages, this.thinkingEnabled, this.reasoningEffort, this.webSearchEnabled,
@@ -1350,6 +1371,7 @@ export class ChatViewModel {
         let forcedNote: string = await this.compactWorkHistoryIfNeeded(messages, true);
         if (forcedNote !== '') {
           turnMsg.content = forcedNote;
+          onForcedRetry();
           this.scheduleStreamUpdate();
           // 压缩改写了历史, 末尾快照可能已随旧历史被移除, 重试前重新补快照
           await this.appendRuntimeSnapshotIfNeeded(messages, ctx, convId);
@@ -1360,6 +1382,14 @@ export class ChatViewModel {
       }
       throw err;
     }
+  }
+
+  // 把工具调用同步到时间线(若流式阶段已同步过则跳过, 保持一次且仅一次)
+  private ensureToolRecordOnTimeline(turnMsg: Message, call: ToolCallRecord): void {
+    if (turnMsg.toolCalls.indexOf(call) >= 0) {
+      return;
+    }
+    turnMsg.toolCalls.push(call);
   }
 
   // 追加运行时快照(日期/文件树/任务清单): 仅当与历史末尾已有快照内容不一致时追加
@@ -1500,15 +1530,24 @@ export class ChatViewModel {
 
   // 收尾一条本轮消息: 同步展示内容; 中断且无任何产出时直接移除
   private finalizeWorkTurn(turnMsg: Message, aborted: boolean, conv: Conversation): void {
+    // 未走完的 preparing 记录在收尾时落定为"被打断"态, 时间线以 ⏹ 呈现而非永远转圈
+    for (let i: number = 0; i < turnMsg.toolCalls.length; i++) {
+      turnMsg.toolCalls[i].preparing = false;
+    }
     if (aborted && turnMsg.content === '' && turnMsg.toolCalls.length === 0) {
       conv.messages = conv.messages.filter((m: Message): boolean => m !== turnMsg);
       return;
     }
     if (aborted) {
-      let note: string = '⏹ 任务已手动停止';
-      turnMsg.content = turnMsg.content === '' ? note : turnMsg.content + '\n\n' + note;
+      this.appendTurnNote(turnMsg, '⏹ 任务已手动停止');
     }
     turnMsg.displayContent = turnMsg.content;
+  }
+
+  // 在轮次消息末尾追加标注(手动停止/超步/执行失败)
+  private appendTurnNote(msg: Message, note: string): void {
+    msg.content = msg.content === '' ? note : msg.content + '\n\n' + note;
+    msg.displayContent = msg.content;
   }
 
   private scheduleStreamUpdate(): void {

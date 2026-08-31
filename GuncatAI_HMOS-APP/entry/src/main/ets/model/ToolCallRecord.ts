@@ -9,6 +9,9 @@ export class ToolCallRecord {
   isError: boolean = false;
   // 执行耗时(毫秒); -1 表示尚未执行完成
   durationMs: number = -1;
+  // 运行态标记(不持久化): true 表示模型还在流式生成调用参数, 尚未开始执行;
+  // 区分时间线上的"生成调用中"与"执行中/等待中"状态
+  preparing: boolean = false;
 
   static of(id: string, name: string, argsJson: string): ToolCallRecord {
     let rec: ToolCallRecord = new ToolCallRecord();
