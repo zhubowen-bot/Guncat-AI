@@ -17,6 +17,16 @@ export interface PickedFile {
 }
 
 export class FileService {
+  // 文件选择器返回的 URI 对中文等字符做了百分号编码, 截出的文件名需解码还原;
+  // 文件名本身可能含字面 '%', 解码失败时回退原始名
+  static decodeUriName(name: string): string {
+    try {
+      return decodeURIComponent(name);
+    } catch (e) {
+      return name;
+    }
+  }
+
   static async readSharedFiles(uris: string[]): Promise<PickedFile[]> {
     let files: PickedFile[] = [];
     let count: number = Math.min(5, uris.length);
@@ -42,8 +52,9 @@ export class FileService {
       if (name === '') {
         name = fallbackName;
       }
+      name = FileService.decodeUriName(name);
       return {
-        name: decodeURIComponent(name),
+        name: name,
         uri: uri,
         fileType: FileService.guessTypeByName(name),
         size: stat.size,
@@ -74,6 +85,7 @@ export class FileService {
         if (name === '' || name.indexOf('?') !== -1) {
           name = uri.split('?')[0].substring(uri.split('?')[0].lastIndexOf('/') + 1);
         }
+        name = FileService.decodeUriName(name);
         let fileType: string = FileService.guessTypeByName(name);
         files.push({ name: name, uri: uri, fileType: fileType, size: size, buffer: buf });
       } catch (e) {
@@ -104,6 +116,7 @@ export class FileService {
         if (name === '' || name.indexOf('?') !== -1) {
           name = uri.split('?')[0].substring(uri.split('?')[0].lastIndexOf('/') + 1);
         }
+        name = FileService.decodeUriName(name);
         let fileType: string = 'image/jpeg';
         if (name.toLowerCase().endsWith('.png')) {
           fileType = 'image/png';

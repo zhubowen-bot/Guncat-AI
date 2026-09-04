@@ -4,7 +4,7 @@
 
 Guncat Work 是使用 ArkTS 与 ArkUI 开发的原生 HarmonyOS AI 对话客户端，代替了原有的 WebView 承载主界面的旧方案。
 
-当前应用版本：`6.0.0`
+当前应用版本：`6.1.0`
 
 ## 主要功能
 
@@ -114,7 +114,7 @@ Guncat Work 是使用 ArkTS 与 ArkUI 开发的原生 HarmonyOS AI 对话客户�
 工作模式是**与聊天智能体平行的独立身份**（侧边栏「聊天模式」标题上方的「Agent模式」分组中的 🛠「工作模式」项），进入后进入一个具备本地沙箱工作区与工具调用能力的 Agent 循环，可自主完成多步骤长程任务。完整架构见下文「[工作模式架构与维护指南](#工作模式架构与维护指南)」。
 
 - **沙箱工作区**：每个工作会话对应 `filesDir/workspaces/<convId>/` 目录，支持上传文件、导出 `.zip` 打包、清空；全程应用沙箱内读写 + 系统安全组件选/存文件，无新增权限。
-- **25 个本地工具**：文件 CRUD（list/read/write/append/delete/create_dir/move/search，search_files 支持 glob 文件名过滤）、任务清单（todo_write）、图片查看（view_image，走主模型多模态）、网络下载（download_file，把链接文件拉进工作区）、PDF 解析（parse_document + read_file 自动路由）、Office 生成（write_docx / write_xlsx / write_csv）、数据管道（transform_file，大文件本地清洗/转换/互转，数据不经模型上下文）、PPT 读写编辑（write_pptx / read_ppt / edit_ppt，基于 Deck JSON 中间层）、SVG 生图（write_svg，矢量出图 + PNG 预览）、技能系统（list_skills / load_skill，按需加载领域操作指南）。
+- **36 个本地工具**：文件 CRUD（list/read/write/append/delete/create_dir/move/search，search_files 支持 glob 文件名过滤）、任务清单（todo_write）、图片查看（view_image，走主模型多模态）、网络下载（download_file，把链接文件拉进工作区）、PDF 解析（parse_document + read_file 自动路由）、Office 生成（write_docx / write_xlsx / write_csv）、数据管道（transform_file，大文件本地清洗/转换/互转，数据不经模型上下文）、PPT 读写编辑（write_pptx / read_ppt / edit_ppt，基于 Deck JSON 中间层）、SVG 生图（write_svg，矢量出图 + PNG 预览）、技能系统（list_skills / load_skill，按需加载领域操作指南）。6.1 新增（DeepSeek Harness 移植）：glob / grep（模式找文件与正则搜索）、edit / str_replace_editor（逐字符精确编辑 + diff 卡片）、web_fetch（抓取网页/接口原文）、ask_user_question（向用户提问并等待作答）、schedule_create/list/delete（会话内定时提醒）、goal_create/get/update（会话自主目标）、subagent（子代理委派）、session_search（会话事件日志检索）。
 - **技能系统**：领域操作指南打包在 `rawfile/skills/<id>/`（SKILL.md + reference/*.md），系统提示词只保留触发提示（保证 KV 缓存前缀稳定），模型通过 `list_skills`/`load_skill` 渐进式加载。内置 `ppt` 技能（Deck JSON 语法、设计规范、主题、自检清单）、`svg` 技能（SVG 绘制规范、"生成→预览→修正"工作流、图标/流程图/信息图配方）与 `data` 技能（transform_file 管道 ops 与表达式完整语法、清洗/提取/互转配方）。
 - **本地解析引擎**：`.docx/.xlsx/.pptx/.pdf` 全部在设备本地抽取文本，不依赖多模态解析 API、不消耗配额。
 - **任务清单纪律**：复杂任务先 `todo_write` 建清单，清单与工作区状态经「运行时上下文」快照注入对话尾部，逐项推进、完成后更新。
@@ -355,30 +355,40 @@ for step in 1..WORK_MAX_STEPS(200, 防失控保险):
 - **中断**：`stopStreaming()` 同时调用 `ChatService.abort()` 与 `AgentLoopService.abort()`；中断轮若无产出则移除消息，否则追加「⏹ 任务已手动停止」。
 - **步数保险**：`WORK_MAX_STEPS(200)` 仅作为失控保护（防止工具调用死循环持续消耗），正常长任务触不到；触发后在最后一条消息标注「发送“继续”可接着执行」。
 
-### 3. 工具系统（25 个）
+### 3. 工具系统（36 个）
 
-分发链：`ChatViewModel` → `WorkToolRunner.execute()`（.ets 入口）→ Office 生成/parse_document/PPT/transform_file 就地实现，其余委托 `WorkFileService.executeTool()`（.ts）。
+分发链：`ChatViewModel` → `WorkToolRunner.execute()`（.ets 入口）→ Office 生成/parse_document/PPT/transform_file 就地实现，其余委托 `WorkFileService.executeTool()`（.ts），6.1 新增工具由 `HarnessTools.dispatch()`（.ts）兜底。
 
-| 工具 | 实现位置 | 说明 |
-| --- | --- | --- |
-| `todo_write` | WorkFileService.toolTodoWrite | 任务清单写入 `.todo.json`，支持数组/内嵌 JSON 字符串两种传参 |
-| `list_files` | WorkFileService.toolList | 递归列目录，目录优先排序，含大小 |
-| `read_file` | WorkFileService.toolRead | 文本直读；`.docx/.xlsx/.pptx`→OfficeReader，`.pdf`→PdfTextExtractor |
-| `write_file` / `append_file` | WorkFileService.toolWrite | 覆盖/追加写文本（512KB 上限，自动建父目录） |
-| `delete_file` / `create_dir` / `move_file` | WorkFileService.toolDelete/toolMkdir/toolMove | 递归删除/建目录/移动（moveFileSync/moveDirSync） |
-| `search_files` | WorkFileService.toolSearch | 文本类文件大小写不敏感子串搜索，带行号；`glob` 参数按文件名过滤（`*`/`?`，逗号分隔多模式），目录仍递归 |
-| `view_image` | WorkFileService.toolViewImage | 图片→dataUrl（≤8MB），由循环注入下一条多模态消息 |
-| `download_file` | WorkToolRunner.toolDownloadFile | http(s) 文件下载进工作区（≤20MB；类型嗅探 + html 告警；自动命名或指定 path） |
-| `parse_document` | WorkToolRunner.toolParseDocument | PDF 完整文本（本地，3 倍输出上限） |
-| `write_docx` | WorkToolRunner.toolWriteDocx → DocxExporter.buildDocxBytes | Markdown→Word |
-| `write_xlsx` | WorkToolRunner.toolWriteXlsx → XlsxExporter.buildXlsxFromRows | Markdown 表格/CSV/TSV→Excel |
-| `write_csv` | WorkToolRunner.toolWriteCsv → CsvWriter.buildCsvBytes | Markdown 表格/CSV/TSV→CSV（RFC 4180 转义，默认 UTF-8 BOM；输入解析走 CsvParser，引号字段正确处理） |
-| `transform_file` | WorkToolRunner.toolTransformFile → DataPipeline | **本地数据管道**（数据不经模型上下文）：CSV/TSV/MD/JSON/JSONL/文本行 输入，过滤/派生列/正则提取/拆列/去重/排序 + CSV↔TSV↔JSON↔MD↔XLSX 互转；受限 DSL（ops 白名单 + 表达式求值器，无 I/O），先预览后写盘；语法见 `load_skill("data")`；≤2MB/10 万行/30 步 |
-| `write_pptx` | WorkToolRunner.toolWritePptx → PptxBuilder.buildPptxBytes | **Deck JSON / deck 文件 / outline 大纲 → PPT**（详见下节） |
-| `read_ppt` | WorkToolRunner.toolReadPpt → PptxImporter.import | .pptx → Deck JSON 源（自家文件无损还原，外来近似导入） |
-| `edit_ppt` | WorkToolRunner.toolEditPpt → PptxImporter + DeckOps + PptxBuilder | 读回→应用操作→重建（外来文件先备份） |
-| `write_svg` | WorkToolRunner.toolWriteSvg → SvgUtil | SVG 源码→工作区 .svg + 栅格化 PNG 预览；xmlns/禁 script 校验，缺 width/height 自动按 viewBox 补齐（实机引擎必需），解码失败报精确诊断 |
-| `list_skills` / `load_skill` | WorkFileService.dispatchTool → WorkSkillService | 技能清单与技能文档按需加载（rawfile/skills/ 下 ppt、svg、data 三个技能） |
+| 工具                                                      | 实现位置                                                                | 说明                                                                                                                                                                               |
+| ------------------------------------------------------- | ------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `todo_write`                                            | WorkFileService.toolTodoWrite                                       | 任务清单写入 `.todo.json`，支持数组/内嵌 JSON 字符串两种传参                                                                                                                                         |
+| `list_files`                                            | WorkFileService.toolList                                            | 递归列目录，目录优先排序，含大小                                                                                                                                                                 |
+| `read_file`                                             | WorkFileService.toolRead                                            | 文本直读；`.docx/.xlsx/.pptx`→OfficeReader，`.pdf`→PdfTextExtractor                                                                                                                    |
+| `write_file` / `append_file`                            | WorkFileService.toolWrite                                           | 覆盖/追加写文本（512KB 上限，自动建父目录）                                                                                                                                                        |
+| `delete_file` / `create_dir` / `move_file`              | WorkFileService.toolDelete/toolMkdir/toolMove                       | 递归删除/建目录/移动（moveFileSync/moveDirSync）                                                                                                                                            |
+| `search_files`                                          | WorkFileService.toolSearch                                          | 文本类文件大小写不敏感子串搜索，带行号；`glob` 参数按文件名过滤（`*`/`?`，逗号分隔多模式），目录仍递归                                                                                                                       |
+| `view_image`                                            | WorkFileService.toolViewImage                                       | 图片→dataUrl（≤8MB），由循环注入下一条多模态消息                                                                                                                                                   |
+| `download_file`                                         | WorkToolRunner.toolDownloadFile                                     | http(s) 文件下载进工作区（≤20MB；类型嗅探 + html 告警；自动命名或指定 path）                                                                                                                              |
+| `parse_document`                                        | WorkToolRunner.toolParseDocument                                    | PDF 完整文本（本地，3 倍输出上限）                                                                                                                                                             |
+| `write_docx`                                            | WorkToolRunner.toolWriteDocx → DocxExporter.buildDocxBytes          | Markdown→Word                                                                                                                                                                    |
+| `write_xlsx`                                            | WorkToolRunner.toolWriteXlsx → XlsxExporter.buildXlsxFromRows       | Markdown 表格/CSV/TSV→Excel                                                                                                                                                        |
+| `write_csv`                                             | WorkToolRunner.toolWriteCsv → CsvWriter.buildCsvBytes               | Markdown 表格/CSV/TSV→CSV（RFC 4180 转义，默认 UTF-8 BOM；输入解析走 CsvParser，引号字段正确处理）                                                                                                       |
+| `transform_file`                                        | WorkToolRunner.toolTransformFile → DataPipeline                     | **本地数据管道**（数据不经模型上下文）：CSV/TSV/MD/JSON/JSONL/文本行 输入，过滤/派生列/正则提取/拆列/去重/排序 + CSV↔TSV↔JSON↔MD↔XLSX 互转；受限 DSL（ops 白名单 + 表达式求值器，无 I/O），先预览后写盘；语法见 `load_skill("data")`；≤2MB/10 万行/30 步 |
+| `write_pptx`                                            | WorkToolRunner.toolWritePptx → PptxBuilder.buildPptxBytes           | **Deck JSON / deck 文件 / outline 大纲 → PPT**（详见下节）                                                                                                                                 |
+| `read_ppt`                                              | WorkToolRunner.toolReadPpt → PptxImporter.import                    | .pptx → Deck JSON 源（自家文件无损还原，外来近似导入）                                                                                                                                             |
+| `edit_ppt`                                              | WorkToolRunner.toolEditPpt → PptxImporter + DeckOps + PptxBuilder   | 读回→应用操作→重建（外来文件先备份）                                                                                                                                                              |
+| `write_svg`                                             | WorkToolRunner.toolWriteSvg → SvgUtil                               | SVG 源码→工作区 .svg + 栅格化 PNG 预览；xmlns/禁 script 校验，缺 width/height 自动按 viewBox 补齐（实机引擎必需），解码失败报精确诊断                                                                                   |
+| `list_skills` / `load_skill`                            | WorkFileService.dispatchTool → WorkSkillService                     | 技能清单与技能文档按需加载（rawfile/skills/ 下 ppt、svg、data 三个技能）                                                                                                                               |
+| `glob`                                                  | HarnessTools.toolGlob → FileSearchCore                              | glob 模式按路径找文件（`**`/`*`/`?`/`{a,b}`/`[...]`，顶层逗号不破坏 `{}` 分支），返回相对路径与大小（≤500 个）                                                                                                    |
+| `grep`                                                  | HarnessTools.toolGrep → FileSearchCore                              | 正则搜索文本文件内容，返回 `文件:行号: 内容`（≤200 命中；支持 glob 文件名过滤与 ignore_case，非法正则明确报错）                                                                                                           |
+| `edit`                                                  | HarnessTools.toolEdit → DiffUtil                                    | 逐字符唯一匹配替换（多处匹配拒绝，`replace_all` 全替）；结果附行级 diff hunks（meta 随会话持久化，UI 渲染 diff 卡片）                                                                                                   |
+| `str_replace_editor`                                    | HarnessTools.toolEdit                   | view/create/str_replace/insert 四命令编辑器（view 复用 read_file 行分页；insert 在指定行后插入）                                                                                                      |
+| `web_fetch`                                             | HarnessTools.toolWebFetch → WebFetchService                         | GET ≤2MB 抓取网页/接口原文；HTML 剥离为可读文本（去 script/style/注释、块级标签转行、实体解码），JSON/文本原样返回（超长截断标注）                                                                                               |
+| `ask_user_question`                                     | HarnessTools.toolAskUser → AskUserBridge                            | 暂停执行等待用户作答；UI 问题卡片（单选/多选 + 文字补充，统一由「提交」发送）；5 分钟未答按取消收场，循环中断即全部落定                                                                                                                 |
+| `schedule_create` / `schedule_list` / `schedule_delete` | HarnessTools → ScheduleService                                      | 会话内定时提醒（`.schedule.json` 持久化；一次性 `after_seconds` 或循环 `every_seconds`≥300 秒）；到期注入用户消息自动唤醒，任务执行中走插话通道                                                                              |
+| `goal_create` / `goal_get` / `goal_update`              | HarnessTools → GoalService                                          | 会话自主目标（`.goal.json`），随运行时快照注入；`bump_round` 计轮，达轮次上限自动暂停                                                                                                                          |
+| `subagent`                                              | HarnessTools → SubagentService（经 `WorkFileService.subagentHook` 注入） | 进程内子代理：与主任务共享工作区、独立上下文（工具面排除 subagent/ask_user/schedule/goal/todo_write），≤40 步，最终报告作为工具结果交还                                                                                      |
+| `session_search`                                        | HarnessTools.toolSessionSearch → SessionLogService                  | 检索会话事件日志（JSONL），找回被上下文压缩掉的历史细节                                                                                                                                                   |
 
 路径安全：所有工具路径经 `resolveSafe()` 校验——拒绝绝对路径、盘符与 `..` 穿越，只能在 `filesDir/workspaces/<convId>/` 内操作。
 
@@ -396,14 +406,14 @@ read_ppt  ───┤                                    └─ edit_ppt(DeckOp
 
 #### 模块职责与公开 API（entry/src/main/ets/export/）
 
-| 文件                 | 职责                                                                                              | 关键公开成员                                                                                                                                                                       |
-| ------------------ | ----------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `DeckModel.ets`    | 中间层模型 + JSON 解析校验 + 编辑算子（**纯逻辑，无 Kit API**）                                                     | `Deck/DeckSlide/DeckBullet/DeckChart/DeckTable/DeckElement/DeckBackground`、`DeckParser.parse`、`DeckOutline.parse`（旧大纲兼容）、`DeckOps.apply`、`DECK_LAYOUTS`、`DECK_MAX_SLIDES`    |
-| `PptxThemes.ets`   | 8 套主题预设 + 语义色/十六进制色解析（**纯逻辑**）                                                                  | `PptxThemes.resolve`（Deck→ThemeColors）、`resolveColor(colors, spec, fallback)`（primary/accent/bg/surface/title/body/sub/faint/onPrimary/white/dark/light 或 hex）、`ThemeColors` |
-| `PptxCharts.ets`   | 图表 part XML（bar/line/area/pie/doughnut，数据内嵌 numCache/strCache，**纯逻辑**）                          | `PptxCharts.buildXml(chart, colors)`                                                                                                                                         |
-| `PptxImage.ets`    | 图片引用解析：工作区相对路径 / data URL / http(s)，mime 嗅探 + PNG/JPEG/GIF/BMP 尺寸探测 | `PptxImage.resolve(src, workspaceRoot)` → `PptxImagePart`                                                                                                                    |
-| `PptxBuilder.ets`  | Deck → pptx 全部件渲染（两遍式：先解析图片/图表，再逐页渲染）                                                           | `PptxBuilder.buildPptxBytes(deck, resolveImage)`；另定义 `PptxImagePart`/`ImageResolver`（类型在此，避免 PptxBuilder→PptxImage 的编译期依赖）                                                   |
-| `PptxImporter.ets` | pptx → Deck：优先读内嵌 `docProps/deck.json`（无损），否则解析 slide XML 为 custom 版式（文本/表格/图片位置保留，图表转占位说明）     | `PptxImporter.import(absPath, cacheDir)` → `PptxImportResult{deck, embedded, slideCount}`                                                                                    |
+| 文件                 | 职责                                                                                          | 关键公开成员                                                                                                                                                                       |
+| ------------------ | ------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `DeckModel.ets`    | 中间层模型 + JSON 解析校验 + 编辑算子（**纯逻辑，无 Kit API**）                                                 | `Deck/DeckSlide/DeckBullet/DeckChart/DeckTable/DeckElement/DeckBackground`、`DeckParser.parse`、`DeckOutline.parse`（旧大纲兼容）、`DeckOps.apply`、`DECK_LAYOUTS`、`DECK_MAX_SLIDES`    |
+| `PptxThemes.ets`   | 8 套主题预设 + 语义色/十六进制色解析（**纯逻辑**）                                                              | `PptxThemes.resolve`（Deck→ThemeColors）、`resolveColor(colors, spec, fallback)`（primary/accent/bg/surface/title/body/sub/faint/onPrimary/white/dark/light 或 hex）、`ThemeColors` |
+| `PptxCharts.ets`   | 图表 part XML（bar/line/area/pie/doughnut，数据内嵌 numCache/strCache，**纯逻辑**）                      | `PptxCharts.buildXml(chart, colors)`                                                                                                                                         |
+| `PptxImage.ets`    | 图片引用解析：工作区相对路径 / data URL / http(s)，mime 嗅探 + PNG/JPEG/GIF/BMP 尺寸探测                         | `PptxImage.resolve(src, workspaceRoot)` → `PptxImagePart`                                                                                                                    |
+| `PptxBuilder.ets`  | Deck → pptx 全部件渲染（两遍式：先解析图片/图表，再逐页渲染）                                                       | `PptxBuilder.buildPptxBytes(deck, resolveImage)`；另定义 `PptxImagePart`/`ImageResolver`（类型在此，避免 PptxBuilder→PptxImage 的编译期依赖）                                                   |
+| `PptxImporter.ets` | pptx → Deck：优先读内嵌 `docProps/deck.json`（无损），否则解析 slide XML 为 custom 版式（文本/表格/图片位置保留，图表转占位说明） | `PptxImporter.import(absPath, cacheDir)` → `PptxImportResult{deck, embedded, slideCount}`                                                                                    |
 
 **依赖方向**（`.ets` 不得被 `.ts` 导入）：`DeckModel ← PptxThemes/PptxCharts/PptxBuilder`；`PptxBuilder ← WorkToolRunner.ets`；`PptxImage → WorkFileService.ts`（仅 `resolveSafe`，方向合法）；无环。新文件加入前先画这张图。
 
@@ -692,6 +702,25 @@ hvigorw --mode module -p product=default -p module=entry@default -p buildMode=de
 - 从系统分享接收的内容不会自动发送，必须由用户主动点击发送。
 - 原始附件不会作为永久文件复制到应用数据中。
 - 网络请求使用 HTTPS，实际数据处理政策以所配置的模型服务商为准。
+
+## 6.1.0 更新（DeepSeek Harness 移植）
+
+把 DeepSeek Harness（dsh）的核心 Agent Loop 能力移植进工作模式：新增一批纯本地实现的工具、循环调度升级，并为宽屏设备引入三栏桌面界面。版本升至 6.1.0（`Constants.APP_VERSION` 与 `AppScope/app.json5` versionName 6.1.0 / versionCode 610 同步）。完整移植对照见 `PORT_NOTES.md`。
+
+- **新工具（11 个）**：`glob`（`**`/`{a,b}`/`[...]` 模式按路径找文件）、`grep`（正则搜索文本内容）、`edit`（逐字符唯一匹配替换，返回行级 diff）、`str_replace_editor`（view/create/str_replace/insert 四命令编辑器）、`web_fetch`（抓取网页/接口原文，HTML 自动剥离为可读文本）、`ask_user_question`（暂停执行等待用户作答；UI 问题卡片支持单选/多选与文字补充，统一由"提交"发送）、`schedule_create/list/delete`（会话内定时提醒，到期自动唤醒执行，循环提醒最小间隔 300 秒）、`goal_create/get/update`（会话自主目标，随运行时快照注入防漂移）、`subagent`（进程内子代理：与主任务共享工作区、独立上下文、最多 40 步，最终报告作为工具结果交还）、`session_search`（在会话事件日志中检索历史）。
+- **Agent Loop 升级**：追加式会话事件日志（JSONL，`<filesDir>/sessions/<convId>.jsonl`，turn/assistant/工具结果留痕）；用户插话（steering）——任务执行中发送的消息不打断任务，在本轮结束后作为「用户补充」注入下一步请求；有界并行工具池（连续只读调用并发执行、上限 4、按模型顺序提交，改动类调用串行屏障）；粘性 max-tokens（输出顶到上限自动收尾并提示"发送继续"）；工具结果溢出暂存（超过约 1.2 万字符的全文落盘工作区 `.spill/`，模型收到头尾节选与定位提示，可 read_file 读回）；LLM 会话标题（首个任务收尾后后台生成，每会话一次）。
+- **桌面三栏界面**：宽屏（≥700vp）布局为 左侧栏（品牌行/新建会话/引擎与会话列表/底部入口，可折叠为 56vp 图标栏）| 会话列 | 右工作区详情列（任务统计/当前目标/文件管理，首次进入宽屏自动展开）；设计令牌整体对齐 dsh web 端——深色采用 neutral-bluish 色系、品牌蓝强调，浅色白底。窄屏保持原单列 + 抽屉交互。
+- **工具行视觉**：对齐 dsh 的 24px 单行规格（图标 + 标题 + 分隔点 + 参数摘要 + 状态/耗时），点击展开 IN/OUT 详情卡片（长内容槽内滚动）；`edit` 结果渲染 diff 卡片（+新增 −删除 与统计）；`todo_write` 渲染为任务清单；最终回复下附输出速度/缓存命中率/工具耗时统计行。
+- **性能与修复**：侧栏/抽屉改传会话列表轻量投影（修复打开抽屉时深拷贝全部消息导致的卡顿）；工作区详情面板实时刷新（每个工具结果后刷新 + 流式期间每 3 秒兜底 + 手动刷新按钮）；修复工具执行中行高瞬间撑满整页、长结果溢出详情卡片、正文下方残留流式光标、ask_user 单选未确认即发送等问题。
+- **沙箱形态不变**：工作区仍限定在 `<filesDir>/workspaces/<convId>` 内（`resolveSafe` 拒绝绝对路径与 `..` 越界），对外仅经系统安全组件（DocumentViewPicker）选择/保存文件，未新增任何存储权限；新增 `.spill/` 溢出目录不注入运行时快照文件树。
+- **全面适配 PC 界面**：全应用页面按 PC 宽屏样式适配——左侧边栏（智能体/会话列表）｜中间对话区｜右侧工作区详情栏的三栏桌面布局，侧栏可折叠为 56vp 图标栏，窗口拉伸/最大化时三栏自适应伸缩；设置、关于等弹层改为居中浮窗样式；列表项与按钮补齐鼠标悬停（hover）态与滚轮滚动细节；窄屏（手机/折叠态）自动回退单列 + 抽屉交互，两种形态共用同一套界面代码。
+- **三方库升级**：`@luvi/lv-markdown-in` Markdown 渲染引擎升级至最新 3.4.6 版本。
+- **界面显示优化**：优化了部分界面的显示效果——对话区留白与气泡间距、输入区与工具行的对齐、深浅色主题下的配色一致性等细节统一打磨。
+- **Mermaid 图表优化**：优化 Mermaid 图表的渲染效果，图形更清晰、排版更稳定。
+- **回答气泡新增操作**：AI 回答消息气泡新增「复制」与「复制到输入框」——一键复制整条回答，或将回答内容填入输入框快速修改后再次发送。
+- **操作图标优化**：优化了复制、复制到输入框等几个操作按钮的图标，风格更统一、含义更直观。
+- **文字自由选择复制**：消息正文支持直接自由选择、复制任意片段，无需再手动点击「复制局部」。
+- **新增「玩转应用」**：点击「关于」按钮即可弹出玩转应用面板，集中收录功能攻略与玩法指引，可详细查看各项功能的使用技巧。
 
 ## 6.0.0 更新（工作模式 Agent Loop）
 

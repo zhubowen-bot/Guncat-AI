@@ -1,21 +1,22 @@
 import { Agent } from '../model/Agent';
-import { Conversation } from '../model/Conversation';
+import { ConversationListItem } from '../model/ConversationListItem';
 import { router } from '@kit.ArkUI';
 
 // 智能体 / 对话抽屉 (对齐 web 版本 .drawer)
+// 会话列表传轻量投影 ConversationListItem(避免 @Prop 深拷贝全部消息导致打开卡顿)
 @Component
 export struct AgentDrawerView {
   // @Prop: 父组件 (ChatPage) 重渲染时新数组会传递进来, 解决删除/新建对话后侧边栏不更新
   // 之前用 private 字段, 父级 vm.conversations 变了子组件读不到
   @Prop agents: Agent[] = [];
-  @Prop conversations: Conversation[] = [];
+  @Prop conversations: ConversationListItem[] = [];
   @Prop currentAgentId: string = '';
   @Prop currentConversationId: string = '';
   private onSelectAgent: (id: string) => void = (_id: string): void => {};
   private onSelectConversation: (id: string) => void = (_id: string): void => {};
   private onDeleteConversation: (id: string) => void = (_id: string): void => {};
   private onNewConversation: () => void = (): void => {};
-  private onAbout: () => void = (): void => {};
+  private onPlayGuide: () => void = (): void => {};
   private onClose: () => void = (): void => {};
 
   build() {
@@ -47,7 +48,7 @@ export struct AgentDrawerView {
           .backgroundColor($r('app.color.raised_surface'))
           .shadow({ radius: 10, color: '#12000000', offsetX: 0, offsetY: 2 })
           .onClick(() => {
-            this.onAbout();
+            this.onPlayGuide();
           })
         }
         .width('100%')
@@ -170,11 +171,11 @@ export struct AgentDrawerView {
             .width('100%')
             .padding({ left: 20, right: 20, top: 12, bottom: 10 })
           List() {
-            ForEach(this.conversations, (conv: Conversation) => {
+            ForEach(this.conversations, (conv: ConversationListItem) => {
               ListItem() {
                 this.buildConvItem(conv);
               }
-            }, (conv: Conversation) => conv.id)
+            }, (conv: ConversationListItem) => conv.id)
           }
           .width('100%')
           .layoutWeight(1)
@@ -273,7 +274,7 @@ export struct AgentDrawerView {
   }
 
   @Builder
-  buildConvItem(conv: Conversation) {
+  buildConvItem(conv: ConversationListItem) {
     Row() {
       Text(this.getConvTitle(conv))
         .fontSize(14)
@@ -301,7 +302,7 @@ export struct AgentDrawerView {
     })
   }
 
-  private getConvTitle(conv: Conversation): string {
+  private getConvTitle(conv: ConversationListItem): string {
     if (conv.title !== '') {
       return conv.title;
     }

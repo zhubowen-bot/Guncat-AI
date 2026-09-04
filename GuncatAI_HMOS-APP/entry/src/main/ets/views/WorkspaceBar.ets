@@ -220,7 +220,7 @@ export struct WorkspaceBar {
         }
         // 缓存命中率: 任务停止后显示最近一条 assistant 消息的命中率
         if (!this.vm.isStreaming && this.getCacheHitText() !== '') {
-          Text('缓存 ' + this.getCacheHitText())
+          Text('缓存命中 ' + this.getCacheHitText())
             .fontSize(11)
             .fontColor($r('app.color.text_tertiary'))
         }

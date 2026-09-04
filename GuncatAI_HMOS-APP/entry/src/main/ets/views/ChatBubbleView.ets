@@ -24,7 +24,8 @@ export class WorkStepFormat {
       let parsed: Object = JSON.parse(call.argsJson);
       if (typeof parsed === 'object' && parsed !== null && !(parsed instanceof Array)) {
         let rec: Record<string, Object> = parsed as Record<string, Object>;
-        let keys: string[] = ['path', 'from', 'to', 'query', 'content'];
+        let keys: string[] = ['path', 'from', 'to', 'query', 'url', 'pattern',
+          'command', 'objective', 'description', 'message', 'question', 'content'];
         let parts: string[] = [];
         for (let i: number = 0; i < keys.length; i++) {
           let v: Object = rec[keys[i]];
@@ -83,7 +84,26 @@ export class WorkStepFormat {
       case 'search_pdf':
       case 'record_search':
       case 'glob':
+      case 'grep':
+      case 'session_search':
         return $r('sys.symbol.magnifyingglass');
+      case 'edit':
+      case 'str_replace_editor':
+        return $r('sys.symbol.pencil_tip');
+      case 'web_fetch':
+        return $r('sys.symbol.link');
+      case 'ask_user_question':
+        return $r('sys.symbol.info_circle');
+      case 'schedule_create':
+      case 'schedule_delete':
+      case 'schedule_list':
+        return $r('sys.symbol.arrow_clockwise');
+      case 'goal_create':
+      case 'goal_get':
+      case 'goal_update':
+        return $r('sys.symbol.flag');
+      case 'subagent':
+        return $r('sys.symbol.rectangle_stack');
       case 'list_files':
         return $r('sys.symbol.folder');
       case 'create_dir':
@@ -136,6 +156,27 @@ export class WorkStepFormat {
         return 'Search';
       case 'glob':
         return 'Glob';
+      case 'grep':
+        return 'Grep';
+      case 'edit':
+      case 'str_replace_editor':
+        return 'Edit';
+      case 'web_fetch':
+        return 'Fetch';
+      case 'ask_user_question':
+        return 'Ask';
+      case 'schedule_create':
+      case 'schedule_delete':
+      case 'schedule_list':
+        return 'Schedule';
+      case 'goal_create':
+      case 'goal_get':
+      case 'goal_update':
+        return 'Goal';
+      case 'subagent':
+        return 'Spawn';
+      case 'session_search':
+        return 'Log';
       case 'list_files':
         return 'List';
       case 'list_skills':
@@ -169,13 +210,13 @@ export struct ChatBubbleView {
   @ObjectLink message: Message;
   private onCopyPlain: (id: string) => void = (_id: string): void => {};
   private onCopyMarkdown: (id: string) => void = (_id: string): void => {};
-  private onSelectPartial: (id: string) => void = (_id: string): void => {};
   private onRegenerate: (id: string) => void = (_id: string): void => {};
   private onRead: (id: string) => void = (_id: string): void => {};
   private onExportWord: (id: string) => void = (_id: string): void => {};
   private onImageTap: (url: string) => void = (_url: string): void => {};
-  // 复制局部: 点击次数递增, 传给 RichTextView 触发开启文本选择模式
-  @State private selectionTick: number = 0;
+  // 用户消息: 把内容原样填回输入框(重新编辑发送)
+  private onEditToInput: (id: string) => void = (_id: string): void => {};
+  // 复制局部已改为 RichTextView 文本选择常开, 不再需要按钮回调
   // 深度思考条折叠状态 (默认折叠, 点击头部展开)
   @State private reasoningExpanded: boolean = false;
   // 当前展开结果详情的工具步骤(工作模式, 单步展开)
@@ -190,6 +231,8 @@ export struct ChatBubbleView {
   @State visibleText: string = '';
   @State visibleReasoning: string = '';
   private flushTimer: number = -1;
+  // 思考跑马灯: 流式中在思考条右侧空白区滚动呈现最新思考内容(对齐工作模式 WorkTurnView)
+  private marqueeScroller: Scroller = new Scroller();
 
   @Watch('onStreamPropChanged')
   @Prop isStreaming: boolean = false;
@@ -217,6 +260,16 @@ export struct ChatBubbleView {
           const currentReasoning: string = this.message.reasoning;
           if (currentReasoning !== this.visibleReasoning) {
             this.visibleReasoning = currentReasoning;
+          }
+          // 思考跑马灯跟随最新思考内容滚到末端 (延迟一拍让 Text 先完成布局)
+          if (currentReasoning !== '' && !this.reasoningExpanded) {
+            setTimeout((): void => {
+              this.marqueeScroller.scrollTo({
+                xOffset: 999999,
+                yOffset: 0,
+                animation: { duration: 150, curve: Curve.EaseOut }
+              });
+            }, 0);
           }
           // 工具步骤状态(执行中→完成)由 VM 原地更新, 用 tick 驱动卡片重渲染
           if (this.message.toolCalls.length > 0) {
@@ -270,6 +323,41 @@ export struct ChatBubbleView {
       }
       .width('100%')
       .padding({ left: 60, right: 16, top: 8, bottom: 8 })
+
+      // 操作行: 填入输入框(重新编辑) + 复制原文(对齐主流 Agent 的用户消息操作)
+      Row({ space: 8 }) {
+        Button() {
+          Image($r('sys.media.ohos_ic_public_edit'))
+            .width(14)
+            .height(14)
+            .fillColor($r('app.color.text_secondary'))
+        }
+        .width(26)
+        .height(26)
+        .borderRadius(13)
+        .padding(0)
+        .backgroundColor($r('app.color.raised_surface'))
+        .shadow({ radius: 10, color: '#10000000', offsetX: 0, offsetY: 2 })
+        .onClick(() => {
+          this.onEditToInput(this.message.id);
+        })
+        Button() {
+          Image($r('sys.media.ohos_ic_public_copy'))
+            .width(14)
+            .height(14)
+            .fillColor($r('app.color.text_secondary'))
+        }
+        .width(26)
+        .height(26)
+        .borderRadius(13)
+        .padding(0)
+        .backgroundColor($r('app.color.raised_surface'))
+        .shadow({ radius: 10, color: '#10000000', offsetX: 0, offsetY: 2 })
+        .onClick(() => {
+          this.onCopyPlain(this.message.id);
+        })
+      }
+      .padding({ top: 2, right: 16, bottom: 4 })
     }
     .width('100%')
     .alignItems(HorizontalAlign.End)
@@ -352,8 +440,7 @@ export struct ChatBubbleView {
           // visibleText 在 33ms 节流中持续更新, 同一组件实例贯穿整个生命周期,
           // Controller / 主题色 / 滚动位置都不会因为 isStreaming 切换而丢失
           RichTextView({
-            content: this.isStreaming ? this.visibleText : this.message.content,
-            selectionTrigger: this.selectionTick
+            content: this.isStreaming ? this.visibleText : this.message.content
           })
 
           // 流式光标
@@ -380,6 +467,25 @@ export struct ChatBubbleView {
         .backgroundColor($r('app.color.ai_msg'))
         .borderRadius({ topLeft: 8, topRight: 22, bottomLeft: 22, bottomRight: 22 })
         .shadow({ radius: 14, color: '#12000000', offsetX: 0, offsetY: 4 })
+
+        // 统计行(对齐工作模式 buildStatsLine): 回答结束后在气泡下方显示输出速度与缓存命中
+        if (!this.isStreaming && (this.message.tokenSpeed > 0 || this.message.cacheHitRate >= 0)) {
+          Row({ space: 10 }) {
+            if (this.message.tokenSpeed > 0) {
+              Text('⌘ ' + Math.round(this.message.tokenSpeed).toString() + ' 字符/秒')
+                .fontSize(10)
+                .fontColor($r('app.color.text_tertiary'))
+            }
+            if (this.message.cacheHitRate >= 0) {
+              Text('缓存命中 ' + Math.round(this.message.cacheHitRate * 100).toString() + '%')
+                .fontSize(10)
+                .fontColor($r('app.color.text_tertiary'))
+            }
+          }
+          .width('100%')
+          .margin({ top: 6 })
+          .padding({ left: 16, top: 2 })
+        }
       }
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Start)
@@ -483,8 +589,8 @@ export struct ChatBubbleView {
   }
 
   // 深度思考条(CLI 式行内样式): [图标] 思考标题, 无底色卡片, 与工具行同一套观感.
-  // 流式中在标题右侧显示转圈动画; 右端实时显示 token 速度(流式中按已输出字符实时估算,
-  // 流式结束后由 API usage 精确替换)与缓存命中率(读取 API 返回的缓存 token 数, 无返回值不显示).
+  // 流式中在标题右侧显示转圈动画; 标题右侧空白区以跑马灯单行滚动最新思考内容
+  // (对齐工作模式; 速度与缓存命中不再显示在此处, 回答结束后展示在气泡下方统计行).
   @Builder
   buildReasoningBar() {
     Column() {
@@ -503,17 +609,22 @@ export struct ChatBubbleView {
             .height(11)
             .color($r('app.color.brand'))
         }
-        Blank()
-        if (this.message.tokenSpeed > 0) {
-          Text(this.message.tokenSpeed.toFixed(1) + ' tok/s')
-            .fontSize(10)
-            .fontColor($r('app.color.text_tertiary'))
-        }
-        if (this.message.cacheHitRate >= 0) {
-          Text('缓存命中 ' + Math.round(this.message.cacheHitRate * 100).toString() + '%')
-            .fontSize(10)
-            .fontColor($r('app.color.text_tertiary'))
-            .margin({ left: 8 })
+        // 思考跑马灯: 占据标签右侧空白区, 单行滚动呈现最新思考内容
+        if (this.isStreaming && !this.reasoningExpanded && this.getMarqueeText() !== '') {
+          Scroll(this.marqueeScroller) {
+            Text(this.getMarqueeText())
+              .fontSize(11)
+              .fontColor($r('app.color.text_tertiary'))
+              .maxLines(1)
+          }
+          .scrollable(ScrollDirection.Horizontal)
+          .scrollBar(BarState.Off)
+          .edgeEffect(EdgeEffect.None)
+          .align(Alignment.Start)
+          .height(16)
+          .layoutWeight(1)
+        } else {
+          Blank()
         }
         SymbolGlyph(this.reasoningExpanded ? $r('sys.symbol.chevron_up') : $r('sys.symbol.chevron_down'))
           .fontSize(10)
@@ -544,35 +655,135 @@ export struct ChatBubbleView {
     .margin({ bottom: 8 })
   }
 
+  private getMarqueeText(): string {
+    let raw: string = this.isStreaming ? this.visibleReasoning : this.message.reasoning;
+    let tail: string = raw;
+    if (raw.length > 400) {
+      tail = '…' + raw.slice(raw.length - 400);
+    }
+    return tail.replace(/[\r\n\t]+/g, ' ').trim();
+  }
+
+  // 操作按钮行(28×28 图标+文字胶囊): 文本 / MD / 朗读 / Word / 重答。
+  // 复制局部已改为文本选择常开(RichTextView 初始化即启用), 不再提供按钮
+  // Flex 自动换行: 手机窄屏放不下时后半部分折到第二行, 宽屏仍单行排列
   @Builder
   buildAIActions() {
     Flex({ wrap: FlexWrap.Wrap, direction: FlexDirection.Row }) {
-      this.buildActionChip('复制', false, () => this.onCopyPlain(this.message.id))
-      this.buildActionChip('复制 MD', false, () => this.onCopyMarkdown(this.message.id))
-      this.buildActionChip('复制局部', false, () => {
-        this.selectionTick++;
-        this.onSelectPartial(this.message.id);
-      })
-      this.buildActionChip('朗读', false, () => this.onRead(this.message.id))
-      this.buildActionChip('导出 Word', false, () => this.onExportWord(this.message.id))
-      this.buildActionChip('重新回答', false, () => this.onRegenerate(this.message.id))
-    }
-    .width('100%')
-    .padding({ left: 10, right: 10, top: 6, bottom: 10 })
-  }
-
-  @Builder
-  buildActionChip(label: string, copied: boolean, onTap: () => void) {
-    Text(label)
-      .fontSize(12)
-      .fontColor(copied ? $r('app.color.success') : $r('app.color.text_secondary'))
-      .padding({ left: 12, right: 12, top: 6, bottom: 6 })
-      .borderRadius(16)
+      Button() {
+        Row({ space: 4 }) {
+          Image($r('sys.media.ohos_ic_public_copy'))
+            .width(14)
+            .height(14)
+            .fillColor($r('app.color.text_secondary'))
+          Text('文本')
+            .fontSize(11)
+            .fontColor($r('app.color.text_secondary'))
+        }
+        .alignItems(VerticalAlign.Center)
+      }
+      .height(28)
+      .borderRadius(14)
+      .padding({ left: 10, right: 10 })
       .backgroundColor($r('app.color.raised_surface'))
       .shadow({ radius: 10, color: '#10000000', offsetX: 0, offsetY: 2 })
-      .margin({ right: 8, bottom: 6 })
+      .margin({ right: 8, bottom: 8 })
       .onClick(() => {
-        onTap();
+        this.onCopyPlain(this.message.id);
       })
+
+      // 复制 MD: 复制图标 + 大写 MD 标识
+      Button() {
+        Row({ space: 4 }) {
+          Image($r('sys.media.ohos_ic_public_copy'))
+            .width(13)
+            .height(13)
+            .fillColor($r('app.color.text_secondary'))
+          Text('MD')
+            .fontSize(11)
+            .fontWeight(FontWeight.Medium)
+            .fontColor($r('app.color.text_secondary'))
+        }
+        .alignItems(VerticalAlign.Center)
+      }
+      .height(28)
+      .borderRadius(14)
+      .padding({ left: 10, right: 10 })
+      .backgroundColor($r('app.color.raised_surface'))
+      .shadow({ radius: 10, color: '#10000000', offsetX: 0, offsetY: 2 })
+      .margin({ right: 8, bottom: 8 })
+      .onClick(() => {
+        this.onCopyMarkdown(this.message.id);
+      })
+
+      // 朗读
+      Button() {
+        Row({ space: 4 }) {
+          Image($r('sys.media.ohos_ic_public_sound'))
+            .width(14)
+            .height(14)
+            .fillColor($r('app.color.text_secondary'))
+          Text('朗读')
+            .fontSize(11)
+            .fontColor($r('app.color.text_secondary'))
+        }
+        .alignItems(VerticalAlign.Center)
+      }
+      .height(28)
+      .borderRadius(14)
+      .padding({ left: 10, right: 10 })
+      .backgroundColor($r('app.color.raised_surface'))
+      .shadow({ radius: 10, color: '#10000000', offsetX: 0, offsetY: 2 })
+      .margin({ right: 8, bottom: 8 })
+      .onClick(() => {
+        this.onRead(this.message.id);
+      })
+
+      // 导出 word
+      Button() {
+        Row({ space: 4 }) {
+          SymbolGlyph($r('sys.symbol.arrow_down_to_line'))
+            .fontSize(14)
+            .fontColor([$r('app.color.text_secondary')])
+          Text('Word')
+            .fontSize(11)
+            .fontColor($r('app.color.text_secondary'))
+        }
+        .alignItems(VerticalAlign.Center)
+      }
+      .height(28)
+      .borderRadius(14)
+      .padding({ left: 10, right: 10 })
+      .backgroundColor($r('app.color.raised_surface'))
+      .shadow({ radius: 10, color: '#10000000', offsetX: 0, offsetY: 2 })
+      .margin({ right: 8, bottom: 8 })
+      .onClick(() => {
+        this.onExportWord(this.message.id);
+      })
+
+      // 重新回答(重答)
+      Button() {
+        Row({ space: 4 }) {
+          SymbolGlyph($r('sys.symbol.arrow_counterclockwise'))
+            .fontSize(14)
+            .fontColor([$r('app.color.text_secondary')])
+          Text('重答')
+            .fontSize(11)
+            .fontColor($r('app.color.text_secondary'))
+        }
+        .alignItems(VerticalAlign.Center)
+      }
+      .height(28)
+      .borderRadius(14)
+      .padding({ left: 10, right: 10 })
+      .backgroundColor($r('app.color.raised_surface'))
+      .shadow({ radius: 10, color: '#10000000', offsetX: 0, offsetY: 2 })
+      .margin({ right: 8, bottom: 8 })
+      .onClick(() => {
+        this.onRegenerate(this.message.id);
+      })
+    }
+    .width('100%')
+    .padding({ left: 10, right: 10, top: 6, bottom: 2 })
   }
 }

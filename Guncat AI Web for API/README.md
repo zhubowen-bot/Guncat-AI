@@ -6,7 +6,10 @@
 
 Web for API 版本：5.2.1
 
+2026.9.1 Mermaid 图表**实时渲染**：```mermaid 代码块在流式输出过程中即渲染为 SVG 图表，无需等待整条回答结束——图表代码块一经闭合（收到结尾 ```）立即开始渲染；mermaid 库在发送提问时预加载（与文字流式并行下载，消除首图额外等待）；源码级 SVG 缓存使流式每帧重建 DOM 后图表即时复用（无闪烁、不重复渲染），流式中尚未闭合的半截图表代码块自动跳过，解析失败保留源码且同一源码不重复重试
 2026.8.27 版本升至 **5.2.1**：新增 **Guncat 3.0-Mini（轻简模式）** 并置于智能体列表首位（`agents.json` 中 3.0-Mini 排在 3.0-Flash 之前）——基于 3.0-Flash 进一步精简打造的小型全能智能体，核心变化是移除了输出丰富性原则，代之以**任务适配输出原则**：回答长度由任务复杂度与用户需求决定，简单对话简洁自然、标准任务中等篇幅、复杂任务充分展开，恰如其分而不堆砌；完整保留 3.0-Flash 的三层一体架构、极速/标准双档模式、工具调用方法论与反幻觉体系
+2026.8.31 缓存优化：今天的日期从系统提示词**最前面**改为附加到系统提示词**末尾**（三种协议统一生效）——提示词主体前缀保持逐字节稳定，从而命中服务商的前缀缓存，避免日期跨天变化导致整个长提示词缓存失效；同步更新 3.0 系列提示词中「当前时间基准」的描述
+2026.8.31 新增 **Mermaid 图表渲染**（flowchart / sequence / mindmap 思维导图等全类型）：回答中的 ```mermaid 代码块在流式结束后自动渲染为 SVG 图表（懒加载 mermaid@11 CDN，随系统深色/浅色模式自动切换主题），渲染失败或 CDN 不可用时保留源码展示，源码仍可通过消息操作复制 Markdown
 2026.8.26 深度思考开关按协议显式控制（对齐 DeepSeek 官方参数）：OpenAI Completions `thinking.type = enabled/disabled` + `reasoning_effort = high`；Anthropic Messages `thinking.type = enabled/disabled` + `output_config.effort = high`；OpenAI Responses `reasoning.effort = high/none`（`none` 关闭思考）；联网搜索开启时多轮对话自动回传上一轮 assistant 的 `reasoning_content`，避免 400。新建对话按智能体名称重置深度思考默认值：效率模式（3.0-Flash）默认关闭、轻简模式（3.0-Mini）默认关闭、专家模式（3.0-Pro）默认开启
 2026.8.26 智能体体系升级：新增 **Guncat 3.0-Flash（效率模式）** 与 **Guncat 3.0-Pro（专家模式）**（3.0 系列单体化超级智能体基座），2.5-Lite 更名「经典模式」；各领域专家统一为「转换专家 / 检索专家 / 评估专家-领域」命名；移除 2.0 系列提示词文件；侧边栏智能体支持独立图标（`agents.json` 新增 `icon` 字段，图标按智能体 id 存放于 `icons/` 目录，未配置时回退默认猫头像）；描述拆分为 `description`（新建对话页展示完整版）与 `shortDescription`（侧边栏展示短版）
 2026.8.24 同步鸿蒙 APP 5.1.1：系统提示词最前面自动拼接今天的日期（运行时获取本地日期，跨天自动更新），OpenAI Completions / OpenAI Responses / Anthropic Messages 三种协议统一生效

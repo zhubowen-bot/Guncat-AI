@@ -1,104 +1,136 @@
 {
   "color": [
     {
+      "name": "start_window_background",
+      "value": "#151517"
+    },
+    {
       "name": "background",
-      "value": "#111418"
+      "value": "#151517"
     },
     {
       "name": "surface",
-      "value": "#1B1F27"
+      "value": "#232324"
     },
     {
       "name": "raised_surface",
-      "value": "#252B34"
+      "value": "#2C2C2E"
     },
     {
       "name": "surface_secondary",
-      "value": "#252B34"
+      "value": "#2C2C2E"
+    },
+    {
+      "name": "sidebar_fill",
+      "value": "#1B1B1C"
+    },
+    {
+      "name": "sidebar_item_active",
+      "value": "#43454A"
+    },
+    {
+      "name": "sidebar_item_hover",
+      "value": "#2C2C2E"
+    },
+    {
+      "name": "interactive_hover",
+      "value": "#14FFFFFF"
     },
     {
       "name": "text_primary",
-      "value": "#EDF0F5"
+      "value": "#F9FAFB"
     },
     {
       "name": "text_secondary",
-      "value": "#9AA3B2"
+      "value": "#CFD3D6"
     },
     {
       "name": "text_tertiary",
-      "value": "#6B7280"
+      "value": "#ADB2B8"
+    },
+    {
+      "name": "text_quaternary",
+      "value": "#81858C"
     },
     {
       "name": "brand",
-      "value": "#409CFF"
+      "value": "#5686FE"
     },
     {
       "name": "brand_pressed",
-      "value": "#2B7FFF"
+      "value": "#679EFE"
     },
     {
       "name": "brand_light",
-      "value": "#1E3A5F"
+      "value": "#34415B"
     },
     {
       "name": "user_msg",
-      "value": "#409CFF"
+      "value": "#5686FE"
     },
     {
       "name": "ai_msg",
-      "value": "#20252E"
+      "value": "#2C2C2E"
     },
     {
       "name": "border",
-      "value": "#2C333E"
+      "value": "#1FFFFFFF"
     },
     {
       "name": "divider",
-      "value": "#2C333E"
+      "value": "#0FFFFFFF"
     },
     {
       "name": "shadow",
-      "value": "#30000000"
+      "value": "#40000000"
     },
     {
       "name": "toast_bg",
-      "value": "#343B47"
+      "value": "#43454A"
     },
     {
       "name": "input_bg",
-      "value": "#20252E"
+      "value": "#2C2C2E"
     },
     {
       "name": "header_bg",
-      "value": "#1B1F27"
+      "value": "#151517"
     },
     {
       "name": "frosted_glass",
-      "value": "#1B1F27"
+      "value": "#232324"
     },
     {
       "name": "toggle_active",
-      "value": "#3DBE64"
+      "value": "#22C55E"
     },
     {
       "name": "toggle_inactive",
-      "value": "#3A414E"
+      "value": "#3A3B3D"
     },
     {
       "name": "danger",
-      "value": "#F0716B"
+      "value": "#F25A5A"
     },
     {
       "name": "warning",
-      "value": "#E8B44C"
+      "value": "#F59E0B"
     },
     {
       "name": "success",
-      "value": "#6BCB77"
+      "value": "#22C55E"
+    },
+    {
+      "name": "diff_add",
+      "value": "#4ED17E"
+    },
+    {
+      "name": "diff_del",
+      "value": "#F25A5A"
     },
     {
       "name": "code_bg",
-      "value": "#0F1218"
+      "value": "#1B1B1C"
     },
     {
       "name": "code_text",
@@ -106,11 +138,11 @@
     },
     {
       "name": "modal_backdrop",
-      "value": "#99000000"
+      "value": "#80000000"
     },
     {
       "name": "stop_btn",
-      "value": "#F0716B"
+      "value": "#F25A5A"
     }
   ]
 }

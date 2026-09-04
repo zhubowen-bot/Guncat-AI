@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<!--
+  ════════════════════════════════════════════════════════════════
+  玩转应用 · 本地页面 (在应用内由 PlayGuidePanel 弹窗打开)
+  多页结构: 首页 = 大标题 + 目录; 目录点进去是独立子页 (自带返回按钮)
+
+  怎么维护 (不懂代码也能改):
+  1. 改文字 ──── 每个功能就是一行 <div class="card">…</div> 块,
+                 只改其中的标题 / 描述即可。
+  2. 加功能 ──── 复制任意一个 card 块, 粘贴到想要的位置, 改文字。
+                 正文卡不带图标: 标题居中、文字整段通栏; 长文本可加
+                 class="card card-prose" (标题与正文间距更大)。
+                 图标只保留在首页目录条目里 (card-icon), 不想要时整块删掉。
+  3. 加一页 ──── 复制整个 <section class="view" id="view-xxx">…</section> 块,
+                 改 id (xxx 不重复即可) 和顶栏标题, 里面放卡片;
+                 再到首页「目录」里复制一个目录卡片, href 填 "#/xxx"。
+  4. 换颜色 ──── 全局颜色 / 圆角在 assets/style.css 顶部的「设计变量」区。
+                 图标是单色系统风格 (浅色模式黑 / 深色模式白), 无底色,
+                 颜色跟随 --icon 自动切换, 不需要逐行设置。
+  5. 换图标 ──── 顶部应用图标是 assets/app-icon.png, 直接替换图片文件。
+                 列表里的图标是单色实心 SVG, 换新图标去
+                 https://fonts.google.com/icons 选 Filled 风格复制路径即可。
+  ════════════════════════════════════════════════════════════════
+-->
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>玩转应用</title>
+  <link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+  <!-- ═══════════════════════════════════════════════════
+       首页视图 (view-home): 顶部大标题 + 目录
+       ═══════════════════════════════════════════════════ -->
+  <section class="view active" id="view-home">
+    <main class="page">
+
+      <!-- 顶部区 (hero 组件): 渐变背景铺在 body 上, 这里只放图标和标题 -->
+      <header class="hero">
+        <img class="hero-icon" src="assets/app-icon.png" alt="应用图标">
+        <h1 class="hero-title">玩转应用</h1>
+        <p class="hero-sub">学会这些小技巧，让 Guncat Work 更好用</p>
+      </header>
+
+      <!-- 目录面板: href="#/xxx" 对应一个 view-xxx 子页 -->
+      <nav class="toc">
+        <div class="toc-header">目录</div>
+
+        <!-- 目录项: Guncat Work -->
+        <a class="card" href="#/001">
+          <div class="card-icon">
+            <svg viewBox="0 0 24 24"><path d="M20 9V7c0-1.1-.9-2-2-2h-3c0-1.66-1.34-3-3-3S9 3.34 9 5H6c-1.1 0-2 .9-2 2v2c-1.66 0-3 1.34-3 3s1.34 3 3 3v4c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2v-4c1.66 0 3-1.34 3-3s-1.34-3-3-3zM7.5 11.5c0-.83.67-1.5 1.5-1.5s1.5.67 1.5 1.5S9.83 13 9 13s-1.5-.67-1.5-1.5zM16 17H8v-2h8v2zm-1-4c-.83 0-1.5-.67-1.5-1.5S14.17 10 15 10s1.5.67 1.5 1.5S15.83 13 15 13z"/></svg>
+          </div>
+          <div class="card-body">
+            <div class="card-title">了解 Guncat Work</div>
+            <div class="card-text">了解 Guncat Work 不同模式的能力，以及擅长完成什么不同类型的任务。</div>
+          </div>
+          <div class="card-arrow"><svg viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg></div>
+        </a>
+
+        <!-- 目录项: 基础功能 -->
+        <a class="card" href="#/002">
+          <div class="card-icon">
+            <svg viewBox="0 0 24 24"><path d="M3 17v2h6v-2H3zM3 5v2h10V5H3zm10 16v-2h8v-2h-8v-2h-2v6h2zM7 9v2H3v2h4v2h2V9H7zm14 4v-2H11v2h10zm-6-4h2V7h4V5h-4V3h-2v6z"/></svg>
+          </div>
+          <div class="card-body">
+            <div class="card-title">基础功能</div>
+            <div class="card-text">了解 Guncat Work 基本操作，例如经常被忽略的，使用深度思考、联网搜索、新建对话等功能的必要性。</div>
+          </div>
+          <div class="card-arrow"><svg viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg></div>
+        </a>
+
+        <!-- 目录项: 进阶功能 -->
+        <a class="card" href="#/003">
+          <div class="card-icon">
+            <svg viewBox="0 0 24 24"><path d="M9.19 6.35c-2.04 2.29-3.44 5.58-3.57 5.89L2 10.69l4.05-4.05c.47-.47 1.15-.68 1.81-.55l1.33.26zM11.17 17s3.74-1.55 5.89-3.7c5.4-5.4 4.5-9.62 4.21-10.57-.95-.3-5.17-1.19-10.57 4.21C8.55 9.09 7 12.83 7 12.83L11.17 17zm6.48-2.19c-2.29 2.04-5.58 3.44-5.89 3.57L13.31 22l4.05-4.05c.47-.47.68-1.15.55-1.81l-.26-1.33zM9 18c0 .83-.34 1.58-.88 2.12C6.94 21.3 2 22 2 22s.7-4.94 1.88-6.12A2.996 2.996 0 0 1 9 18zm4-9c0-1.1.9-2 2-2s2 .9 2 2-.9 2-2 2-2-.9-2-2z"/></svg>
+          </div>
+          <div class="card-body">
+            <div class="card-title">进阶功能</div>
+            <div class="card-text">导出 Word、自由复制、系统分享、后台工作……这些进阶功能千万不能不知道！</div>
+          </div>
+          <div class="card-arrow"><svg viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg></div>
+        </a>
+
+        <!-- 目录项: 实用技巧 -->
+        <a class="card" href="#/004">
+          <div class="card-icon">
+            <svg viewBox="0 0 24 24"><path d="M11 21h-1l1-7H7.5c-.58 0-.57-.32-.38-.66.19-.34.05-.08.07-.12C8.48 10.94 10.42 7.54 13 3h1l-1 7h3.5c.49 0 .56.33.47.51l-.07.15C12.96 17.55 11 21 11 21z"/></svg>
+          </div>
+          <div class="card-body">
+            <div class="card-title">快速上手</div>
+            <div class="card-text">快速掌握 Guncat Work 的高效使用技巧，一举成为 Agent 专业用户。</div>
+          </div>
+          <div class="card-arrow"><svg viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg></div>
+        </a>
+      </nav>
+
+      <p class="footer">Guncat Work · 让效率触手可及</p>
+
+    </main>
+  </section>
+
+  <!-- ═══════════════════════════════════════════════════
+       子页 001 · Guncat Work
+       ═══════════════════════════════════════════════════ -->
+  <section class="view" id="view-001">
+    <main class="page">
+
+      <!-- 子页顶栏 (pagebar 组件): 返回按钮 + 页名 -->
+      <div class="pagebar">
+        <a class="back" href="#/" aria-label="返回目录">
+          <svg viewBox="0 0 24 24"><path d="m15 6-6 6 6 6"/></svg>
+        </a>
+        <div class="pagebar-title">Guncat Work</div>
+      </div>
+
+      <!-- 顶部图片轮播: 一张 <img> 对应下面一张介绍卡, 顺序一一对应 -->
+      <div class="gallery">
+        <div class="gallery-track">
+          <img src="assets/001-1.png" alt="了解 Guncat Work">
+          <img src="assets/001-2.png" alt="聊天引擎">
+          <img src="assets/001-3.png" alt="Agent引擎(工作模式)">
+          <img src="assets/001-4.png" alt="插件">
+        </div>
+        <div class="gallery-dots"></div>
+      </div>
+
+      <!-- 与轮播联动的介绍卡: 第 N 张图对应第 N 张卡, 只显示当前那张 -->
+      <div class="gallery-cards">
+        <div class="card card-prose">
+        <div class="card-body">
+          <div class="card-title">关于 Guncat Work</div>
+          <div class="card-text">Guncat Work 是整合多项前沿技术打造的新一代智能体平台，旗下包含多款定位各异、能力独立的智能体：</div>
+          <div class="card-text">① 轻量化掌上工作台，拥有数十种工具集与多轮任务执行能力；② 单体超级智能体，面向通用会话；③ 对话智能体，主打日常闲聊交互；⑤ 反幻觉智能体，依托 RAR 架构；⑥ 专家智能体，覆盖通用问答、资料检索、文本改写、法律服务、模型评测等垂直场景。</div>
+          <div class="card-text">适配网页端、安卓端、鸿蒙手机、鸿蒙PC等多端，为用户提供便捷的智能体服务。</div>
+        </div>
+      </div>
+
+      <!-- 聊天引擎 -->
+      <div class="card">
+        <div class="card-body">
+          <div class="card-title">聊天引擎</div>
+          <div class="card-text">聊天引擎对话体验和豆包类似：提出问题→给出回答。共包含4个通用对话智能体和5个专家智能体，交付速度快、效率高，不适宜执行复杂长程任务。</div>
+        </div>
+      </div>
+
+      <!-- Agent引擎（工作模式） -->
+      <div class="card">
+        <div class="card-body">
+          <div class="card-title">Agent引擎（工作模式）</div>
+          <div class="card-text">Agent引擎（工作模式）的使用体验和专业编程智能体相近：布置任务→交付结果。它能调用几十种工具，进行多轮校验反思。不用你一步步指挥，就能处理文件、搜集资料、做调研、分析数据、写长文，搞定整套复杂的长线工作，但工作时长较长。</div>
+        </div>
+      </div>
+
+      <!-- 表格识别 -->
+      <div class="card">
+        <div class="card-body">
+          <div class="card-title">插件</div>
+          <div class="card-text">插件是Guncat Work面向特定任务开发的嵌入式独立功能，目前支持表格识别插件。关于表格识别插件的使用，请参考表格识别一节的说明。</div>
+        </div>
+      </div>
+      
+    </div>
+
+    </main>
+  </section>
+
+  <!-- ═══════════════════════════════════════════════════
+       子页 002 · 基础功能
+       ═══════════════════════════════════════════════════ -->
+  <section class="view" id="view-002">
+    <main class="page">
+
+      <div class="pagebar">
+        <a class="back" href="#/" aria-label="返回目录">
+          <svg viewBox="0 0 24 24"><path d="m15 6-6 6 6 6"/></svg>
+        </a>
+        <div class="pagebar-title">基础功能</div>
+      </div>
+
+      <!-- 顶部图片轮播: 一张 <img> 对应下面一张介绍卡, 顺序一一对应 -->
+      <div class="gallery">
+        <div class="gallery-track">
+          <img src="assets/002-1.png" alt="开启和关闭深度思考（聊天引擎）">
+          <img src="assets/002-2.png" alt="手动控制思考强度（工作模式）">
+          <img src="assets/002-3.png" alt="联网搜索：建议开启">
+          <img src="assets/002-4.png" alt="图片与附件：不同引擎不同要求">
+          <img src="assets/002-5.png" alt="语音输入：自动入框，离线也能用">
+          <img src="assets/002-6.png" alt="朗读功能：支持后台播放">
+        </div>
+        <div class="gallery-dots"></div>
+      </div>
+
+      <!-- 与轮播联动的介绍卡: 第 N 张图对应第 N 张卡, 只显示当前那张 -->
+      <div class="gallery-cards">
+        <div class="card">
+          <div class="card-body">
+            <div class="card-title">开启和关闭深度思考（聊天引擎）</div>
+            <div class="card-text">聊天引擎中的三种通用智能体可自动管理深度思考能力：轻简模式与效率模式自动关闭，专家模式则自动开启。其他智能体不支持自动开关深度思考。</div>
+            <div class="card-text">开启深度思考更擅长应对高复杂度问题，处理数学计算、文稿撰写、资料调研、数据分析等任务时，以及使用垂直专家智能体时，建议启用该能力。</div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-body">
+            <div class="card-title">手动控制思考强度（工作模式）</div>
+            <div class="card-text">工作模式的深度思考强制开启，提供更细化的思考档位：极高（Max）、均衡（High）、快速（Low）。在模型选择按钮处可切换不同的思考强度档位。</div>
+            <div class="card-text">选择极高档位可获得极致的交付质量，但交付时间较长。选择快速档位可获得快速的交付时间，但交付质量会下降。</div>
+          </div>
+        </div>
+
+      <!-- 功能: 联网搜索 -->
+      <div class="card">
+        <div class="card-body">
+          <div class="card-title">联网搜索：建议开启</div>
+          <div class="card-text">联网搜索默认开启，建议不要手动关闭。关闭联网搜索后，模型无法获取实时网络信息，回答仅依赖过时的知识库。</div>
+          <div class="card-text">联网搜索不属于本地工具，可用能力取决于对接的 API 平台，部分平台不支持该功能就会调用报错。</div>
+          <div class="card-text">DeepSeek 、火山方舟等不少 API 平台在使用 OpenAI‑Completions 协议时可能报错，接入联网搜索更推荐选用 OpenAI‑Responses 或 Anthropic‑Messages 协议。</div>
+        </div>
+      </div>
+
+      <!-- 功能: 图片与附件 -->
+      <div class="card">
+        <div class="card-body">
+          <div class="card-title">图片与附件：不同引擎不同要求</div>
+          <div class="card-text">点击拍照按钮可拍照上传照片，点击文件按钮可上传本地图片和文件。工作模式还可在工作区面板上传文件。</div>
+          <div class="card-text">对于聊天引擎，由于大多数模型不具备直接理解文件的能力，建议只上传图片，若上传文件模型可能报错。</div>
+          <div class="card-text">对于工作模式，上传的文件会被保存到工作区沙箱，模型可调用工具对文件进行读写操作，你可以自由上传图片、PDF 或 Office 文档等任意文件。</div>
+          <div class="card-text">请确保你使用的模型为多模态模型，如Deepseek-V4-Flash-Vision-Exp，而非Deepseek-V4-Flash，否则模型无法理解图片内容。</div>
+        </div>
+      </div>
+
+      <!-- 功能: 语音输入 -->
+      <div class="card">
+        <div class="card-body">
+          <div class="card-title">语音输入：自动入框，离线也能用</div>
+          <div class="card-text">点击麦克风说话，识别结果直接进入输入框，确认后即可发送，动口不动手。</div>
+          <div class="card-text">支持离线语音输入，网络不佳也能清晰识别。</div>
+        </div>
+      </div>
+
+      <!-- 功能: 朗读功能 -->
+      <div class="card">
+        <div class="card-body">
+          <div class="card-title">朗读功能：支持后台播放</div>
+          <div class="card-text">开启右上角自动朗读按钮后，回答会自动朗读，方便用户阅读和理解。</div>
+          <div class="card-text">每条消息末尾还有手动朗读按钮，点击后可朗读单条消息。</div>
+          <div class="card-text">支持自定义朗读速度（默认1.5倍）和音色，支持后台播放，用户可退出至后台或关闭屏幕继续收听朗读内容。</div>
+        </div>
+      </div>
+
+
+      </div>
+
+    </main>
+  </section>
+
+  <!-- ═══════════════════════════════════════════════════
+       子页 003 · 进阶功能
+       ═══════════════════════════════════════════════════ -->
+  <section class="view" id="view-003">
+    <main class="page">
+
+      <div class="pagebar">
+        <a class="back" href="#/" aria-label="返回目录">
+          <svg viewBox="0 0 24 24"><path d="m15 6-6 6 6 6"/></svg>
+        </a>
+        <div class="pagebar-title">进阶功能</div>
+      </div>
+
+      <!-- 顶部图片轮播: 一张 <img> 对应下面一张介绍卡, 顺序一一对应 -->
+      <div class="gallery">
+        <div class="gallery-track">
+          <img src="assets/003-1.png" alt="新功能-全局自由复制">
+          <img src="assets/003-2.png" alt="复制纯文本和MD格式">
+          <img src="assets/003-3.png" alt="输入消息便捷回填">
+          <img src="assets/003-4.png" alt="一键导出 Word">
+          <img src="assets/003-5.png" alt="接收系统分享">
+          <img src="assets/003-6.png" alt="太方便了！长程任务后台可继续工作">
+        </div>
+        <div class="gallery-dots"></div>
+      </div>
+
+      <!-- 与轮播联动的介绍卡: 第 N 张图对应第 N 张卡, 只显示当前那张 -->
+      <div class="gallery-cards">
+        
+        <!-- 功能: 新功能-全局自由复制 -->
+        <div class="card">
+          <div class="card-body">
+            <div class="card-title">新功能-全局自由复制</div>
+            <div class="card-text">现在，所有回答文本都能直接自由复制了，无需再手动点击复制局部按钮，想复制哪里就复制哪里，随心所欲更方便！</div>
+          </div>
+        </div>
+
+        <!-- 功能: 复制纯文本和MD格式 -->
+        <div class="card">
+          <div class="card-body">
+            <div class="card-title">复制全文：纯文本和MD格式都可复制</div>
+            <div class="card-text">在回答下方点击文本按钮，一键复制纯文本，自动去除AI生成的*、#等符号，免去二次调整的麻烦；</div>
+            <div class="card-text">在回答下方点击MD按钮，一键复制Markdown格式，需要代码块、表格、列表等专业格式也可原样保留。</div>
+          </div>
+        </div>
+        
+        <!-- 功能: 输入消息便捷回填 -->
+        <div class="card">
+          <div class="card-body">
+            <div class="card-title">输入消息便捷回填</div>
+            <div class="card-text">点击输入气泡下方编辑按钮，上一条消息自动回填至输入框，补充和修改从未如此简单。</div>
+            <div class="card-text">点击复制按钮，也可复制当前输入框内容。</div>
+          </div>
+        </div>
+
+        <!-- 功能: 一键导出 Word -->
+        <div class="card">
+          <div class="card-body">
+            <div class="card-title">一键导出 Word</div>
+            <div class="card-text">在回答下方点击 Word 按钮，长回答秒变排版精良的Word文档，标题、加粗、斜体、表格、公式、代码块原样保留，无需手动复制。</div>
+          </div>
+        </div>
+
+      <!-- 功能: 接收系统分享 -->
+      <div class="card">
+        <div class="card-body">
+          <div class="card-title">接收系统分享</div>
+          <div class="card-text">在图库或文件管理器选中照片或文件，点击系统分享，选择 Guncat Work，即加入当前对话的待发送附件区。</div>
+          <div class="card-text">若没有看到Guncat Work，请在系统分享中向右找到“全部”选项，将 Guncat Work 添加到分享列表中。</div>
+          <div class="card-text">分享完成后，可新建对话或切换至其他智能体进行发送，文件暂存区不发送就不丢失。</div>
+        </div>
+      </div>
+
+      <!-- 功能: 太方便了！长程任务后台可继续工作 -->
+      <div class="card">
+        <div class="card-body">
+          <div class="card-title">太方便了！长程任务后台可继续工作</div>
+          <div class="card-text">工作模式下，退出应用后台、熄屏等，智能体会继续在后台工作，任务不会被打断，你可以自由刷视频、看新闻，等待时间也不无聊！</div>
+        </div>
+      </div>
+
+    </main>
+  </section>
+
+  <!-- ═══════════════════════════════════════════════════
+       子页 · 快速上手
+       ═══════════════════════════════════════════════════ -->
+  <section class="view" id="view-004">
+    <main class="page">
+
+      <div class="pagebar">
+        <a class="back" href="#/" aria-label="返回目录">
+          <svg viewBox="0 0 24 24"><path d="m15 6-6 6 6 6"/></svg>
+        </a>
+        <div class="pagebar-title">快速上手</div>
+      </div>
+
+      <!-- 顶部图片轮播: 一张 <img> 对应下面一张介绍卡, 顺序一一对应 -->
+      <div class="gallery">
+        <div class="gallery-track">
+          <img src="assets/004-1.png" alt="日常对话聊天：选择轻简模式">
+          <img src="assets/004-2.png" alt="轻任务求解：效率模式或专家模式">
+          <img src="assets/004-3.png" alt="长程任务交付：工作模式">
+          <img src="assets/004-4.png" alt="四大专业领域：垂直专家智能体">
+        </div>
+        <div class="gallery-dots"></div>
+      </div>
+
+      <!-- 与轮播联动的介绍卡: 第 N 张图对应第 N 张卡, 只显示当前那张 -->
+      <div class="gallery-cards">
+        
+        <div class="card">
+          <div class="card-body">
+            <div class="card-title">日常对话聊天：轻简模式</div>
+            <div class="card-text">猪更聪明还是猫更聪明？椰子树有多高？面包放多久会变质？月亮为什么会跟着人走？</div>
+            <div class="card-text">这类问题不需要复杂工具调用与深度推理，轻简模式优先给出快速高效、通俗易懂的生活化回答，满足碎片化闲聊与小科普需求。</div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-body">
+            <div class="card-title">轻任务求解：效率模式或专家模式</div>
+            <div class="card-text">效率模式、专家模式相比轻简模式，回答更详细、更全面、更准确。面对同一个问题时，它会补充关键背景信息、原理说明与实用细节，逻辑完整，论据清晰。适合需要获取完整信息、做简单参考的场景，适度调用必要能力保证回答严谨充实，兼顾信息深度与回复效率。</div>
+            <div class="card-text">其中，效率模式默认不开启深度思考，回答更快速。专家模式默认开启深度思考，回答质量更高。专家模式还包括了四大垂直领域专家智能体，擅长解决专业问题。</div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-body">
+            <div class="card-title">长程任务交付：工作模式</div>
+            <div class="card-text">- 请结合参考资料①②，为我生成心得体会。</div>
+            <div class="card-text">- 请根据根据这些电脑的价格截图，为我判断哪一款性价比最高。</div>
+            <div class="card-text">- 请结合现有法律法规和标准体系，为我创作关于人工智能合规性审查的调研报告和对应的PPT。</div>
+            <div class="card-text">- 请为我做一个从峨眉坐火车到青海五天四晚游的行程攻略。</div>
+            <div class="card-text">这些任务需要涉及到多样的参考资料，或是多步骤拆解、分段执行的复杂目标，依靠单次简短对话完成无法实现理想的效果。工作模式下将自主梳理任务流程、分阶段完成信息整理、对比分析与内容创作，持续推进直至交付一份结构完整、结果可用的成品方案。适合报告撰写、方案规划、对比研判等具备完整交付目标的工作场景。</div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-body">
+            <div class="card-title">四大专业领域：垂直专家智能体</div>
+            <div class="card-text">转换专家-论文 专用于将非论文问题转换为符合学术规范的论文格式；</div>
+            <div class="card-text">检索专家-法律 通过多轮检索给出国企法律知识结构化权威分析；</div>
+            <div class="card-text">检索专家-筛滤 通过RAR反幻觉推理结构，精准过滤搜索结果中的虚假信息与AI信息，提供真实可信的知识；</div>
+            <div class="card-text">检索专家-研究 通过多轮推理与跨领域交叉验证，研究无法直接通过搜索得出的疑难知识。</div>
+            <div class="card-text">这四大专家的能力已经包含在专家模式中，但单独选择使用时，会获得更专业的回答。</div>
+          </div>
+        </div>
+
+      
+      </div>
+
+    </main>
+  </section>
+
+  <!-- 多页路由: 目录 href="#/xxx" ↔ 显示 id="view-xxx"; 空路由或未知路由 = 首页 (无需维护) -->
+  <script>
+    (function () {
+      function route() {
+        var id = (location.hash || '').replace(/^#\/?/, '');
+        var view = document.getElementById('view-' + id);
+        if (!view) view = document.getElementById('view-home');
+        document.querySelectorAll('.view').forEach(function (v) {
+          v.classList.toggle('active', v === view);
+        });
+        window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+      }
+      window.addEventListener('hashchange', route);
+      route();
+    })();
+  </script>
+
+  <!-- 顶部轮播: 手指左右滑动切换, 圆点 + 第 N 张图联动第 N 张介绍卡 (无需维护) -->
+  <script>
+    document.querySelectorAll('.gallery').forEach(function (g) {
+      var track = g.querySelector('.gallery-track');
+      var dotsBox = g.querySelector('.gallery-dots');
+      var cardsBox = g.parentNode.querySelector('.gallery-cards');
+      var imgs = track ? Array.prototype.slice.call(track.children) : [];
+      if (imgs.length === 0 || !track) return;
+
+      // 圆点
+      imgs.forEach(function (_, i) {
+        var d = document.createElement('span');
+        if (i === 0) d.classList.add('on');
+        if (dotsBox) dotsBox.appendChild(d);
+      });
+      var dotEls = dotsBox ? Array.prototype.slice.call(dotsBox.children) : [];
+
+      // 联动介绍卡 (第 N 张图 ↔ 第 N 张卡)
+      var cards = cardsBox ? Array.prototype.slice.call(cardsBox.children) : [];
+
+      function index() {
+        // 找出中心点离视口中心最近的那张图 (兼容每张宽度不同)
+        var viewCenter = track.scrollLeft + track.clientWidth / 2;
+        var best = 0, dist = Infinity;
+        imgs.forEach(function (img, i) {
+          var d = Math.abs(img.offsetLeft + img.offsetWidth / 2 - viewCenter);
+          if (d < dist) { dist = d; best = i; }
+        });
+        return best;
+      }
+      function refresh() {
+        var i = Math.min(index(), imgs.length - 1);
+        dotEls.forEach(function (d, k) { d.classList.toggle('on', k === i); });
+        cards.forEach(function (c, k) { c.classList.toggle('on', k === i); });
+      }
+      track.addEventListener('scroll', refresh);
+      refresh();
+    });
+  </script>
+</body>
+</html>

@@ -1,14 +1,21 @@
 // WorkTurnView: 工作模式时间线中的单轮渲染(思考 → 正文 → 工具步骤)
-// 顺序即实际执行顺序: 模型每轮先思考、再输出叙述文字、最后发起工具调用(调用执行在其后),
-// 因此正文渲染在工具行之前; 相邻轮次按消息先后自然衔接成完整时间线。
-// 与 ChatBubbleView 的区别: 无头像、无气泡底色, 作为一个连续"任务时间线"的条目,
-// 由 ChatPage 在工作模式下把整个会话渲染为单容器时间线, 避免逐轮头像的多次对话观感。
-// 更新机制: 流式期间 33ms 定时器只把最新文本同步进 @State(细粒度刷新富文本),
-// 步骤列表仅在存在工具调用时低频重建, 避免整轮高频全量重渲染造成卡顿。
+// 6.1 起视觉对齐 DeepSeek Harness web UI:
+//  - 工具行采用 dsh 24px 单行规格: [16 图标] · [标题 13/24] · [2x2 分隔点] · [摘要省略] · 状态/耗时
+//  - 执行中的工具行带"流光扫过"动效(dsh ToolRow running sweep)
+//  - 展开详情为 IO 卡片(radius 12 + 代码底色 + IN/OUT 槽位标签)
+//  - edit/str_replace_editor 的 meta 渲染为 dsh DiffBlock 风格卡片(+增 -删)
+//  - todo_write 渲染为任务清单, 最终回复下附统计行(tok/s / 缓存命中 / 工具数)
 import { Message } from '../model/Message';
 import { ToolCallRecord } from '../model/ToolCallRecord';
 import { RichTextView } from './RichTextView';
 import { WorkStepFormat } from './ChatBubbleView';
+import { FileDiff } from '../common/DiffUtil';
+
+// diff 卡片行模型
+class DiffRow {
+  type: string = 'same';
+  text: string = '';
+}
 
 @Component
 export struct WorkTurnView {
@@ -24,6 +31,9 @@ export struct WorkTurnView {
   @State private stepsTick: number = 0;
   @State private visibleText: string = '';
   @State private visibleReasoning: string = '';
+  // 上一次工具行状态签名(数量/参数量/执行态): 变化才递增 stepsTick 触发行重建,
+  // 避免流式期间每 33ms 无条件重建导致 LoadingProgress 动画永远停在第一帧(观感即"卡住")
+  private lastCallsSig: string = '';
   private flushTimer: number = -1;
   // 思考跑马灯: 流式中在思考条右侧空白区滚动呈现最新思考内容
   private marqueeScroller: Scroller = new Scroller();
@@ -62,7 +72,10 @@ export struct WorkTurnView {
               });
             }, 0);
           }
-          if (this.message.toolCalls.length > 0) {
+          // 工具行状态签名变化时才重建行(转圈动画得以连续播放)
+          const sig: string = this.callsSignature();
+          if (sig !== this.lastCallsSig) {
+            this.lastCallsSig = sig;
             this.stepsTick++;
           }
         }
@@ -75,6 +88,18 @@ export struct WorkTurnView {
       clearInterval(this.flushTimer);
       this.flushTimer = -1;
     }
+  }
+
+  // 工具行状态签名: 调用数 + 每个调用的参数量/准备态/耗时/结果量, 任一变化才触发行重建
+  private callsSignature(): string {
+    let calls: ToolCallRecord[] = this.message.toolCalls;
+    let parts: string[] = [calls.length.toString()];
+    for (let i: number = 0; i < calls.length; i++) {
+      parts.push(calls[i].argsJson.length.toString() + ':' +
+        (calls[i].preparing ? 'p' : 'r') + ':' + calls[i].durationMs.toString() + ':' +
+        calls[i].result.length.toString());
+    }
+    return parts.join('|');
   }
 
   // 进行中工具行的状态文案: 有更早未完成的调用 → 排队等待;
@@ -103,7 +128,10 @@ export struct WorkTurnView {
             content: this.isStreaming ? this.visibleText : this.message.content,
             selectionTrigger: 0
           })
-          if (this.isStreaming && this.message.content !== '') {
+          // 流式光标: 仅在模型仍在输出文本(尚无工具调用)时显示;
+          // 工具执行阶段正文已停, 挂着光标反而像多出一个空行
+          if (this.isStreaming && this.message.content !== '' &&
+            this.message.toolCalls.length === 0) {
             Row() {
               Stack()
                 .width(2)
@@ -119,17 +147,108 @@ export struct WorkTurnView {
         .width('100%')
         .alignItems(HorizontalAlign.Start)
       }
-      // 工具步骤(CLI 式行内工具行, 点击展开参数与结果)
+      // 工具步骤(dsh 式行内工具行, 点击展开 IO 卡片/diff 卡片)
       if (this.message.toolCalls.length > 0) {
         this.buildSteps()
       }
-      // 操作按钮(仅最终回复, 置于轮次末尾)
+      // 统计行(dsh StatsLine): 仅最终回复且数据可用时展示
+      if (!this.isStreaming && this.isLastAssistant && this.hasStats()) {
+        this.buildStatsLine()
+      }
+      // 操作按钮(仅最终回复, 置于轮次末尾): 与聊天模式同款 图标+文字 胶囊钮
+      // Flex 自动换行: 手机窄屏放不下时折到第二行, 宽屏仍单行排列
       if (!this.isStreaming && this.message.content !== '' && this.isLastAssistant) {
         Flex({ wrap: FlexWrap.Wrap, direction: FlexDirection.Row }) {
-          this.buildChip('复制', (): void => this.onCopyPlain(this.message.id))
-          this.buildChip('复制 MD', (): void => this.onCopyMarkdown(this.message.id))
-          this.buildChip('导出 Word', (): void => this.onExportWord(this.message.id))
-          this.buildChip('重新执行', (): void => this.onRegenerate(this.message.id))
+          // 复制(纯文本)
+          Button() {
+            Row({ space: 4 }) {
+              Image($r('sys.media.ohos_ic_public_copy'))
+                .width(14)
+                .height(14)
+                .fillColor($r('app.color.text_secondary'))
+              Text('文本')
+                .fontSize(11)
+                .fontColor($r('app.color.text_secondary'))
+            }
+            .alignItems(VerticalAlign.Center)
+          }
+          .height(28)
+          .borderRadius(14)
+          .padding({ left: 10, right: 10 })
+          .backgroundColor($r('app.color.raised_surface'))
+          .shadow({ radius: 10, color: '#10000000', offsetX: 0, offsetY: 2 })
+          .margin({ right: 8, bottom: 8 })
+          .onClick(() => {
+            this.onCopyPlain(this.message.id);
+          })
+
+          // 复制 MD: 复制图标 + 大写 MD 标识
+          Button() {
+            Row({ space: 4 }) {
+              Image($r('sys.media.ohos_ic_public_copy'))
+                .width(13)
+                .height(13)
+                .fillColor($r('app.color.text_secondary'))
+              Text('MD')
+                .fontSize(11)
+                .fontWeight(FontWeight.Medium)
+                .fontColor($r('app.color.text_secondary'))
+            }
+            .alignItems(VerticalAlign.Center)
+          }
+          .height(28)
+          .borderRadius(14)
+          .padding({ left: 10, right: 10 })
+          .backgroundColor($r('app.color.raised_surface'))
+          .shadow({ radius: 10, color: '#10000000', offsetX: 0, offsetY: 2 })
+          .margin({ right: 8, bottom: 8 })
+          .onClick(() => {
+            this.onCopyMarkdown(this.message.id);
+          })
+
+          // 导出 word
+          Button() {
+            Row({ space: 4 }) {
+              SymbolGlyph($r('sys.symbol.arrow_down_to_line'))
+                .fontSize(14)
+                .fontColor([$r('app.color.text_secondary')])
+              Text('Word')
+                .fontSize(11)
+                .fontColor($r('app.color.text_secondary'))
+            }
+            .alignItems(VerticalAlign.Center)
+          }
+          .height(28)
+          .borderRadius(14)
+          .padding({ left: 10, right: 10 })
+          .backgroundColor($r('app.color.raised_surface'))
+          .shadow({ radius: 10, color: '#10000000', offsetX: 0, offsetY: 2 })
+          .margin({ right: 8, bottom: 8 })
+          .onClick(() => {
+            this.onExportWord(this.message.id);
+          })
+
+          // 重新执行(重答)
+          Button() {
+            Row({ space: 4 }) {
+              SymbolGlyph($r('sys.symbol.arrow_counterclockwise'))
+                .fontSize(14)
+                .fontColor([$r('app.color.text_secondary')])
+              Text('重答')
+                .fontSize(11)
+                .fontColor($r('app.color.text_secondary'))
+            }
+            .alignItems(VerticalAlign.Center)
+          }
+          .height(28)
+          .borderRadius(14)
+          .padding({ left: 10, right: 10 })
+          .backgroundColor($r('app.color.raised_surface'))
+          .shadow({ radius: 10, color: '#10000000', offsetX: 0, offsetY: 2 })
+          .margin({ right: 8, bottom: 8 })
+          .onClick(() => {
+            this.onRegenerate(this.message.id);
+          })
         }
         .width('100%')
         .margin({ top: 6 })
@@ -139,6 +258,46 @@ export struct WorkTurnView {
     .alignItems(HorizontalAlign.Start)
   }
 
+  private hasStats(): boolean {
+    return this.message.toolCalls.length > 0 || this.message.tokenSpeed > 0 ||
+      this.message.cacheHitRate >= 0;
+  }
+
+  @Builder
+  private buildStatsLine() {
+    Row({ space: 10 }) {
+      if (this.message.tokenSpeed > 0) {
+        Text('⌘ ' + Math.round(this.message.tokenSpeed).toString() + ' 字符/秒')
+          .fontSize(10)
+          .fontColor($r('app.color.text_tertiary'))
+      }
+      if (this.message.cacheHitRate >= 0) {
+        Text('缓存命中 ' + Math.round(this.message.cacheHitRate * 100).toString() + '%')
+          .fontSize(10)
+          .fontColor($r('app.color.text_tertiary'))
+      }
+      if (this.message.toolCalls.length > 0) {
+        Text('工具 ' + this.message.toolCalls.length.toString() + ' 项 · ' +
+          WorkStepFormat.formatDuration(this.toolTotalMs()))
+          .fontSize(10)
+          .fontColor($r('app.color.text_tertiary'))
+      }
+    }
+    .width('100%')
+    .padding({ left: 16, top: 2 })
+  }
+
+  private toolTotalMs(): number {
+    let totalMs: number = 0;
+    for (let i: number = 0; i < this.message.toolCalls.length; i++) {
+      let d: number = this.message.toolCalls[i].durationMs;
+      if (d > 0) {
+        totalMs += d;
+      }
+    }
+    return totalMs;
+  }
+
   @Builder
   private buildThinking() {
     Column() {
@@ -146,7 +305,6 @@ export struct WorkTurnView {
         SymbolGlyph($r('sys.symbol.lightbulb'))
           .fontSize(13)
           .fontColor([$r('app.color.text_secondary')])
-        // 思考完成后在标题后固定缀一段"· 持续了几秒"(占位文案, 不接真实计时)
         Text(this.isStreaming ? '思考中...' : '思考 · 持续了几秒')
           .fontSize(12)
           .fontWeight(FontWeight.Medium)
@@ -179,14 +337,12 @@ export struct WorkTurnView {
           .fontColor([$r('app.color.text_tertiary')])
       }
       .width('100%')
-      // 水平 16 边距与正文(RichTextView 内边距)对齐, 无底色卡片
       .padding({ left: 16, right: 16, top: 3, bottom: 3 })
       .onClick(() => {
         this.reasoningExpanded = !this.reasoningExpanded;
       })
 
       if (this.reasoningExpanded) {
-        // 展开正文: 外层定位到标题文字起点, 无底色
         Column() {
           Text(this.isStreaming ? this.visibleReasoning : this.message.reasoning)
             .fontSize(12)
@@ -211,97 +367,94 @@ export struct WorkTurnView {
     return tail.replace(/[\r\n\t]+/g, ' ').trim();
   }
 
-  // 工具步骤(CLI 式行内样式): [图标] 工具名 · 参数摘要, 无底色块, 右端为状态/耗时与展开箭头,
-  // 点击展开参数与结果详情(左侧细竖线挂载, 同样无底色)
+  // 工具步骤(dsh ToolRow 规格): [图标] 标题 · 摘要(省略) [状态/耗时] [箭头]
+  // 执行中带流光扫过; 点击展开 IO 卡片 / diff 卡片 / 任务清单
   @Builder
   private buildSteps() {
     Column({ space: 2 }) {
       ForEach(this.message.toolCalls, (call: ToolCallRecord) => {
         Column({ space: 2 }) {
-          Row({ space: 6 }) {
-            // 状态图标位: 完成显示工具类别图标(错误红色), 执行中转圈, 被打断则图标置灰
-            if (call.durationMs >= 0) {
-              SymbolGlyph(WorkStepFormat.iconRes(call.name))
+          Stack({ alignContent: Alignment.Start }) {
+            Row({ space: 6 }) {
+              // 状态图标位: 完成显示工具类别图标(错误红色), 执行中转圈, 被打断则图标置灰
+              if (call.durationMs >= 0) {
+                SymbolGlyph(WorkStepFormat.iconRes(call.name))
+                  .fontSize(14)
+                  .fontColor([call.isError ? $r('app.color.danger') : $r('app.color.text_secondary')])
+              } else if (this.isStreaming || call.preparing) {
+                LoadingProgress()
+                  .width(12)
+                  .height(12)
+                  .color($r('app.color.brand'))
+              } else {
+                SymbolGlyph(WorkStepFormat.iconRes(call.name))
+                  .fontSize(14)
+                  .fontColor([$r('app.color.text_tertiary')])
+              }
+              Text(WorkStepFormat.displayName(call.name))
                 .fontSize(13)
-                .fontColor([call.isError ? $r('app.color.danger') : $r('app.color.text_secondary')])
-            } else if (this.isStreaming || call.preparing) {
-              LoadingProgress()
-                .width(11)
-                .height(11)
-                .color($r('app.color.brand'))
-            } else {
-              // 非流式消息上残留的未完成调用 = 执行被打断
-              SymbolGlyph(WorkStepFormat.iconRes(call.name))
-                .fontSize(13)
+                .fontWeight(FontWeight.Normal)
+                .fontColor(call.isError && call.durationMs >= 0 ?
+                  $r('app.color.danger') : $r('app.color.text_primary'))
+              // 2x2 分隔点(dsh sep)
+              Stack()
+                .width(2)
+                .height(2)
+                .borderRadius(1)
+                .backgroundColor($r('app.color.text_quaternary'))
+              Text(call.isError && call.durationMs >= 0 ?
+                this.firstLineOf(call.result) : WorkStepFormat.summarizeArgs(call))
+                .fontSize(12)
+                .fontColor(call.isError && call.durationMs >= 0 ?
+                  $r('app.color.danger') : $r('app.color.text_tertiary'))
+                .maxLines(1)
+                .textOverflow({ overflow: TextOverflow.Ellipsis })
+                .layoutWeight(1)
+              if (call.durationMs < 0 && (this.isStreaming || call.preparing)) {
+                Text(this.stepStatusLabel(call))
+                  .fontSize(10)
+                  .fontColor($r('app.color.brand'))
+              } else if (call.durationMs < 0) {
+                Text('已中断')
+                  .fontSize(10)
+                  .fontColor($r('app.color.text_tertiary'))
+              } else if (call.isError) {
+                Text('失败')
+                  .fontSize(10)
+                  .fontColor($r('app.color.danger'))
+              } else {
+                Text(WorkStepFormat.formatDuration(call.durationMs))
+                  .fontSize(10)
+                  .fontColor($r('app.color.text_tertiary'))
+              }
+              SymbolGlyph(this.expandedStepId === call.id ?
+                $r('sys.symbol.chevron_up') : $r('sys.symbol.chevron_down'))
+                .fontSize(10)
                 .fontColor([$r('app.color.text_tertiary')])
             }
-            Text(WorkStepFormat.displayName(call.name))
-              .fontSize(12)
-              .fontWeight(FontWeight.Medium)
-              .fontColor($r('app.color.text_secondary'))
-            Text('·')
-              .fontSize(12)
-              .fontColor($r('app.color.text_tertiary'))
-            Text(WorkStepFormat.summarizeArgs(call))
-              .fontSize(11)
-              .fontColor($r('app.color.text_tertiary'))
-              .maxLines(1)
-              .textOverflow({ overflow: TextOverflow.Ellipsis })
-              .layoutWeight(1)
-            if (call.durationMs < 0 && (this.isStreaming || call.preparing)) {
-              Text(this.stepStatusLabel(call))
-                .fontSize(10)
-                .fontColor($r('app.color.brand'))
-            } else if (call.durationMs < 0) {
-              // 执行被打断
-              Text('已中断')
-                .fontSize(10)
-                .fontColor($r('app.color.text_tertiary'))
-            } else if (call.isError) {
-              Text('失败')
-                .fontSize(10)
-                .fontColor($r('app.color.danger'))
-            } else {
-              Text(WorkStepFormat.formatDuration(call.durationMs))
-                .fontSize(10)
-                .fontColor($r('app.color.text_tertiary'))
-            }
-            SymbolGlyph(this.expandedStepId === call.id ? $r('sys.symbol.chevron_up') : $r('sys.symbol.chevron_down'))
-              .fontSize(10)
-              .fontColor([$r('app.color.text_tertiary')])
+            .width('100%')
+            .padding({ left: 16, right: 16, top: 3, bottom: 3 })
+            .onClick(() => {
+              this.expandedStepId = this.expandedStepId === call.id ? '' : call.id;
+            })
           }
           .width('100%')
-          // 水平 16 边距与正文(RichTextView 内边距)对齐, 工具行宽度即正文宽度
-          .padding({ left: 16, right: 16, top: 3, bottom: 3 })
-          .onClick(() => {
-            this.expandedStepId = this.expandedStepId === call.id ? '' : call.id;
-          })
+          .borderRadius(6)
 
           if (this.expandedStepId === call.id) {
-            // 外层定位到行内文字起点(16 边距 + 图标约 20), 细竖线挂在文字下方, 详情随正文宽度收窄
             Column() {
-              Column({ space: 4 }) {
-                Text('参数')
-                  .fontSize(10)
-                  .fontColor($r('app.color.text_tertiary'))
-                Text(WorkStepFormat.capText(call.argsJson, 600))
-                  .fontSize(11)
-                  .fontColor($r('app.color.text_secondary'))
-                  .width('100%')
-                Text(call.isError ? '错误' : '结果')
-                  .fontSize(10)
-                  .fontColor($r('app.color.text_tertiary'))
-                Text(WorkStepFormat.capText(call.result === '' ? '(执行中...)' : call.result, 800))
-                  .fontSize(11)
-                  .fontColor(call.isError ? $r('app.color.danger') : $r('app.color.text_secondary'))
-                  .width('100%')
+              // todo_write → 任务清单; edit/str_replace_editor → diff 卡片; 其余 → IO 卡片
+              if (call.name === 'todo_write' && !call.isError && call.result !== '') {
+                this.buildTodoChecklist(call)
+              } else if (this.parseDiff(call) !== null) {
+                this.buildDiffCard(this.parseDiff(call) as FileDiff, call)
+              } else {
+                this.buildIoCard(call)
               }
-              .alignItems(HorizontalAlign.Start)
-              .padding({ left: 10, right: 0, top: 6, bottom: 6 })
-              .border({ width: { left: 2 }, color: { left: $r('app.color.border') } })
             }
             .width('100%')
             .padding({ left: 36, right: 16 })
+            .margin({ top: 2 })
           }
         }
         .width('100%')
@@ -311,18 +464,228 @@ export struct WorkTurnView {
     .width('100%')
   }
 
-  @Builder
-  private buildChip(label: string, onTap: () => void) {
-    Text(label)
-      .fontSize(12)
-      .fontColor($r('app.color.text_secondary'))
-      .padding({ left: 12, right: 12, top: 6, bottom: 6 })
-      .borderRadius(16)
-      .backgroundColor($r('app.color.raised_surface'))
-      .shadow({ radius: 10, color: '#10000000', offsetX: 0, offsetY: 2 })
-      .margin({ right: 8, bottom: 6 })
-      .onClick(() => {
-        onTap();
-      })
+  private firstLineOf(text: string): string {
+    let line: string = text.split('\n')[0];
+    return line.length > 80 ? line.substring(0, 80) + '…' : line;
   }
+
+  // 解析 edit 工具的 diff meta(损坏/缺失返回 null, 回退 IO 卡片)
+  private parseDiff(call: ToolCallRecord): FileDiff | null {
+    if (call.meta === '') {
+      return null;
+    }
+    try {
+      let parsed: Object = JSON.parse(call.meta);
+      if (typeof parsed === 'object' && parsed !== null) {
+        return FileDiff.fromJson(parsed as Record<string, Object>);
+      }
+    } catch (e) {
+      return null;
+    }
+    return null;
+  }
+
+  // dsh DiffBlock 卡片: 代码底色 + radius 12, - 删除 / + 新增, 底部统计
+  @Builder
+  private buildDiffCard(diff: FileDiff, call: ToolCallRecord) {
+    Column() {
+      Column() {
+        Text(call.isError ? 'ERROR' : diff.path)
+          .fontSize(12)
+          .fontWeight(FontWeight.Bold)
+          .fontColor(call.isError ? $r('app.color.danger') : $r('app.color.text_primary'))
+          .width('100%')
+          .padding({ left: 14, right: 14, top: 10, bottom: 4 })
+        Scroll() {
+          Column({ space: 1 }) {
+            ForEach(this.diffRows(diff), (row: DiffRow) => {
+              Text((row.type === 'add' ? '+ ' : row.type === 'del' ? '- ' : '  ') + row.text)
+                .fontSize(11)
+                .fontFamily('monospace')
+                .fontColor(row.type === 'add' ? $r('app.color.diff_add') :
+                  row.type === 'del' ? $r('app.color.diff_del') : $r('app.color.text_tertiary'))
+                .width('100%')
+            }, (row: DiffRow, idx: number) => idx.toString() + row.type + row.text)
+          }
+          .alignItems(HorizontalAlign.Start)
+          .width('100%')
+          .padding({ left: 14, right: 14, bottom: 10 })
+        }
+        .constraintSize({ maxHeight: 220 })
+        .scrollBar(BarState.Auto)
+      }
+      .backgroundColor($r('app.color.code_bg'))
+      .borderRadius(12)
+      .border({ width: 1, color: $r('app.color.divider') })
+      .width('100%')
+
+      Text('└ +' + diff.adds.toString() + ' -' + diff.dels.toString() +
+        (diff.truncated ? ' · 已折叠' : ''))
+        .fontSize(10)
+        .fontFamily('monospace')
+        .fontColor($r('app.color.text_tertiary'))
+        .padding({ left: 4, top: 4 })
+        .width('100%')
+    }
+    .width('100%')
+  }
+
+  private diffRows(diff: FileDiff): DiffRow[] {
+    let rows: DiffRow[] = [];
+    for (let i: number = 0; i < diff.hunks.length; i++) {
+      let lines = diff.hunks[i].lines;
+      for (let j: number = 0; j < lines.length; j++) {
+        let row: DiffRow = new DiffRow();
+        row.type = lines[j].type;
+        row.text = lines[j].text;
+        rows.push(row);
+      }
+    }
+    return rows;
+  }
+
+  // todo_write 结果 → 任务清单
+  @Builder
+  private buildTodoChecklist(call: ToolCallRecord) {
+    Column() {
+      ForEach(this.todoRows(call.result), (item: TodoRow) => {
+        Row({ space: 8 }) {
+          SymbolGlyph(item.status === 'completed' ?
+            $r('sys.symbol.checkmark_circle_fill') : $r('sys.symbol.circle'))
+            .fontSize(14)
+            .fontColor([item.status === 'completed' ? $r('app.color.success') :
+              item.status === 'in_progress' ? $r('app.color.brand') : $r('app.color.text_tertiary')])
+          Text(item.content)
+            .fontSize(12)
+            .fontColor(item.status === 'completed' ? $r('app.color.text_tertiary') :
+              $r('app.color.text_primary'))
+            .decoration({
+              type: item.status === 'completed' ? TextDecorationType.LineThrough : TextDecorationType.None
+            })
+            .layoutWeight(1)
+        }
+        .width('100%')
+        .padding({ top: 3, bottom: 3 })
+      }, (item: TodoRow) => item.idx.toString() + item.content)
+    }
+    .width('100%')
+    .padding(10)
+    .borderRadius(12)
+    .border({ width: 1, color: $r('app.color.divider') })
+    .alignItems(HorizontalAlign.Start)
+  }
+
+  private todoRows(result: string): TodoRow[] {
+    let rows: TodoRow[] = [];
+    let lines: string[] = result.split('\n');
+    let idx: number = 0;
+    for (let i: number = 0; i < lines.length; i++) {
+      let line: string = lines[i].trim();
+      let status: string = '';
+      let content: string = '';
+      if (line.indexOf('[已完成]') === 0) {
+        status = 'completed';
+        content = line.substring(5).trim();
+      } else if (line.indexOf('[进行中]') === 0) {
+        status = 'in_progress';
+        content = line.substring(5).trim();
+      } else if (line.indexOf('[待开始]') === 0) {
+        status = 'pending';
+        content = line.substring(5).trim();
+      } else if (line.indexOf('[x]') === 0 || line.indexOf('[X]') === 0) {
+        status = 'completed';
+        content = line.substring(3).trim();
+      } else if (line.indexOf('[~]') === 0) {
+        status = 'in_progress';
+        content = line.substring(3).trim();
+      } else if (line.indexOf('[ ]') === 0) {
+        status = 'pending';
+        content = line.substring(3).trim();
+      }
+      if (status !== '' && content !== '') {
+        // 去掉清单序号前缀("1. ")
+        let dot: number = content.indexOf('. ');
+        if (dot > 0 && dot <= 3) {
+          let numPart: string = content.substring(0, dot);
+          if (!isNaN(parseInt(numPart, 10))) {
+            content = content.substring(dot + 2);
+          }
+        }
+        let row: TodoRow = new TodoRow();
+        row.idx = idx++;
+        row.status = status;
+        row.content = content;
+        rows.push(row);
+      }
+    }
+    return rows;
+  }
+
+  // 通用 IO 卡片(dsh ioCard): 代码底色 radius 12, IN/OUT 槽位标签
+  // 长内容在各自槽位内滚动(dsh ioSection 同款), 绝不溢出卡片外覆盖其他内容
+  @Builder
+  private buildIoCard(call: ToolCallRecord) {
+    Column() {
+      Column() {
+        Row() {
+          Text('IN')
+            .fontSize(9)
+            .fontFamily('monospace')
+            .fontColor($r('app.color.text_tertiary'))
+            .width(28)
+          Scroll() {
+            Text(WorkStepFormat.capText(call.argsJson, 600))
+              .fontSize(11)
+              .fontColor($r('app.color.text_secondary'))
+              .width('100%')
+          }
+          .layoutWeight(1)
+          .constraintSize({ maxHeight: 120 })
+          .scrollBar(BarState.Off)
+        }
+        .alignItems(VerticalAlign.Top)
+        .width('100%')
+        .padding({ left: 14, right: 14, top: 10, bottom: 10 })
+
+        Divider()
+          .strokeWidth(1)
+          .color($r('app.color.divider'))
+
+        Row() {
+          Text(call.isError ? 'ERR' : 'OUT')
+            .fontSize(9)
+            .fontFamily('monospace')
+            .fontColor(call.isError ? $r('app.color.danger') : $r('app.color.text_tertiary'))
+            .width(28)
+          Scroll() {
+            Text(call.result === '' ? '(执行中...)' : WorkStepFormat.capText(call.result, 1200))
+              .fontSize(11)
+              .fontColor(call.isError ? $r('app.color.danger') : $r('app.color.text_secondary'))
+              .width('100%')
+          }
+          .layoutWeight(1)
+          .constraintSize({ maxHeight: 150 })
+          .scrollBar(BarState.Off)
+        }
+        .alignItems(VerticalAlign.Top)
+        .width('100%')
+        .padding({ left: 14, right: 14, top: 10, bottom: 10 })
+      }
+      .backgroundColor($r('app.color.code_bg'))
+      .borderRadius(12)
+      .border({ width: 1, color: $r('app.color.divider') })
+      .width('100%')
+      .alignItems(HorizontalAlign.Start)
+      .clip(true)
+    }
+    .width('100%')
+  }
+
+}
+
+// 任务清单行模型
+class TodoRow {
+  idx: number = 0;
+  status: string = 'pending';
+  content: string = '';
 }

@@ -372,15 +372,14 @@ A pre-built `.bat` file is included; simply click to launch the local HTTP servi
 
 This project has been fully restructured, with **agent series** and **deployment solutions** clearly separated by responsibility:
 
-| Module                                                                            | Category           | Description                                                                                                    |
-| --------------------------------------------------------------------------------- | ------------------ | -------------------------------------------------------------------------------------------------------------- |
-| [Guncat AI Release](./Guncat%20AI%20Release/)                                     | Agent + Deployment | Tencent Yuanqi, Zhipu Qingyan, and other platform-adapted prompts                                              |
-| [Guncat AI Python](./Guncat%20AI%20Python/)                                       | Agent              | Two Python code-driven projects: Guncat 2.5-Pro and Srch-Law V2                                                |
-| [Guncat AI Web for API](./Guncat%20AI%20Web%20for%20API/)                         | Deployment         | Universal prompt web client, self-configured API                                                               |
-| [Guncat AI Web for API_local-setup](./Guncat%20AI%20Web%20for%20API_local-setup/) | Deployment         | Windows one-click local launch version of the web client                                                       |
-| [GuncatAI-Web-for-API_HMOS-APP](./GuncatAI-Web-for-API_HMOS-APP/)                 | Deployment         | HarmonyOS H5 wrapper application (based on Web for API)                                                        |
-| [GuncatAI_HMOS-APP](./GuncatAI_HMOS-APP/)                                         | Deployment         | HarmonyOS native application (pure ArkTS + ArkUI)                                                              |
-| [docx](./docx/)                                                                   | Documentation      | Technical reports: Guncat 3.0 series, Guncat Eval-LLM (CN/EN), lv-markdown table rendering crash investigation |
+| Module                                                            | Category           | Description                                                                                                    |
+| ----------------------------------------------------------------- | ------------------ | -------------------------------------------------------------------------------------------------------------- |
+| [Guncat AI Release](./Guncat%20AI%20Release/)                     | Agent + Deployment | Tencent Yuanqi, Zhipu Qingyan, and other platform-adapted prompts                                              |
+| [Guncat AI Python](./Guncat%20AI%20Python/)                       | Agent              | Two Python code-driven projects: Guncat 2.5-Pro and Srch-Law V2                                                |
+| [Guncat AI Web for API](./Guncat%20AI%20Web%20for%20API/)         | Deployment         | Universal prompt web client, self-configured API                                                               |
+| [GuncatAI-Web-for-API_HMOS-APP](./GuncatAI-Web-for-API_HMOS-APP/) | Deployment         | HarmonyOS H5 wrapper application (based on Web for API)                                                        |
+| [GuncatAI_HMOS-APP](./GuncatAI_HMOS-APP/)                         | Deployment         | HarmonyOS native application (pure ArkTS + ArkUI)                                                              |
+| [docx](./docx/)                                                   | Documentation      | Technical reports: Guncat 3.0 series, Guncat Eval-LLM (CN/EN), lv-markdown table rendering crash investigation |
 
 * * *
 
@@ -431,13 +430,13 @@ Guncat 的智能体并不依赖传统的 **RAG（Retrieval-Augmented Generation�
 
 ### RAG 与 RAR 的对比
 
-| 维度      | 传统 RAG                             | Guncat RAR                        |
-| ------- | ---------------------------------- | --------------------------------- |
-| 核心流程    | 检索 → 生成                            | 规划 → 检索 → 验证 → 推理 → 自检 → 输出       |
-| 检索结果的用途 | 直接粘贴进答案                            | 经交叉验证后作为**证据**进入推理链               |
-| 信源治理    | 少有分级                               | 强制信源分级（P0–P5 / S–A–B–C–D）+ 引用前检查门 |
-| 幻觉控制    | 依赖片段质量 | 全链路防线：检索纪律 + 验证门 + 自检清单           |
-| 可追溯性    | 弱                                  | 每个引用都携带来源、时间戳与验证状态                |
+| 维度      | 传统 RAG  | Guncat RAR                        |
+| ------- | ------- | --------------------------------- |
+| 核心流程    | 检索 → 生成 | 规划 → 检索 → 验证 → 推理 → 自检 → 输出       |
+| 检索结果的用途 | 直接粘贴进答案 | 经交叉验证后作为**证据**进入推理链               |
+| 信源治理    | 少有分级    | 强制信源分级（P0–P5 / S–A–B–C–D）+ 引用前检查门 |
+| 幻觉控制    | 依赖片段质量  | 全链路防线：检索纪律 + 验证门 + 自检清单           |
+| 可追溯性    | 弱       | 每个引用都携带来源、时间戳与验证状态                |
 
 ### RAR 推理管线
 
@@ -771,15 +770,14 @@ Guncat Eval-LLM 的设计与提示词工程已开源技术报告：[技术报告
 
 本项目已完成重构，**智能体系列**与**部署方案**职责清晰分离：
 
-| 模块                                                                                | 类别       | 说明                                                           |
-| --------------------------------------------------------------------------------- | -------- | ------------------------------------------------------------ |
-| [Guncat AI Release](./Guncat%20AI%20Release/)                                     | 智能体 + 部署 | 腾讯元器、智谱清言等平台适配提示词                                            |
-| [Guncat AI Python](./Guncat%20AI%20Python/)                                       | 智能体      | Guncat 2.5-Pro 与 Srch-Law V2 两个 Python 代码驱动项目                |
-| [Guncat AI Web for API](./Guncat%20AI%20Web%20for%20API/)                         | 部署       | 通用提示词 Web 客户端，自主配置 API                                       |
-| [Guncat AI Web for API_local-setup](./Guncat%20AI%20Web%20for%20API_local-setup/) | 部署       | Web 客户端的 Windows 一键本地启动版                                     |
-| [GuncatAI-Web-for-API_HMOS-APP](./GuncatAI-Web-for-API_HMOS-APP/)                 | 部署       | 鸿蒙 H5 套壳应用（基于 Web for API）                                   |
-| [GuncatAI_HMOS-APP](./GuncatAI_HMOS-APP/)                                         | 部署       | 鸿蒙原生应用（纯 ArkTS + ArkUI）                                      |
-| [docx](./docx/)                                                                   | 技术文档     | 技术报告：Guncat 3.0 系列、Guncat Eval-LLM（中/英）、lv-markdown 表格渲染闪退排查 |
+| 模块                                                                | 类别                             | 说明                                                           |
+| ----------------------------------------------------------------- | ------------------------------ | ------------------------------------------------------------ |
+| [Guncat AI Release](./Guncat%20AI%20Release/)                     | 智能体 + 部署                       | 腾讯元器、智谱清言等平台适配提示词                                            |
+| [Guncat AI Python](./Guncat%20AI%20Python/)                       | 智能体                            | Guncat 2.5-Pro 与 Srch-Law V2 两个 Python 代码驱动项目                |
+| [Guncat AI Web for API](./Guncat%20AI%20Web%20for%20API/)         | 部署                             | 通用提示词 Web 客户端，自主配置 API                                       |
+| [GuncatAI-Web-for-API_HMOS-APP](./GuncatAI-Web-for-API_HMOS-APP/) | 部署 | 鸿蒙 H5 套壳应用（基于 Web for API）                                   |
+| [GuncatAI_HMOS-APP](./GuncatAI_HMOS-APP/)                         | 部署                             | 鸿蒙原生应用（纯 ArkTS + ArkUI）                                      |
+| [docx](./docx/)                                                   | 技术文档                           | 技术报告：Guncat 3.0 系列、Guncat Eval-LLM（中/英）、lv-markdown 表格渲染闪退排查 |
 
 ---
 

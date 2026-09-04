@@ -6,6 +6,8 @@ export struct MessageInputView {
   @Prop isStreaming: boolean = false;
   @Prop @Watch('onParsingChange') isParsing: boolean = false;
   @Prop isListening: boolean = false;
+  // 工作模式执行中允许插话(steering): 流式时同时提供 发送(插话) 与 停止 两个按钮
+  @Prop allowSteer: boolean = false;
   @Prop placeholder: string = '输入消息...';
   private onSend: (text: string) => void = (_t: string): void => {};
   private onStop: () => void = (): void => {};
@@ -158,25 +160,46 @@ export struct MessageInputView {
   @Builder
   buildSendButton() {
     if (this.isStreaming) {
-      Button() {
-        Stack() {
-          Stack()
-            .width(12)
-            .height(12)
-            .backgroundColor(Color.White)
-            .borderRadius(2)
+      Row({ space: 8 }) {
+        if (this.allowSteer) {
+          // 插话发送: 任务执行中把输入内容作为"用户补充"注入下一步
+          Button() {
+            SymbolGlyph($r('sys.symbol.paperplane'))
+              .fontSize(18)
+              .fontColor([Color.White])
+          }
+          .width(42)
+          .height(42)
+          .borderRadius(21)
+          .backgroundColor((this.inputText.trim() !== '') ?
+            $r('app.color.brand') : $r('app.color.text_tertiary'))
+          .onClick(() => {
+            if (this.inputText.trim() === '') {
+              return;
+            }
+            this.onSend(this.inputText);
+            this.inputText = '';
+          })
         }
-        .width(20)
-        .height(20)
+        Button() {
+          Stack() {
+            Stack()
+              .width(12)
+              .height(12)
+              .backgroundColor(Color.White)
+              .borderRadius(2)
+          }
+          .width(20)
+          .height(20)
+        }
+        .width(42)
+        .height(42)
+        .borderRadius(21)
+        .backgroundColor($r('app.color.stop_btn'))
+        .onClick(() => {
+          this.onStop();
+        })
       }
-      .width(42)
-      .height(42)
-      .borderRadius(21)
-      .backgroundColor($r('app.color.stop_btn'))
-      .margin({ left: 8 })
-      .onClick(() => {
-        this.onStop();
-      })
     } else {
       Button() {
         SymbolGlyph($r('sys.symbol.paperplane'))

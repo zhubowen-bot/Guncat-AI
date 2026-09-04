@@ -3,20 +3,25 @@ import { ChatBubbleView } from '../views/ChatBubbleView';
 import { MessageInputView } from '../views/MessageInputView';
 import { ToggleSwitch } from '../components/ToggleSwitch';
 import { AgentDrawerView } from '../views/AgentDrawerView';
+import { DswSidebar } from '../views/DswSidebar';
+import { AskUserCard } from '../views/AskUserCard';
 import { FlyInLaunchView } from '../views/FlyInLaunchView';
 import { ToastView } from '../views/ToastView';
 import { ImageLightbox } from '../views/ImageLightbox';
 import { SettingsPanel } from '../views/SettingsPanel';
-import { AboutPanel } from '../views/AboutPanel';
-import { WorkspaceBar } from '../views/WorkspaceBar';
+import { PlayGuidePanel } from '../views/PlayGuidePanel';
+import { WorkspaceBar, WorkspaceFileIcons } from '../views/WorkspaceBar';
 import { WorkTurnView } from '../views/WorkTurnView';
 import { Message } from '../model/Message';
 import { Agent } from '../model/Agent';
 import { Conversation } from '../model/Conversation';
+import { ConversationListItem } from '../model/ConversationListItem';
 import { ApiConfig } from '../model/ApiConfig';
 import { MultimodalConfig } from '../model/MultimodalConfig';
 import { ApiProfile } from '../model/ApiProfile';
 import { FileItem, PreviewData } from '../common/Types';
+import { WorkFileService, WorkspaceFileInfo } from '../service/WorkFileService';
+import { GoalService, GoalItem } from '../service/GoalService';
 import { generateMessageId } from '../common/Utils';
 import { VoiceInputService } from '../service/VoiceInputService';
 import {
@@ -30,6 +35,17 @@ import { window } from '@kit.ArkUI';
 import { BusinessError } from '@kit.BasicServicesKit';
 import { DocxExporter } from '../export/DocxExporter';
 
+// 详情面板统计快照(仅 ChatPage 内部使用): rebuildWorkStats 每次整体重建后赋值,
+// 面板统计区只依赖这一个顶层状态 —— 顶层 @State 整体重赋值是与文件预览条 previewItems
+// 相同的已验证刷新通道, 避免统计文本因零散属性/getter 缺少观察通道而冻结
+class WorkPanelStats {
+  elapsedSec: number = 0;
+  speedText: string = '—';
+  cacheText: string = '—';
+  toolCalls: number = 0;
+  goalText: string = '';
+}
+
 @Entry
 @Component
 struct ChatPage {
@@ -39,7 +55,45 @@ struct ChatPage {
   @State private inputText: string = '';
   @State private drawerOpen: boolean = false;
   @State private settingsOpen: boolean = false;
-  @State private aboutOpen: boolean = false;
+  @State private playGuideOpen: boolean = false;
+  // ===== 桌面宽屏三栏布局(对齐 dsh AppFrame): 侧栏 | 会话 | 详情 =====
+  @State private isWide: boolean = false;
+  @State private sidebarCollapsed: boolean = false;
+  @State private detailsOpen: boolean = false;
+  // 宽屏下详情面板只自动打开一次, 之后尊重用户手动开合
+  private detailsAutoOpened: boolean = false;
+  // 会话列表轻量投影(传给侧栏/抽屉, 避免 @Prop 深拷贝全部消息)
+  @State private convListItems: ConversationListItem[] = [];
+  // 工作模式计时计数(流式期间每 3 秒兜底刷新一次工作区面板)
+  private workTickCounter: number = 0;
+  // 页面根 Stack 相对窗口的偏移(状态栏等安全区): 全局坐标 → 页面坐标换算用
+  private rootOffsetX: number = 0;
+  private rootOffsetY: number = 0;
+  // 空状态锚点最近一次上报的窗口全局坐标(-1 表示尚未布局)
+  private anchorGlobalX: number = -1;
+  private anchorGlobalY: number = -1;
+
+  // 用最新偏移重算英雄图标落点: 根布局与锚点的 onAreaChange 触发顺序不保证,
+  // 双方都只存值并调用本方法, 任何一侧后到都能得到正确结果(最大化/还原后自动纠正)。
+  // 启动动画已结束时图标常驻空状态, 直接平滑跟随新落点(否则位置停在旧窗口坐标)。
+  private recomputeHeroTarget(): void {
+    if (this.anchorGlobalX < 0 || this.anchorGlobalY < 0) {
+      return;
+    }
+    this.heroTargetX = this.anchorGlobalX - this.rootOffsetX;
+    this.heroTargetY = this.anchorGlobalY - this.rootOffsetY;
+    this.heroTargetSize = 96;
+    if (!this.launchVisible) {
+      animateTo({
+        duration: 200,
+        curve: Curve.EaseOut
+      }, () => {
+        this.heroX = this.heroTargetX;
+        this.heroY = this.heroTargetY;
+        this.heroSize = this.heroTargetSize;
+      });
+    }
+  }
   @State private launchVisible: boolean = true;
   @State private inputAreaVisible: boolean = false;
   // 单一“hero 图标”节点：不依赖共享元素转场，避免交叉淡化导致的发白闪烁
@@ -60,6 +114,8 @@ struct ChatPage {
   @State private toastVisible: boolean = false;
   @State private isListening: boolean = false;
   @State private refreshTick: number = 0;
+  // 详情面板统计快照: rebuildWorkStats 整体重建后赋值, 统计区只读这份快照
+  @State private workStats: WorkPanelStats = new WorkPanelStats();
   // 工作模式工作区弹层开关(挂在"工作模式"胶囊上方)
   @State private workspacePopupOpen: boolean = false;
   // 模型选择弹层开关(挂在输入区左下角模型胶囊上方)
@@ -121,16 +177,20 @@ struct ChatPage {
         this.vm.workElapsedSec = 0;
       }
       this.rebuildPreviewItems();
+      // 详情面板统计快照随 VM 状态变化重建(工具结果/流式统计到达后立刻反映)
+      this.rebuildWorkStats();
+      // 侧栏/抽屉的会话列表轻量投影(新增/删除/改名后同步)
+      this.convListItems = this.vm.getConversationListItems();
       this.refreshTick++;
-      // 每次 VM 状态变化触发置底 (对齐 web 版本自动滚动); 用户触摸时跳过, 松手后恢复
-      setTimeout(() => {
-        if (!this.userScrolling) {
-          this.messageScroller.scrollTo({ xOffset: 0, yOffset: 999999, animation: { duration: 0 } });
-        }
-      }, 0);
+      // 仅流式期间跟随置底(流式中的常态跟随由 100ms 定时器负责)。空闲期的周期性状态变化
+      // (如每 3 秒的工作区刷新)绝不能拉底, 否则用户上翻阅读时每隔几秒被突然拽回底部
+      if (this.vm.isStreaming && !this.userScrolling) {
+        this.scrollToBottomDelayed();
+      }
     });
     this.vm.init().then(() => {
       this.refreshTick++;
+      this.convListItems = this.vm.getConversationListItems();
       this.consumeSharedFiles();
       setTimeout(() => {
         if (!this.userScrolling) {
@@ -149,6 +209,21 @@ struct ChatPage {
       }
       if (this.vm.isStreaming) {
         this.vm.workElapsedSec++;
+      }
+      // Guncat Work 6.1: 定时提醒推进 + ask_user 待答同步(秒级轮询足够)
+      this.vm.tickSchedules();
+      this.vm.syncPendingAsk();
+      // 每 3 秒兜底刷新工作区文件列表: 流式期间始终刷新(工具结果已有即时刷新, 这里覆盖其余变化);
+      // 非流式但工作区面板/弹层可见时也刷新, 覆盖定时任务等后台写入
+      this.workTickCounter++;
+      if (this.vm.workMode && this.workTickCounter % 3 === 0 &&
+        (this.vm.isStreaming || this.detailsOpen || this.workspacePopupOpen)) {
+        this.vm.refreshWorkspace();
+      }
+      // 详情面板统计快照每秒重建: 顶层 @State 整体重赋值驱动统计区逐秒刷新
+      // (任务用时逐秒走字, 流式速度/缓存命中随最新消息更新)
+      if (this.vm.workMode && this.detailsOpen) {
+        this.rebuildWorkStats();
       }
     }, 1000);
     // 流式期间每 100ms 置底一次 (revealedCount 在 ChatBubbleView 内部定时推进,
@@ -271,8 +346,78 @@ struct ChatPage {
     }, 1000);
   }
 
+  // 滚动到消息底部(延迟到布局更新后执行)。
+  // 仅在用户主动动作后调用: 发送消息 / 切换·新建会话; 空闲期状态变化一律不动滚动位置
+  private scrollToBottomDelayed(): void {
+    setTimeout((): void => {
+      this.messageScroller.scrollTo({ xOffset: 0, yOffset: 999999, animation: { duration: 0 } });
+    }, 100);
+  }
+
+  // 把某条消息内容原样填回输入框(用户消息下方的"重新编辑"入口, 对齐主流 Agent)
+  private fillInputFromMessage(msg: Message): void {
+    this.inputText = msg.displayContent !== '' ? msg.displayContent : msg.content;
+    this.showToast('已填入输入框');
+  }
+
   build() {
     Stack() {
+      // 三栏框架(对齐 dsh AppFrame): 左侧栏 | 会话列 | 右详情列; 窄屏时只有会话列
+      Row() {
+        if (this.isWide) {
+          DswSidebar({
+            agents: this.vm.agents,
+            conversations: this.convListItems,
+            currentAgentId: this.vm.currentAgent !== null ? this.vm.currentAgent.id : '',
+            currentConversationId: this.vm.currentConversationId,
+            collapsed: this.sidebarCollapsed,
+            onToggleCollapse: () => {
+              this.sidebarCollapsed = !this.sidebarCollapsed;
+            },
+            onSelectAgent: (id: string) => {
+              this.vm.selectAgent(id).then(() => {
+                this.refreshTick++;
+                this.scrollToBottomDelayed();
+              });
+            },
+            onSelectConversation: (id: string) => {
+              this.vm.openConversation(id).then(() => {
+                this.refreshTick++;
+                this.scrollToBottomDelayed();
+              });
+            },
+            onDeleteConversation: (id: string) => {
+              this.vm.deleteConversation(id).then(() => {
+                this.refreshTick++;
+                this.scrollToBottomDelayed();
+              });
+            },
+            onNewConversation: () => {
+              this.vm.startNewConversation().then(() => {
+                this.refreshTick++;
+                this.scrollToBottomDelayed();
+              });
+            },
+            onSettings: () => {
+              this.settingsOpen = true;
+            },
+            onPlayGuide: () => {
+              this.playGuideOpen = true;
+            },
+            onOpenDetails: () => {
+              this.detailsOpen = !this.detailsOpen;
+              if (this.detailsOpen) {
+                this.vm.refreshWorkspace().then(() => {
+                  this.refreshTick++;
+                });
+              }
+            }
+          })
+            .width(this.sidebarCollapsed ? 56 : 240)
+            .height('100%')
+            .border({ width: { right: 1 }, color: { right: $r('app.color.divider') } })
+        }
+
       // 主聊天布局
       Column() {
         // 顶部 Header
@@ -364,6 +509,7 @@ struct ChatPage {
               isStreaming: this.vm.isStreaming,
               isParsing: this.vm.isParsing,
               isListening: this.isListening,
+              allowSteer: this.vm.workMode,
               placeholder: this.vm.workMode ? '描述任务...' : '输入消息...',
               onSend: (text: string) => {
                 this.handleSend(text);
@@ -396,13 +542,20 @@ struct ChatPage {
           // 避免空状态头像在 geometryTransition 过程中因布局变化而闪烁。
           Column()
             .width('100%')
-            .height(108)
+            .height(105)
             .backgroundColor(Color.Transparent)
         }
       }
-      .width('100%')
+      .layoutWeight(1)
       .height('100%')
       .backgroundColor($r('app.color.background'))
+
+      // 右详情列(宽屏 + 开关开启): 内联渲染, 不经过任何子组件/@ObjectLink/@Prop 观察链路,
+      // 随页面每秒重建逐秒刷新(机制与消息时间线/文件预览条相同), 见 buildDetailsPanel
+      if (this.isWide && this.detailsOpen) {
+        this.buildDetailsPanel()
+      }
+      }
 
       // 单一 hero 图标：启动时在屏幕中心，随后移动到空状态中心，全程清晰无交叉淡化。
       // 保持常驻渲染，但层级低于抽屉/设置浮层，让浮层自然遮盖它，避免主动消失感。
@@ -428,34 +581,38 @@ struct ChatPage {
           )
         AgentDrawerView({
           agents: this.vm.agents,
-          conversations: this.vm.conversations,
+          conversations: this.convListItems,
           currentAgentId: this.vm.currentAgent !== null ? this.vm.currentAgent.id : '',
           currentConversationId: this.vm.currentConversationId,
           onSelectAgent: (id: string) => {
             this.vm.selectAgent(id).then(() => {
               this.drawerOpen = false;
               this.refreshTick++;
+              this.scrollToBottomDelayed();
             });
           },
           onSelectConversation: (id: string) => {
             this.vm.openConversation(id).then(() => {
               this.drawerOpen = false;
               this.refreshTick++;
+              this.scrollToBottomDelayed();
             });
           },
           onDeleteConversation: (id: string) => {
             this.vm.deleteConversation(id).then(() => {
               this.refreshTick++;
+              this.scrollToBottomDelayed();
             });
           },
           onNewConversation: () => {
             this.vm.startNewConversation().then(() => {
               this.drawerOpen = false;
               this.refreshTick++;
+              this.scrollToBottomDelayed();
             });
           },
-          onAbout: () => {
-            this.aboutOpen = true;
+          onPlayGuide: () => {
+            this.playGuideOpen = true;
           },
           onClose: () => {
             this.drawerOpen = false;
@@ -523,11 +680,12 @@ struct ChatPage {
         },
       })
 
-      // 关于
-      AboutPanel({
-        visible: this.aboutOpen,
+      // 玩转应用
+      PlayGuidePanel({
+        visible: this.playGuideOpen,
+        isWide: this.isWide,
         onClose: () => {
-          this.aboutOpen = false;
+          this.playGuideOpen = false;
         }
       })
 
@@ -574,7 +732,30 @@ struct ChatPage {
         (typeof wValue === 'string' ? parseFloat(wValue) : (typeof wValue === 'number' ? wValue : this.rootW));
       this.rootH = hValue === undefined ? this.rootH :
         (typeof hValue === 'string' ? parseFloat(hValue) : (typeof hValue === 'number' ? hValue : this.rootH));
-      this.updateHeroStart();
+      // 根 Stack 的窗口偏移(状态栏等), 供英雄图标全局坐标换算
+      const gx = newArea.globalPosition.x;
+      const gy = newArea.globalPosition.y;
+      this.rootOffsetX = gx === undefined ? this.rootOffsetX :
+        (typeof gx === 'string' ? parseFloat(gx) : (typeof gx === 'number' ? gx : this.rootOffsetX));
+      this.rootOffsetY = gy === undefined ? this.rootOffsetY :
+        (typeof gy === 'string' ? parseFloat(gy) : (typeof gy === 'number' ? gy : this.rootOffsetY));
+      // 桌面宽屏阈值: 2in1/平板分屏窗口 ≥700vp 启用三栏布局
+      this.isWide = this.rootW >= 700;
+      // 首次进入宽屏时自动展开右侧工作区详情面板
+      if (this.isWide && !this.detailsAutoOpened) {
+        this.detailsAutoOpened = true;
+        this.detailsOpen = true;
+        this.vm.refreshWorkspace().then(() => {
+          this.refreshTick++;
+        });
+      }
+      // 启动动画期间窗口变化才重置"起点"; 动画已结束后窗口变化只重算落点,
+      // 否则最大化/还原会把已落位的图标拽回屏幕中心(启动起点)
+      if (this.launchVisible) {
+        this.updateHeroStart();
+      } else {
+        this.recomputeHeroTarget();
+      }
     })
   }
 
@@ -828,23 +1009,25 @@ struct ChatPage {
   @Builder
   buildHeader() {
     Row() {
-      // 菜单
-      Button() {
-        Text('☰')
-          .fontSize(22)
-          .fontColor($r('app.color.text_secondary'))
-      }
-      .width(44)
-      .height(44)
-      .borderRadius(22)
-      .backgroundColor(Color.Transparent)
-      .onClick(() => {
-        this.drawerOpen = true;
-      })
-
-      // 与右侧两个按钮保持等宽，让标题仍处于屏幕正中。
-      Blank()
+      // 菜单(窄屏抽屉入口; 宽屏由常驻侧栏接管, 不渲染)
+      if (!this.isWide) {
+        Button() {
+          Text('☰')
+            .fontSize(22)
+            .fontColor($r('app.color.text_secondary'))
+        }
         .width(44)
+        .height(44)
+        .borderRadius(22)
+        .backgroundColor(Color.Transparent)
+        .onClick(() => {
+          this.drawerOpen = true;
+        })
+
+        // 与右侧两个按钮保持等宽，让标题仍处于屏幕正中。
+        Blank()
+          .width(44)
+      }
 
       // 标题 (智能体名, 居中显示)
       Row() {
@@ -938,15 +1121,14 @@ struct ChatPage {
         .margin({ bottom: 12 })
         .id('emptyStateIconAnchor')
         .onAreaChange((_old: Area, newArea: Area) => {
-          const px = newArea.position.x;
-          const py = newArea.position.y;
-          const localX: number = px === undefined ? 0 :
-            (typeof px === 'string' ? parseFloat(px) : (typeof px === 'number' ? px : 0));
-          const localY: number = py === undefined ? 0 :
-            (typeof py === 'string' ? parseFloat(py) : (typeof py === 'number' ? py : 0));
-          this.heroTargetX = this.emptyStateBaseX + localX;
-          this.heroTargetY = this.emptyStateBaseY + localY;
-          this.heroTargetSize = 96;
+          // 用窗口全局坐标定位英雄图标落点: 三栏布局下相对坐标会漏加侧栏宽度导致图标偏左
+          const px = newArea.globalPosition.x;
+          const py = newArea.globalPosition.y;
+          this.anchorGlobalX = px === undefined ? this.anchorGlobalX :
+            (typeof px === 'string' ? parseFloat(px) : (typeof px === 'number' ? px : this.anchorGlobalX));
+          this.anchorGlobalY = py === undefined ? this.anchorGlobalY :
+            (typeof py === 'string' ? parseFloat(py) : (typeof py === 'number' ? py : this.anchorGlobalY));
+          this.recomputeHeroTarget();
         })
       Text(this.vm.currentAgent !== null ? this.vm.currentAgent.name : 'Guncat Work')
         .fontSize(22)
@@ -967,8 +1149,9 @@ struct ChatPage {
     .width('100%')
     .justifyContent(FlexAlign.Center)
     .onAreaChange((_old: Area, newArea: Area) => {
-      const bx = newArea.position.x;
-      const by = newArea.position.y;
+      // 同样记录窗口全局坐标(仅作 hero 初始落点兜底, 锚点自身已上报全局坐标)
+      const bx = newArea.globalPosition.x;
+      const by = newArea.globalPosition.y;
       this.emptyStateBaseX = bx === undefined ? 0 :
         (typeof bx === 'string' ? parseFloat(bx) : (typeof bx === 'number' ? bx : 0));
       this.emptyStateBaseY = by === undefined ? 0 :
@@ -1001,9 +1184,6 @@ struct ChatPage {
                 this.vm.copyMessageMarkdown(id);
                 this.showToast('已复制 Markdown');
               },
-              onSelectPartial: (id: string) => {
-                this.showToast('已开启，长按内容即可选择复制');
-              },
               onRegenerate: (id: string) => {
                 this.vm.regenerateMessage(id);
                 this.refreshTick++;
@@ -1017,10 +1197,31 @@ struct ChatPage {
               onImageTap: (url: string) => {
                 this.lightboxUrl = url;
                 this.lightboxVisible = true;
+              },
+              onEditToInput: (id: string) => {
+                let msg: Message | null = this.findMessage(id);
+                if (msg !== null) {
+                  this.fillInputFromMessage(msg);
+                }
               }
             })
           }, (msg: Message) => msg.id)
         }
+
+        // ask_user_question 问题卡片(工具挂起等待作答时渲染在时间线末尾)
+        if (this.vm.pendingAsk !== null) {
+          AskUserCard({
+            ask: this.vm.pendingAsk,
+            onAnswer: (askId: string, selections: string[], note: string) => {
+              this.vm.answerAsk(askId, selections, note);
+            },
+            onCancel: (askId: string) => {
+              this.vm.cancelAsk(askId);
+            }
+          })
+            .margin({ top: 4 })
+        }
+
         Blank().height(8)
       }
       .width('100%')
@@ -1030,6 +1231,11 @@ struct ChatPage {
     .width('100%')
     .edgeEffect(EdgeEffect.Spring)
     .scrollBar(BarState.Off)
+    // 单击消息区(含气泡内点击冒泡至此): 广播复位信号, 让发生过拖选的回答取消文本选区
+    .onClick(() => {
+      AppStorage.setOrCreate('richSelectionResetTick',
+        ((AppStorage.get<number>('richSelectionResetTick') ?? 0) + 1));
+    })
     // 触摸期间标记 userScrolling, 暂停自动置底; 松手后恢复自动置底
     .onTouch((event: TouchEvent) => {
       if (event.type === TouchType.Down || event.type === TouchType.Move) {
@@ -1038,6 +1244,8 @@ struct ChatPage {
         this.userScrolling = false;
       }
     })
+    // 宽屏三栏时加宽留白, 会话内容保持舒适阅读宽度
+    .padding({ left: this.isWide ? 28 : 0, right: this.isWide ? 28 : 0 })
   }
 
   // 工作模式时间线: 单容器 + 单一标识, 用户任务与各轮 思考→工具→正文 按发生顺序排列
@@ -1106,25 +1314,67 @@ struct ChatPage {
 
   @Builder
   buildWorkTaskCard(msg: Message) {
-    Row({ space: 10 }) {
-      Text('任务')
-        .fontSize(10)
-        .fontWeight(FontWeight.Bold)
-        .fontColor($r('app.color.brand'))
-        .padding({ left: 8, right: 8, top: 3, bottom: 3 })
-        .borderRadius(8)
-        .backgroundColor($r('app.color.raised_surface'))
-      Text(msg.displayContent !== '' ? msg.displayContent : msg.content)
-        .fontSize(14)
-        .fontColor($r('app.color.text_primary'))
-        .lineHeight(21)
-        .layoutWeight(1)
+    Column({ space: 6 }) {
+      Row({ space: 10 }) {
+        Text('任务')
+          .fontSize(10)
+          .fontWeight(FontWeight.Bold)
+          .fontColor($r('app.color.brand'))
+          .padding({ left: 8, right: 8, top: 3, bottom: 3 })
+          .borderRadius(8)
+          .backgroundColor($r('app.color.raised_surface'))
+        Text(msg.displayContent !== '' ? msg.displayContent : msg.content)
+          .fontSize(14)
+          .fontColor($r('app.color.text_primary'))
+          .lineHeight(21)
+          .layoutWeight(1)
+      }
+      .width('100%')
+      .alignItems(VerticalAlign.Top)
+
+      // 操作行: 填入输入框(重新编辑) + 复制原文。
+      // 左侧缩进 46vp(任务标签宽 36 + 间距 10), 使图标与任务文本起始位置对齐
+      Row({ space: 8 }) {
+        Button() {
+          Image($r('sys.media.ohos_ic_public_edit'))
+            .width(14)
+            .height(14)
+            .fillColor($r('app.color.text_secondary'))
+        }
+        .width(26)
+        .height(26)
+        .borderRadius(13)
+        .padding(0)
+        .backgroundColor(Color.Transparent)
+        .onClick(() => {
+          this.fillInputFromMessage(msg);
+        })
+        Button() {
+          Image($r('sys.media.ohos_ic_public_copy'))
+            .width(14)
+            .height(14)
+            .fillColor($r('app.color.text_secondary'))
+        }
+        .width(26)
+        .height(26)
+        .borderRadius(13)
+        .padding(0)
+        .backgroundColor(Color.Transparent)
+        .onClick(() => {
+          this.vm.copyMessagePlain(msg.id).then((): void => {
+            this.showToast('已复制');
+          });
+        })
+      }
+      .width('100%')
+      .padding({ left: 46 })
+      .justifyContent(FlexAlign.Start)
     }
     .width('100%')
     .padding(12)
     .borderRadius(14)
     .backgroundColor($r('app.color.brand_light'))
-    .alignItems(VerticalAlign.Top)
+    .alignItems(HorizontalAlign.Start)
   }
 
   // 导出消息为 Word 文档
@@ -1176,25 +1426,31 @@ struct ChatPage {
     // 注意: inputText 的清空由 MessageInputView 内部 onClick 在确认真正发送后才执行
     this.vm.sendMessage(text);
     this.refreshTick++;
+    this.scrollToBottomDelayed();
   }
 
   @Builder
   private buildModelSelector() {
     Row() {
       Text(this.vm.currentApiProfile !== null ? this.vm.currentApiProfile.name : '模型')
-        .fontSize(13)
-        .maxFontSize(13)
-        .minFontSize(6)
+        // 字号固定 12, 与右侧 ToggleSwitch 完全一致(此前 13 且带 6~13 自适应缩放, 造成大小不一)
+        .fontSize(12)
+        .lineHeight(16)
         .fontColor($r('app.color.text_secondary'))
         .maxLines(1)
-        .width('100%')
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
         .textAlign(TextAlign.Center)
     }
-    .layoutWeight(1)
-    .height(34)
-    .padding({ left: 10, right: 10 })
-    .constraintSize({ minWidth: 108 })
-    .borderRadius(17)
+    .justifyContent(FlexAlign.Center)
+    .alignItems(VerticalAlign.Center)
+    // 手机: 继续占满剩余宽度; 桌面宽屏: 按内容自适应(108~200), 避免胶囊吞掉整行
+    .layoutWeight(this.isWide ? 0 : 1)
+    .constraintSize(this.isWide ? { minWidth: 108, maxWidth: 200 } : { minWidth: 108 })
+    // 显式锁定与 ToggleSwitch 等高(上下 padding 7 + 行高 16 = 30): 宽屏下胶囊改为内容自适应宽度,
+    // Text 的 min/max 自适应字号测量会把行框撑得略高于 lineHeight, 固定高度保证两个平台都等高
+    .height(30)
+    .padding({ left: 10, right: 10, top: 7, bottom: 7 })
+    .borderRadius(15)
     .backgroundColor($r('app.color.raised_surface'))
     .shadow({ radius: 12, color: '#14000000', offsetX: 0, offsetY: 3 })
     .margin({ right: 8 })
@@ -1272,9 +1528,56 @@ struct ChatPage {
           .margin({ bottom: 8 })
 
         Row({ space: 6 }) {
-          this.buildEffortChip('极高(Max)', 'max')
-          this.buildEffortChip('均衡(High)', 'high')
-          this.buildEffortChip('快速(Low)', 'low')
+          // 档位胶囊直接内联(选中高亮随 vm.reasoningEffort 实时变化);
+          // 勿改回带参 @Builder: 按值传参的 @Builder 子树不随状态刷新
+          Text('极高(Max)')
+            .fontSize(12)
+            .fontWeight(this.vm.reasoningEffort === 'max' ? FontWeight.Medium : FontWeight.Normal)
+            .fontColor(this.vm.reasoningEffort === 'max' ?
+              $r('app.color.brand') : $r('app.color.text_secondary'))
+            .textAlign(TextAlign.Center)
+            .maxLines(1)
+            .height(30)
+            .layoutWeight(1)
+            .borderRadius(15)
+            .backgroundColor(this.vm.reasoningEffort === 'max' ?
+              $r('app.color.brand_light') : $r('app.color.raised_surface'))
+            .onClick(() => {
+              this.vm.setReasoningEffort('max');
+              this.refreshTick++;
+            })
+          Text('均衡(High)')
+            .fontSize(12)
+            .fontWeight(this.vm.reasoningEffort === 'high' ? FontWeight.Medium : FontWeight.Normal)
+            .fontColor(this.vm.reasoningEffort === 'high' ?
+              $r('app.color.brand') : $r('app.color.text_secondary'))
+            .textAlign(TextAlign.Center)
+            .maxLines(1)
+            .height(30)
+            .layoutWeight(1)
+            .borderRadius(15)
+            .backgroundColor(this.vm.reasoningEffort === 'high' ?
+              $r('app.color.brand_light') : $r('app.color.raised_surface'))
+            .onClick(() => {
+              this.vm.setReasoningEffort('high');
+              this.refreshTick++;
+            })
+          Text('快速(Low)')
+            .fontSize(12)
+            .fontWeight(this.vm.reasoningEffort === 'low' ? FontWeight.Medium : FontWeight.Normal)
+            .fontColor(this.vm.reasoningEffort === 'low' ?
+              $r('app.color.brand') : $r('app.color.text_secondary'))
+            .textAlign(TextAlign.Center)
+            .maxLines(1)
+            .height(30)
+            .layoutWeight(1)
+            .borderRadius(15)
+            .backgroundColor(this.vm.reasoningEffort === 'low' ?
+              $r('app.color.brand_light') : $r('app.color.raised_surface'))
+            .onClick(() => {
+              this.vm.setReasoningEffort('low');
+              this.refreshTick++;
+            })
         }
         .width('100%')
         .padding({ left: 6, right: 6, bottom: 2 })
@@ -1285,26 +1588,6 @@ struct ChatPage {
     .backgroundColor($r('app.color.surface'))
     .borderRadius(18)
     .shadow({ radius: 16, color: '#1A000000', offsetX: 0, offsetY: 6 })
-  }
-
-  // 推理强度档位(选中态保持弹层开启以便看到高亮反馈)
-  @Builder
-  private buildEffortChip(label: string, value: string) {
-    Text(label)
-      .fontSize(12)
-      .fontWeight(this.vm.reasoningEffort === value ? FontWeight.Medium : FontWeight.Normal)
-      .fontColor(this.vm.reasoningEffort === value ? $r('app.color.brand') : $r('app.color.text_secondary'))
-      .textAlign(TextAlign.Center)
-      .maxLines(1)
-      .height(30)
-      .layoutWeight(1)
-      .borderRadius(15)
-      .backgroundColor(this.vm.reasoningEffort === value ?
-        $r('app.color.brand_light') : $r('app.color.raised_surface'))
-      .onClick(() => {
-        this.vm.setReasoningEffort(value);
-        this.refreshTick++;
-      })
   }
 
   private getApiProfileOptions(): SelectOption[] {
@@ -1406,6 +1689,291 @@ struct ChatPage {
     this.vm.uploadToWorkspace().then(() => {
       this.refreshTick++;
     });
+  }
+
+  // ===== 右侧工作区详情面板(宽屏常驻, 内联渲染) =====
+  // 不再使用独立子组件: 子组件的 @ObjectLink/@Prop 观察链路在该常驻面板上不生效(弹层正常、侧栏冻结)。
+  // 这里直接内联在页面 build 里, 数据每次页面重建时现读 vm —— 与消息时间线/文件预览条同一条
+  // 已验证的刷新路径; 秒级定时器每秒递增 refreshTick, 面板头部绿点即本版本的可见标识。
+
+  private detailLastAssistant(): Message | null {
+    let msgs: Message[] = this.vm.currentMessages;
+    for (let i: number = msgs.length - 1; i >= 0; i--) {
+      if (msgs[i].role === 'assistant') {
+        return msgs[i];
+      }
+    }
+    return null;
+  }
+
+  // 工具调用总轮数: 汇总当前会话所有 assistant 轮的工具调用次数。
+  // 工作循环每轮各有一条 assistant 消息、工具记录挂在各自轮次上,
+  // 而收尾轮通常是纯文本回答 —— 只看最后一条会恒为 0
+  private detailToolCallTotal(): number {
+    let msgs: Message[] = this.vm.currentMessages;
+    let total: number = 0;
+    for (let i: number = 0; i < msgs.length; i++) {
+      if (msgs[i].role === 'assistant') {
+        total += msgs[i].toolCalls.length;
+      }
+    }
+    return total;
+  }
+
+  // 重建统计快照并整体赋值: 面板统计区只依赖 workStats 这一个顶层状态
+  private rebuildWorkStats(): void {
+    let s: WorkPanelStats = new WorkPanelStats();
+    s.elapsedSec = this.vm.workElapsedSec;
+    let last: Message | null = this.detailLastAssistant();
+    s.speedText = last !== null && last.tokenSpeed > 0 ?
+      Math.round(last.tokenSpeed).toString() + ' 字符/秒' : '—';
+    s.cacheText = last !== null && last.cacheHitRate >= 0 ?
+      Math.round(last.cacheHitRate * 100).toString() + '%' : '—';
+    s.toolCalls = this.detailToolCallTotal();
+    s.goalText = this.detailGoalText();
+    this.workStats = s;
+  }
+
+  // 目标文本需读文件, 加 3 秒缓存避免每秒渲染都做 IO
+  private goalCacheConvId: string = '';
+  private goalCacheAt: number = 0;
+  private goalCacheText: string = '';
+
+  private detailGoalText(): string {
+    let now: number = Date.now();
+    if (this.goalCacheConvId === this.vm.currentConversationId &&
+      now - this.goalCacheAt < 3000) {
+      return this.goalCacheText;
+    }
+    let text: string = '';
+    if (this.vm.context !== null && this.vm.currentConversationId !== '') {
+      let ctx: common.UIAbilityContext = this.vm.context;
+      let root: string = WorkFileService.workspaceRoot(ctx, this.vm.currentConversationId);
+      let goal: GoalItem | null = GoalService.read(root);
+      text = goal !== null ? goal.objective : '';
+    }
+    this.goalCacheConvId = this.vm.currentConversationId;
+    this.goalCacheAt = now;
+    this.goalCacheText = text;
+    return text;
+  }
+
+  @Builder
+  private buildDetailsPanel() {
+    Column() {
+      // 面板头: 标题 + 实时标记(绿点) + 刷新 + 收起
+      Row({ space: 8 }) {
+        Text('工作区详情')
+          .fontSize(16)
+          .fontWeight(FontWeight.Medium)
+          .fontColor($r('app.color.text_primary'))
+          .layoutWeight(1)
+        Text('●')
+          .fontSize(9)
+          .fontColor($r('app.color.success'))
+        Text('实时')
+          .fontSize(11)
+          .fontColor($r('app.color.text_tertiary'))
+        Button() {
+          SymbolGlyph($r('sys.symbol.arrow_clockwise'))
+            .fontSize(16)
+            .fontColor([$r('app.color.text_secondary')])
+        }
+        .width(30)
+        .height(30)
+        .borderRadius(15)
+        .backgroundColor(Color.Transparent)
+        .onClick(() => {
+          this.vm.refreshWorkspace().then(() => {
+            this.refreshTick++;
+          });
+        })
+        Button() {
+          SymbolGlyph($r('sys.symbol.chevron_right'))
+            .fontSize(16)
+            .fontColor([$r('app.color.text_secondary')])
+        }
+        .width(30)
+        .height(30)
+        .borderRadius(15)
+        .backgroundColor(Color.Transparent)
+        .onClick(() => {
+          this.detailsOpen = false;
+        })
+      }
+      .width('100%')
+      .padding({ left: 16, right: 12, top: 14, bottom: 12 })
+
+      Scroll() {
+        Column({ space: 16 }) {
+          // 统计卡: 行内容直接内联读快照状态。切勿改回带参 @Builder ——
+          // @Builder 按值传参时整块子树不随状态刷新(此前统计区冻结的根因)
+          Column({ space: 10 }) {
+            Text('本轮统计')
+              .fontSize(12)
+              .fontColor($r('app.color.text_tertiary'))
+              .letterSpacing(1.5)
+            Row() {
+              Text('任务用时')
+                .fontSize(13)
+                .fontColor($r('app.color.text_secondary'))
+                .layoutWeight(1)
+              Text(this.workStats.elapsedSec.toString() + ' 秒')
+                .fontSize(13)
+                .fontWeight(FontWeight.Medium)
+                .fontColor($r('app.color.text_primary'))
+            }
+            .width('100%')
+            Row() {
+              Text('输出速度')
+                .fontSize(13)
+                .fontColor($r('app.color.text_secondary'))
+                .layoutWeight(1)
+              Text(this.workStats.speedText)
+                .fontSize(13)
+                .fontWeight(FontWeight.Medium)
+                .fontColor($r('app.color.text_primary'))
+            }
+            .width('100%')
+            Row() {
+              Text('缓存命中')
+                .fontSize(13)
+                .fontColor($r('app.color.text_secondary'))
+                .layoutWeight(1)
+              Text(this.workStats.cacheText)
+                .fontSize(13)
+                .fontWeight(FontWeight.Medium)
+                .fontColor($r('app.color.text_primary'))
+            }
+            .width('100%')
+            Row() {
+              Text('工具调用轮数')
+                .fontSize(13)
+                .fontColor($r('app.color.text_secondary'))
+                .layoutWeight(1)
+              Text(this.workStats.toolCalls.toString())
+                .fontSize(13)
+                .fontWeight(FontWeight.Medium)
+                .fontColor($r('app.color.text_primary'))
+            }
+            .width('100%')
+          }
+          .width('100%')
+          .padding(16)
+          .borderRadius(14)
+          .border({ width: 1, color: $r('app.color.divider') })
+          .alignItems(HorizontalAlign.Start)
+
+          // 目标卡
+          if (this.workStats.goalText !== '') {
+            Column({ space: 10 }) {
+              Text('当前目标')
+                .fontSize(12)
+                .fontColor($r('app.color.text_tertiary'))
+                .letterSpacing(1.5)
+              Text(this.workStats.goalText)
+                .fontSize(13)
+                .fontColor($r('app.color.text_secondary'))
+                .lineHeight(20)
+                .width('100%')
+            }
+            .width('100%')
+            .padding(16)
+            .borderRadius(14)
+            .border({ width: 1, color: $r('app.color.divider') })
+            .alignItems(HorizontalAlign.Start)
+          }
+
+          // 文件卡
+          Column({ space: 10 }) {
+            Row() {
+              Text('文件 (' + this.vm.workspaceFiles.length.toString() + ')')
+                .fontSize(12)
+                .fontColor($r('app.color.text_tertiary'))
+                .letterSpacing(1.5)
+                .layoutWeight(1)
+              Text('上传')
+                .fontSize(13)
+                .fontColor($r('app.color.brand'))
+                .padding({ left: 10, right: 4, top: 3, bottom: 3 })
+                .onClick(() => {
+                  this.handleWorkspaceUpload();
+                })
+              Text('导出')
+                .fontSize(13)
+                .fontColor($r('app.color.brand'))
+                .padding({ left: 4, right: 4, top: 3, bottom: 3 })
+                .onClick(() => {
+                  this.handleWorkspaceExport();
+                })
+            }
+            .width('100%')
+
+            if (this.vm.workspaceFiles.length === 0) {
+              Text('(工作区为空)')
+                .fontSize(13)
+                .fontColor($r('app.color.text_tertiary'))
+                .width('100%')
+                .padding({ top: 12, bottom: 12 })
+            } else {
+              ForEach(this.vm.workspaceFiles, (item: WorkspaceFileInfo) => {
+                Row({ space: 8 }) {
+                  if (item.isDir) {
+                    SymbolGlyph($r('sys.symbol.folder'))
+                      .fontSize(16)
+                      .fontColor([$r('app.color.text_tertiary')])
+                  } else {
+                    SymbolGlyph(WorkspaceFileIcons.iconFor(item.path))
+                      .fontSize(16)
+                      .fontColor([$r('app.color.text_tertiary')])
+                  }
+                  Text(item.path)
+                    .fontSize(13)
+                    .fontColor($r('app.color.text_secondary'))
+                    .maxLines(1)
+                    .textOverflow({ overflow: TextOverflow.Ellipsis })
+                    .layoutWeight(1)
+                  if (!item.isDir) {
+                    Text(WorkFileService.formatSize(item.size))
+                      .fontSize(11)
+                      .fontColor($r('app.color.text_tertiary'))
+                    SymbolGlyph($r('sys.symbol.trash'))
+                      .fontSize(14)
+                      .fontColor([$r('app.color.text_tertiary')])
+                      .padding(4)
+                      .onClick(() => {
+                        this.vm.deleteWorkspaceFile(item.path).then(() => {
+                          this.refreshTick++;
+                        });
+                      })
+                  }
+                }
+                .width('100%')
+                .padding({ left: 10, right: 10, top: 7, bottom: 7 })
+                .borderRadius(10)
+                .backgroundColor($r('app.color.input_bg'))
+              }, (item: WorkspaceFileInfo) => item.path + '#' + item.size.toString())
+            }
+          }
+          .width('100%')
+          .padding(16)
+          .borderRadius(14)
+          .border({ width: 1, color: $r('app.color.divider') })
+          .alignItems(HorizontalAlign.Start)
+        }
+        .width('100%')
+        .padding({ left: 14, right: 14, bottom: 16 })
+      }
+      .layoutWeight(1)
+      .width('100%')
+      .scrollBar(BarState.Auto)
+      // 内容不足一屏时顶对齐(Scroll 默认把不满屏的内容垂直居中, 导致统计卡悬在半空)
+      .align(Alignment.Top)
+    }
+    .width(300)
+    .height('100%')
+    .backgroundColor($r('app.color.background'))
+    .border({ width: { left: 1 }, color: { left: $r('app.color.divider') } })
   }
 
   // 工作区面板: 打包导出 zip

@@ -11,6 +11,7 @@ import { PickedFile } from './FileService';
 import { OfficeReader } from './OfficeReader';
 import { PdfTextExtractor } from './PdfTextExtractor';
 import { WorkSkillService } from './WorkSkillService';
+import { HarnessTools } from './HarnessTools';
 import { arrayBufferToBase64 } from '../common/Utils';
 import { Constants } from '../common/Constants';
 
@@ -25,13 +26,19 @@ export class WorkspaceFileInfo {
 }
 
 // 工具执行结果(ok=false 时 output 为错误说明, 会原样送回模型; imageDataUrl 供 view_image 注入视觉消息)
+// meta: 结构化展示数据(JSON), 如 edit 工具的 diff 卡片; 随会话持久化, UI 重放渲染。
 export class ToolExecResult {
   ok: boolean = false;
   output: string = '';
   imageDataUrl: string = '';
+  meta: string = '';
 }
 
 export class WorkFileService {
+  // subagent 工具经此钩子执行(由 SubagentService.bind 注入, 规避循环导入)
+  static subagentHook: ((context: common.UIAbilityContext, convId: string,
+    description: string, prompt: string) => Promise<ToolExecResult>) | null = null;
+
   // ===== 路径基础 =====
 
   // 会话工作区根目录
@@ -80,6 +87,17 @@ export class WorkFileService {
       out = out + '/' + seg;
     }
     return out;
+  }
+
+  // 公共包装(HarnessTools / 新工具层使用)
+  static resolveSafePublic(root: string, rel: string): string | null {
+    return WorkFileService.resolveSafe(root, rel);
+  }
+
+  // read_file 的公共包装(str_replace_editor 的 view 分支复用行分页逻辑)
+  static async toolReadPublic(root: string, rel: string, cacheDir: string,
+    offset: number, limit: number): Promise<ToolExecResult> {
+    return await WorkFileService.toolRead(root, rel, cacheDir, offset, limit);
   }
 
   // 逐级创建目录(等价 mkdir -p)
@@ -171,7 +189,7 @@ export class WorkFileService {
     }
   }
 
-  // 工作区文件树文本(注入 system prompt, 每轮工具调用后刷新)
+  // 工作区文件树文本(注入运行时快照, 每轮工具调用后刷新); .spill/ 溢出暂存目录不进入快照
   static listWorkspaceTree(context: common.UIAbilityContext, convId: string): string {
     WorkFileService.ensureWorkspace(context, convId);
     let items: WorkspaceFileInfo[] = WorkFileService.listWorkspace(context, convId);
@@ -179,13 +197,22 @@ export class WorkFileService {
       return '(工作区为空)';
     }
     let lines: string[] = [];
+    let shownCount: number = 0;
     for (let i: number = 0; i < items.length; i++) {
       let item: WorkspaceFileInfo = items[i];
+      if (item.path === Constants.WORK_SPILL_DIR + '/' ||
+        item.path.startsWith(Constants.WORK_SPILL_DIR + '/')) {
+        continue;
+      }
+      shownCount++;
       if (item.isDir) {
         lines.push(item.path);
       } else {
         lines.push(item.path + ' (' + WorkFileService.formatSize(item.size) + ')');
       }
+    }
+    if (shownCount === 0) {
+      return '(工作区为空)';
     }
     if (items.length >= Constants.WORK_LIST_MAX_ENTRIES) {
       lines.push('...(条目已达上限, 仅展示部分)');
@@ -357,7 +384,8 @@ export class WorkFileService {
   static isReadOnlyTool(name: string): boolean {
     return name === 'list_files' || name === 'read_file' || name === 'parse_document' ||
       name === 'search_files' || name === 'search_pdf' || name === 'view_image' ||
-      name === 'read_ppt' || name === 'list_skills' || name === 'load_skill';
+      name === 'read_ppt' || name === 'list_skills' || name === 'load_skill' ||
+      HarnessTools.isReadOnly(name);
   }
 
   // 工具是否改变工作区内容(用于执行后刷新文件列表)
@@ -367,7 +395,7 @@ export class WorkFileService {
       name === 'write_docx' || name === 'write_xlsx' || name === 'write_pptx' ||
       name === 'edit_ppt' || name === 'write_csv' || name === 'download_file' ||
       name === 'write_svg' || name === 'todo_write' || name === 'record_search' ||
-      name === 'transform_file';
+      name === 'transform_file' || HarnessTools.isMutating(name);
   }
 
   // 工具统一入口: 解析参数 JSON 并分发; 任何异常都转为 ERROR 结果送回模型
@@ -472,7 +500,9 @@ export class WorkFileService {
       }
       return WorkFileService.ok(loaded);
     }
-    return WorkFileService.fail('未知工具: ' + name);
+    // Guncat Work 6.1 新增工具(glob/grep/edit/str_replace_editor/web_fetch/
+    // ask_user_question/schedule_*/goal_*/subagent/session_search)由 HarnessTools 兜底
+    return await HarnessTools.dispatch(context, convId, name, args, root);
   }
 
   // record_search: 把服务端联网搜索的结论落盘为 .searches.md, 留下可追溯记录
@@ -1285,6 +1315,10 @@ export class WorkFileService {
         'name', WorkFileService.strProp('技能 id, 如 ppt'),
         'file', WorkFileService.strProp('可选: 技能内的参考文件相对路径, 省略返回 SKILL.md')),
       ['name']));
+    let harnessDefs: Record<string, Object>[] = HarnessTools.toolDefs();
+    for (let i: number = 0; i < harnessDefs.length; i++) {
+      defs.push(harnessDefs[i]);
+    }
     return defs;
   }
 

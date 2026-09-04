@@ -4,7 +4,7 @@
 
 Guncat Work is a native HarmonyOS AI chat client built with ArkTS and ArkUI. Its primary interface is not hosted in a WebView.
 
-Current app version: `6.0.0`
+Current app version: `6.1.0`
 
 ## Features
 
@@ -114,7 +114,7 @@ The final read-aloud implementation uses HarmonyOS CoreSpeechKit `textToSpeech`.
 Work mode is an **independent identity parallel to the chat agents** — the 🛠 "Work Mode" entry in its own "Agent Mode" group above the "Chat Mode" section header in the drawer. It opens an Agent loop with a per-conversation local sandbox workspace and tool-calling capability, allowing the agent to autonomously complete multi-step, long-horizon tasks. See "[Work mode architecture & maintenance guide](#work-mode-architecture--maintenance-guide)" below.
 
 - **Sandbox workspace**: each work conversation maps to `filesDir/workspaces/<convId>/`, with upload, `.zip` export, and clear actions. Everything stays inside the app sandbox plus system safe components (document picker) — **no new permissions**.
-- **25 local tools**: file CRUD (list/read/write/append/delete/create_dir/move/search, with `glob` filename filtering on search_files), task checklist (`todo_write`), image viewing (`view_image`, routed to the main model's multimodal vision), web download (`download_file`, pulls linked files into the workspace), PDF parsing (`parse_document` + automatic `read_file` routing), Office generation (`write_docx` / `write_xlsx` / `write_csv`), data pipeline (`transform_file`, local cleaning/transformation/conversion of large files without entering model context), PPT read/write/edit (`write_pptx` / `read_ppt` / `edit_ppt`, on a Deck JSON intermediate layer), SVG image generation (`write_svg`, vector output + PNG preview), and the skill system (`list_skills` / `load_skill`, on-demand domain guides).
+- **36 local tools**: file CRUD (list/read/write/append/delete/create_dir/move/search, with `glob` filename filtering on search_files), task checklist (`todo_write`), image viewing (`view_image`, routed to the main model's multimodal vision), web download (`download_file`, pulls linked files into the workspace), PDF parsing (`parse_document` + automatic `read_file` routing), Office generation (`write_docx` / `write_xlsx` / `write_csv`), data pipeline (`transform_file`, local cleaning/transformation/conversion of large files without entering model context), PPT read/write/edit (`write_pptx` / `read_ppt` / `edit_ppt`, on a Deck JSON intermediate layer), SVG image generation (`write_svg`, vector output + PNG preview), and the skill system (`list_skills` / `load_skill`, on-demand domain guides). New in 6.1 (DeepSeek Harness port): `glob` / `grep` (pattern-based file lookup and regex content search), `edit` / `str_replace_editor` (exact character-level editing with a diff card), `web_fetch` (fetch page/API source as readable text), `ask_user_question` (ask the user and wait for an answer), `schedule_create/list/delete` (session-local reminders), `goal_create/get/update` (session goal), `subagent` (child-agent delegation), `session_search` (session event-log search).
 - **Skill system**: domain operation guides are packaged under `rawfile/skills/<id>/` (SKILL.md + reference/*.md). The system prompt keeps only a one-line trigger (preserving the byte-stable KV-cache prefix); the model loads skills on demand via `list_skills`/`load_skill`. The bundled `ppt` skill covers the Deck JSON syntax, design guidelines, themes, and self-check lists; the `svg` skill covers SVG authoring rules, the "generate → preview → iterate" workflow, and recipes for icons/flowcharts/infographics.
 - **Local parsing engine**: `.docx/.xlsx/.pptx/.pdf` text is extracted entirely on-device — no multimodal parsing API and no quota consumption.
 - **Task checklist discipline**: complex tasks start with a `todo_write` checklist; checklist and workspace state reach the model through a "runtime context" snapshot appended to the tail of the conversation. Progress is updated item by item.
@@ -350,9 +350,9 @@ for step in 1..WORK_MAX_STEPS(200, runaway safeguard):
 - **Cancellation**: `stopStreaming()` calls both `ChatService.abort()` and `AgentLoopService.abort()`; an interrupted turn with no output is removed, otherwise a "⏹ Task stopped" note is appended.
 - **Step safeguard**: `WORK_MAX_STEPS(200)` exists purely as a runaway guard (preventing endless tool-call loops from burning tokens); normal long tasks never reach it — when triggered, a "send 'continue' to proceed" note is appended to the last message.
 
-### 3. Tool system (25 tools)
+### 3. Tool system (36 tools)
 
-Dispatch chain: `ChatViewModel` → `WorkToolRunner.execute()` (.ets entry) → Office generation/parse_document/PPT/transform_file implemented locally, everything else delegated to `WorkFileService.executeTool()` (.ts).
+Dispatch chain: `ChatViewModel` → `WorkToolRunner.execute()` (.ets entry) → Office generation/parse_document/PPT/transform_file implemented locally, everything else delegated to `WorkFileService.executeTool()` (.ts); the 6.1 tools fall through to `HarnessTools.dispatch()` (.ts).
 
 | Tool | Implementation | Notes |
 | --- | --- | --- |
@@ -374,6 +374,16 @@ Dispatch chain: `ChatViewModel` → `WorkToolRunner.execute()` (.ets entry) → 
 | `edit_ppt` | toolEditPpt → PptxImporter + DeckOps + PptxBuilder | Restore → apply ops → rebuild (foreign files are backed up first) |
 | `write_svg` | WorkToolRunner.toolWriteSvg → SvgUtil | SVG source → workspace .svg + rasterized PNG preview; xmlns/no-script validation, missing width/height auto-filled from viewBox (required by the device engine), precise diagnostics on decode failure |
 | `list_skills` / `load_skill` | WorkFileService.dispatchTool → WorkSkillService | Skill list and on-demand skill-doc loading (the ppt, svg, and data skills under rawfile/skills/) |
+| `glob` | HarnessTools.toolGlob → FileSearchCore | Find files by glob pattern (`**`/`*`/`?`/`{a,b}`/`[...]`; top-level commas don't break `{}` branches); returns relative paths with sizes (≤500) |
+| `grep` | HarnessTools.toolGrep → FileSearchCore | Regex search over text files, returning `file:line: text` (≤200 hits; optional `glob` filename filter and `ignore_case`; invalid patterns fail with a clear error) |
+| `edit` | HarnessTools.toolEdit → DiffUtil | Exact character-level replacement (multiple matches rejected; `replace_all` overrides); the result carries line-level diff hunks (meta persisted with the session, rendered as a diff card) |
+| `str_replace_editor` | HarnessTools.toolEdit | view/create/str_replace/insert editor (view reuses read_file's line paging; insert adds lines after a given line) |
+| `web_fetch` | HarnessTools.toolWebFetch → WebFetchService | GET ≤2MB page/API source; HTML stripped to readable text (script/style/comments removed, block tags → newlines, entities decoded); JSON/text returned as-is (truncation noted) |
+| `ask_user_question` | HarnessTools.toolAskUser → AskUserBridge | Pauses execution for a user answer; the UI card supports single/multi select plus free text, submitted via one "Submit" button; unanswered for 5 minutes resolves as cancelled; loop abort resolves all pending asks |
+| `schedule_create` / `schedule_list` / `schedule_delete` | HarnessTools → ScheduleService | Session-local reminders (persisted in `.schedule.json`; one-shot `after_seconds` or recurring `every_seconds`≥300s); when due, a user message wakes the loop (steered mid-task) |
+| `goal_create` / `goal_get` / `goal_update` | HarnessTools → GoalService | Session goal (`.goal.json`) injected via the runtime snapshot; `bump_round` counts rounds, auto-pausing at the cap |
+| `subagent` | HarnessTools → SubagentService (via the `WorkFileService.subagentHook`) | In-process child agent: shares the workspace, isolated context (toolset excludes subagent/ask_user/schedule/goal/todo_write), ≤40 steps, final report returned as the tool result |
+| `session_search` | HarnessTools.toolSessionSearch → SessionLogService | Search the session event log (JSONL) to recover details lost to context compaction |
 
 Path safety: every tool path passes through `resolveSafe()` — absolute paths, drive letters, and `..` traversal are rejected; operations stay inside `filesDir/workspaces/<convId>/`.
 
@@ -687,6 +697,25 @@ You can also select content in Gallery or a file manager and choose Guncat Work 
 - Items received from the system share sheet are never sent automatically; the user must tap Send.
 - Original attachments are not copied into permanent app storage.
 - Requests use HTTPS. Data-processing policies still depend on the configured model provider.
+
+## Version 6.1.0 (DeepSeek Harness port)
+
+This release ports the core Agent Loop capabilities of DeepSeek Harness (dsh) into Work Mode: a batch of purely local tools, scheduling upgrades in the loop, and a three-column desktop UI for wide screens. Version bumped to 6.1.0 (`Constants.APP_VERSION` and `AppScope/app.json5` versionName 6.1.0 / versionCode 610 in sync). See `PORT_NOTES.md` for the full port map.
+
+- **New tools (11)**: `glob` (path search with `**`/`{a,b}`/`[...]` patterns), `grep` (regex search over text content), `edit` (exact unique-match replacement returning a line diff), `str_replace_editor` (view/create/str_replace/insert editor), `web_fetch` (fetch pages/APIs, HTML stripped to readable text), `ask_user_question` (pauses the loop for an answer; the UI card supports single/multi select plus free-text, submitted via one "Submit" button), `schedule_create/list/delete` (session-local reminders that wake the agent when due, recurring ≥300s), `goal_create/get/update` (session goal injected via the runtime snapshot), `subagent` (in-process child agent: shared workspace, isolated context, ≤40 steps, returns a final report as the tool result), `session_search` (search the session event log).
+- **Agent Loop upgrades**: append-only session event log (JSONL at `<filesDir>/sessions/<convId>.jsonl`); user steering — messages sent while a task runs no longer get rejected, they are injected as a "user supplement" into the next request; bounded parallel tool pool (consecutive read-only calls run concurrently, max 4, committed in model order; mutating calls act as barriers); sticky max-tokens (turn finalizes with a "send 继续" hint when output hits the ceiling); spill store (tool results over ~12K chars are fully saved to workspace `.spill/` while the model receives head+tail excerpts with a locator); LLM session titles (generated in the background after the first task, once per session).
+- **Three-column desktop UI**: at ≥700vp the layout becomes sidebar (brand row / new session / engines & conversations / bottom actions, collapsible to a 56vp icon rail) | conversation | workspace details panel (task stats / goal / file management, auto-opened once on wide screens); design tokens align with the dsh web UI — neutral-bluish dark palette with the DeepSeek blue accent, white light theme. Narrow screens keep the original single-column + drawer interaction.
+- **Tool row visuals**: dsh-style 24px single-line rows (icon + title + separator dot + args summary + status/duration) expanding into IN/OUT detail cards (long content scrolls inside its slot); `edit` renders a diff card (+adds −dels with stats); `todo_write` renders a checklist; the final answer gains a stats line (output speed / cache hit rate / tool time).
+- **Performance & fixes**: sidebar/drawer now receive a lightweight conversation projection (fixes the stutter from deep-copying all messages when opening the drawer); the workspace details panel refreshes in real time (after every tool result + every 3s while streaming + a manual refresh button); fixed tool rows momentarily filling the whole page, long results overflowing detail cards, a stray streaming cursor under the answer text, and ask_user single-select submitting before confirmation.
+- **Sandbox unchanged**: the workspace is still confined to `<filesDir>/workspaces/<convId>` (`resolveSafe` rejects absolute paths and `..` traversal); files cross the boundary only via system pickers (DocumentViewPicker) with no new storage permissions; the new `.spill/` directory is excluded from the runtime snapshot tree.
+- **Full PC adaptation**: all pages are adapted to a PC wide-screen style — a three-column desktop layout with the sidebar on the left, the conversation in the middle, and the workspace details on the right; the sidebar collapses to a 56vp icon rail and the columns stretch adaptively when the window is resized or maximized; settings/about overlays become centered floating panels; list items and buttons gain mouse hover states with wheel-scroll polish; narrow screens (phones/folded state) automatically fall back to the single-column + drawer interaction, both forms sharing the same UI code.
+- **Third-party upgrade**: the `@luvi/lv-markdown-in` Markdown rendering engine is upgraded to the latest 3.4.6 version.
+- **Visual polish**: improved the display of several screens — conversation whitespace and bubble spacing, input-bar/tool-row alignment, and consistent palette details across dark/light themes.
+- **Mermaid diagram polish**: improved the rendering of Mermaid diagrams for clearer graphics and more stable layouts.
+- **New answer-bubble actions**: the AI answer bubble gains "Copy" and "Copy to input box" — copy the whole answer with one tap, or drop it into the input box for quick edits and resend.
+- **Action icon refinements**: refreshed the icons for copy and a few other answer actions, with a more consistent style and clearer meaning.
+- **Free text selection & copy**: message text can now be freely selected and copied directly, with no need to tap "Select part" first.
+- **New "Play with the App" guide**: tapping the "About" button opens the Play-with-the-App panel, which gathers feature walkthroughs and usage tips so you can browse each function's guide in detail.
 
 ## Version 6.0.0 (Work mode, Agent Loop)
 

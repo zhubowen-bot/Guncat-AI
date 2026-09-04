@@ -17,6 +17,7 @@ import { AbilityConstant, ConfigurationConstant, UIAbility, Want, Configuration 
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { systemShare } from '@kit.ShareKit';
 import { window } from '@kit.ArkUI';
+import { BackgroundTaskService } from '../service/BackgroundTaskService';
 
 const DOMAIN = 0x0000;
 
@@ -81,11 +82,17 @@ export default class EntryAbility extends UIAbility {
   onForeground(): void {
     // Ability has brought to foreground
     hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onForeground');
+    // 回到前台后进程不再受挂起限制, 立即释放后台保活任务(若切后台期间流式已结束, stop 为空操作)
+    BackgroundTaskService.stop(this.context);
   }
 
   onBackground(): void {
     // Ability has back to background
     hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onBackground');
+    // 切后台时若流式长程任务(AI 回复/Agent 循环)仍在进行, 申请 dataTransfer 长时任务保活
+    if (AppStorage.get<boolean>('chatStreamingActive') === true) {
+      BackgroundTaskService.start(this.context);
+    }
   }
 
   private async publishSharedFiles(want: Want): Promise<void> {

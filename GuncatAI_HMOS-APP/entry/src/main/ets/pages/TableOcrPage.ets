@@ -461,7 +461,7 @@ struct TableOcrPage {
         .onClick(() => {
           router.back();
         })
-        Text('表格识别引擎')
+        Text('表格识别插件')
           .fontSize(18)
           .fontWeight(FontWeight.Bold)
           .fontColor($r('app.color.text_primary'))

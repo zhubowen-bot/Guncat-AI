@@ -2,6 +2,7 @@
 //  - @Observed + 内部 version 计数器, 通过 ChatPage 的 @State vm 触发刷新
 import { Agent } from '../model/Agent';
 import { Conversation } from '../model/Conversation';
+import { ConversationListItem } from '../model/ConversationListItem';
 import { Message } from '../model/Message';
 import { Attachment } from '../model/Attachment';
 import { ApiConfig } from '../model/ApiConfig';
@@ -13,6 +14,13 @@ import { ChatService } from '../service/ChatService';
 import { AgentLoopService, LoopError, LoopMessage, LoopTurnCallbacks, LoopTurnResult } from '../service/AgentLoopService';
 import { WorkFileService, WorkspaceFileInfo, ToolExecResult } from '../service/WorkFileService';
 import { WorkToolRunner } from '../service/WorkToolRunner';
+import { SpillStore } from '../service/SpillStore';
+import { AskUserBridge, PendingAsk, AskAnswer } from '../service/AskUserBridge';
+import { ScheduleService } from '../service/ScheduleService';
+import { GoalService } from '../service/GoalService';
+import { SessionLogService } from '../service/SessionLogService';
+import { BackgroundTaskService } from '../service/BackgroundTaskService';
+import { SubagentService } from '../service/SubagentService';
 import { ToolCallRecord } from '../model/ToolCallRecord';
 import { FileUploadService } from '../service/FileUploadService';
 import { FileService, PickedFile } from '../service/FileService';
@@ -38,7 +46,7 @@ export class ChatViewModel {
   thinkingEnabled: boolean = false;
   // 推理强度('max' / 'high' / 'low'), 深度思考开启时作为 reasoning 强度参数下发
   reasoningEffort: string = 'high';
-  webSearchEnabled: boolean = false;
+  webSearchEnabled: boolean = true;
   autoReadEnabled: boolean = false;
   pendingFiles: FileItem[] = [];
   drawerOpen: boolean = false;
@@ -62,6 +70,13 @@ export class ChatViewModel {
   private workspaceJustAdded: string[] = [];
   // 最近一次使用的真实智能体(退出工作模式时回切)
   private lastChatAgentId: string = '';
+  // ===== Guncat Work 6.1 (dsh 移植) =====
+  // 插话队列(对齐 dsh 的 next-step steering): 任务执行中用户发送的消息在本轮结束后注入
+  private workSteerQueue: string[] = [];
+  // 待回答的 ask_user_question(由 ChatPage 定时同步, 渲染问题卡片)
+  pendingAsk: PendingAsk | null = null;
+  // 已生成过 LLM 标题的会话(每会话一次, 应用运行期内)
+  private titleJobs: Set<string> = new Set();
 
   // 文件解析内部状态
   private fileBuffers: Map<string, ArrayBuffer> = new Map();
@@ -73,8 +88,8 @@ export class ChatViewModel {
   private lastSpeedUpdateTime: number = 0;
   // 取消信号
   private abortSignal: AbortSignal = new AbortSignal();
-  // context
-  private context: common.UIAbilityContext | null = null;
+  // context(公开: 详情面板等 UI 组件读取工作区路径用)
+  context: common.UIAbilityContext | null = null;
   // 初始化完成
   ready: boolean = false;
   // 全局文件解析中标志(显式管理, 不依赖每个 FileItem.isParsing)
@@ -164,7 +179,7 @@ export class ChatViewModel {
     let savedEffort: string = await StorageManager.loadString(
       this.context, Constants.LS_KEY_REASONING_EFFORT, 'high');
     this.reasoningEffort = (savedEffort === 'max' || savedEffort === 'low') ? savedEffort : 'high';
-    this.webSearchEnabled = await StorageManager.loadBoolean(this.context, Constants.LS_KEY_WEB_SEARCH_ENABLED, false);
+    this.webSearchEnabled = await StorageManager.loadBoolean(this.context, Constants.LS_KEY_WEB_SEARCH_ENABLED, true);
     this.autoReadEnabled = await StorageManager.loadBoolean(
       this.context, Constants.LS_KEY_AUTO_READ_ENABLED, false);
 
@@ -352,10 +367,11 @@ export class ChatViewModel {
 
   // 删除对话
   async deleteConversation(convId: string): Promise<void> {
-    // 工作会话删除时同步清理沙箱工作区, 避免孤儿目录堆积
+    // 工作会话删除时同步清理沙箱工作区与会话事件日志, 避免孤儿数据堆积
     for (let i: number = 0; i < this.conversations.length; i++) {
       if (this.conversations[i].id === convId && this.conversations[i].mode === 'work' && this.context !== null) {
         WorkFileService.deleteWorkspace(this.context, convId);
+        SessionLogService.close(this.context, convId, true);
         break;
       }
     }
@@ -480,11 +496,25 @@ export class ChatViewModel {
       return;
     }
     this.workspaceLoading = true;
-    this.notifyUIChange();
     let items: WorkspaceFileInfo[] = WorkFileService.listWorkspace(this.context, conv.id);
     this.workspaceFiles = items;
     this.workspaceLoading = false;
     this.notifyUIChange();
+  }
+
+  // 会话列表的轻量投影(侧栏/抽屉用, 避免 @Prop 深拷贝全部消息)
+  getConversationListItems(): ConversationListItem[] {
+    let items: ConversationListItem[] = [];
+    for (let i: number = 0; i < this.conversations.length; i++) {
+      let c: Conversation = this.conversations[i];
+      let item: ConversationListItem = new ConversationListItem();
+      item.id = c.id;
+      item.title = c.title;
+      item.agentId = c.agentId;
+      item.mode = c.mode;
+      items.push(item);
+    }
+    return items;
   }
 
   // 从系统选择器上传文件到工作区根目录(重名自动追加序号)
@@ -959,6 +989,96 @@ export class ChatViewModel {
     });
   }
 
+  // ===== Guncat Work 6.1: steering / ask_user / schedule / title =====
+
+  // 任务执行中的用户插话(对齐 dsh 的 steer): 消息进会话历史与插话队列,
+  // 本轮工具执行结束后作为"用户补充"注入下一步请求
+  private steerWork(text: string): void {
+    let conv: Conversation | null = this.currentConversation;
+    if (conv === null || conv.mode !== 'work') {
+      return;
+    }
+    let msg: Message = Message.ofUser(generateMessageId(), text, text, []);
+    conv.messages.push(msg);
+    this.workSteerQueue.push(text);
+    this.persistConversations();
+    this.notifyUIChange();
+  }
+
+  // ChatPage 每秒同步一次待回答提问(工具挂起在等答案, 事件无法主动推送 UI)
+  syncPendingAsk(): void {
+    let cur: PendingAsk | null = AskUserBridge.current();
+    if (cur === null && this.pendingAsk === null) {
+      return;
+    }
+    if (cur !== null && this.pendingAsk !== null && cur.id === this.pendingAsk.id) {
+      return;
+    }
+    this.pendingAsk = cur;
+    this.notifyUIChange();
+  }
+
+  // 用户回答问题卡片
+  answerAsk(askId: string, selections: string[], note: string): void {
+    let answer: AskAnswer = new AskAnswer();
+    answer.selections = selections;
+    answer.note = note;
+    AskUserBridge.answer(askId, answer);
+    this.pendingAsk = null;
+    this.notifyUIChange();
+  }
+
+  // 用户取消问题卡片
+  cancelAsk(askId: string): void {
+    AskUserBridge.cancel(askId);
+    this.pendingAsk = null;
+    this.notifyUIChange();
+  }
+
+  // 定时提醒推进(ChatPage 每秒调用): 到期提醒注入为用户消息; 任务执行中走插话通道
+  tickSchedules(): void {
+    if (this.context === null || this.currentConversationId === '') {
+      return;
+    }
+    let conv: Conversation | null = this.currentConversation;
+    if (conv === null || conv.mode !== 'work') {
+      return;
+    }
+    let curConv: Conversation = conv;
+    let root: string = WorkFileService.workspaceRoot(this.context, conv.id);
+    ScheduleService.tick(root, (message: string): void => {
+      let text: string = '【定时提醒】' + message;
+      let userMsg: Message = Message.ofUser(generateMessageId(), text, text, []);
+      curConv.messages.push(userMsg);
+      if (this.isStreaming) {
+        this.workSteerQueue.push(text);
+      } else {
+        this.executeWorkLoop(curConv);
+      }
+      this.persistConversations();
+      this.notifyUIChange();
+    });
+  }
+
+  // 首次任务收尾后生成 LLM 会话标题(每会话一次; 失败静默)
+  private maybeGenerateTitle(conv: Conversation, userText: string, answerText: string): void {
+    if (this.titleJobs.has(conv.id)) {
+      return;
+    }
+    this.titleJobs.add(conv.id);
+    let config: ApiConfig = this.apiConfig;
+    AgentLoopService.generateSessionTitle(config, userText, answerText).then(
+      (title: string): void => {
+        if (title !== '' && this.context !== null) {
+          conv.title = title;
+          this.persistConversations();
+          this.notifyUIChange();
+        }
+      }).catch((_e: Error): void => {
+      // 标题生成失败静默
+    });
+  }
+
   // 发送消息
   async sendMessage(displayText: string): Promise<void> {
     let userText: string = displayText;
@@ -966,6 +1086,12 @@ export class ChatViewModel {
       return;
     }
     if (this.isStreaming) {
+      // 工作模式任务执行中: 不打断, 转为插话(next-step steering)
+      if (this.workMode) {
+        this.steerWork(userText);
+        return;
+      }
+      promptAction.showToast({ message: 'AI 正在回复中，请稍候', duration: 2000 });
       return;
     }
     if (this.context === null) {
@@ -1050,7 +1176,7 @@ export class ChatViewModel {
     conv.messages.push(assistantMsg);
 
     this.abortSignal = new AbortSignal();
-    this.isStreaming = true;
+    this.markStreamStart();
     this.streamTarget = assistantMsg;
     this.streamTimer = -1;
 
@@ -1108,12 +1234,21 @@ export class ChatViewModel {
   // 模型侧 KV 缓存可跨轮命中, 每轮只有真正新增的尾部需要重新计算。
   private async executeWorkLoop(conv: Conversation): Promise<void> {
     this.abortSignal = new AbortSignal();
-    this.isStreaming = true;
+    this.markStreamStart();
     this.streamTimer = -1;
     this.lastWorkPromptTokens = 0;
     this.lastWorkPromptChars = 0;
     this.workRepeatKey = '';
     this.workRepeatCount = 0;
+    this.workSteerQueue = [];
+    this.pendingAsk = null;
+    if (this.context !== null) {
+      SubagentService.bind(this.apiConfig, this.thinkingEnabled, this.reasoningEffort,
+        (ctx: common.UIAbilityContext, cid: string, name: string, argsJson: string):
+          Promise<ToolExecResult> => {
+          return WorkToolRunner.execute(ctx, cid, name, argsJson);
+        });
+    }
 
     try {
       // 组装与协议无关的循环历史(含既有全部消息); 系统提示词为静态文本, 整个循环不重写
@@ -1139,9 +1274,24 @@ export class ChatViewModel {
         }
       }
 
+      // 会话事件日志(对齐 dsh append-only session log): turn/start 留痕
+      let lastUserText: string = '';
+      for (let i: number = conv.messages.length - 1; i >= 0; i--) {
+        if (conv.messages[i].role === 'user' && conv.messages[i].content !== '') {
+          lastUserText = conv.messages[i].content;
+          break;
+        }
+      }
+      if (this.context !== null) {
+        SessionLogService.append(this.context, conv.id, 'turn_start', { 'user': lastUserText });
+      }
+      let turnEndStatus: string = 'complete';
+      let finalAnswerText: string = '';
+
       let step: number = 0;
       for (step = 0; step < Constants.WORK_MAX_STEPS; step++) {
         if (this.abortSignal.aborted) {
+          turnEndStatus = 'aborted';
           break;
         }
         if (this.context === null) {
@@ -1214,6 +1364,7 @@ export class ChatViewModel {
             turnMsg.toolCalls = [];
           });
         if (this.abortSignal.aborted) {
+          turnEndStatus = 'aborted';
           this.finalizeWorkTurn(turnMsg, true, conv);
           break;
         }
@@ -1221,13 +1372,43 @@ export class ChatViewModel {
           this.lastWorkPromptTokens = turn.promptTokens;
           this.lastWorkPromptChars = requestChars;
         }
+        // 步骤事件留痕(assistant 内容 + 思考摘要 + 调用清单)
+        if (ctx !== null) {
+          let callsForLog: Object[] = [];
+          for (let i: number = 0; i < turn.toolCalls.length; i++) {
+            let callLog: Record<string, Object> = {
+              'id': turn.toolCalls[i].id,
+              'name': turn.toolCalls[i].name,
+              'args': turn.toolCalls[i].argsJson.substring(0, 2000)
+            };
+            callsForLog.push(callLog);
+          }
+          let logPayload: Record<string, Object> = {
+            'step': step,
+            'content': turn.content,
+            'reasoning': turn.reasoning.length > Constants.WORK_LOG_REASONING_CHARS ?
+              turn.reasoning.substring(0, Constants.WORK_LOG_REASONING_CHARS) +
+              '…(已截断)' : turn.reasoning,
+            'toolCalls': callsForLog,
+            'finishReason': turn.finishReason
+          };
+          SessionLogService.append(ctx, conv.id, 'assistant_message', logPayload);
+        }
+
         // 无工具调用 → 最终回答(文本已流式写入本轮消息)
         if (turn.toolCalls.length === 0) {
+          finalAnswerText = turn.content;
           this.finalizeWorkTurn(turnMsg, false, conv);
+          // 粘性 max-tokens(对齐 dsh): 输出顶到上限即收尾并提示续跑
+          if (turn.finishReason === 'max_tokens') {
+            this.appendTurnNote(turnMsg, '⏹ 本轮输出达到模型上限(max tokens), 已自动收尾。发送"继续"接着输出。');
+            turnEndStatus = 'max_tokens';
+          }
           break;
         }
 
-        // 工具轮: 连续的只读调用并发执行(结果按模型顺序提交), 其余逐个执行
+        // 工具轮: 连续的只读调用经有界滚动池并发执行(上限 WORK_MAX_PARALLEL_TOOLS,
+        // 结果按模型顺序提交), 其余调用逐个执行(对齐 dsh 的 exclusive/parallel 调度)
         let turnLoopMsg: LoopMessage = LoopMessage.assistant(turn.content, turn.toolCalls);
         let imageDataUrl: string = '';
         let imagePath: string = '';
@@ -1239,7 +1420,7 @@ export class ChatViewModel {
           }
           let headCall: ToolCallRecord = turn.toolCalls[ci];
           if (WorkFileService.isReadOnlyTool(headCall.name)) {
-            // 收集连续只读调用为一组: 先整体展示(执行中状态), 再并发执行、按模型顺序提交
+            // 收集连续只读调用为一组: 先整体展示(执行中状态), 再经有界滚动池并发执行、按模型顺序提交
             let gj: number = ci;
             while (gj < turn.toolCalls.length &&
               WorkFileService.isReadOnlyTool(turn.toolCalls[gj].name)) {
@@ -1252,20 +1433,34 @@ export class ChatViewModel {
             this.notifyUIChange();
             // 先让"执行中"工具行上屏, 再开始可能长时间占用主线程的同步工具执行
             await this.sleep(30);
-            let execs: Promise<ToolExecResult>[] = [];
-            for (let k: number = ci; k < gj; k++) {
-              turn.toolCalls[k].preparing = false;
-              execs.push(WorkToolRunner.execute(ctx, conv.id,
-                turn.toolCalls[k].name, turn.toolCalls[k].argsJson));
+            let groupCount: number = gj - ci;
+            let poolSize: number = Math.min(Constants.WORK_MAX_PARALLEL_TOOLS, groupCount);
+            let execs: Promise<ToolExecResult>[] = new Array(groupCount);
+            let launchOne = (idx: number): void => {
+              turn.toolCalls[ci + idx].preparing = false;
+              execs[idx] = WorkToolRunner.execute(ctx, conv.id,
+                turn.toolCalls[ci + idx].name, turn.toolCalls[ci + idx].argsJson);
+            };
+            for (let k: number = 0; k < poolSize; k++) {
+              launchOne(k);
             }
-            for (let k: number = ci; k < gj; k++) {
-              let cur: ToolCallRecord = turn.toolCalls[k];
+            for (let r: number = 0; r < groupCount; r++) {
+              let cur: ToolCallRecord = turn.toolCalls[ci + r];
               let execStart: number = Date.now();
-              let exec: ToolExecResult = await execs[k - ci];
-              this.applyToolResult(cur, exec, execStart);
+              let exec: ToolExecResult = await execs[r];
+              this.applyToolResult(ctx, conv.id, cur, exec, execStart);
               if (exec.imageDataUrl !== '') {
                 imageDataUrl = exec.imageDataUrl;
                 imagePath = parseToolArgPath(cur.argsJson);
+              }
+              if (ctx !== null) {
+                SessionLogService.append(ctx, conv.id, 'tool_result', {
+                  'step': step,
+                  'name': cur.name,
+                  'ok': !cur.isError,
+                  'durationMs': cur.durationMs,
+                  'result': cur.result
+                });
               }
               let reminder: string = this.noteWorkRepeat(cur);
               if (reminder !== '') {
@@ -1273,7 +1468,13 @@ export class ChatViewModel {
               }
               this.persistConversations();
               this.notifyUIChange();
+              let nextIdx: number = r + poolSize;
+              if (nextIdx < groupCount) {
+                launchOne(nextIdx);
+              }
             }
+            // 只读组也可能产生 .spill 溢出文件, 组结束后同样刷新面板
+            await this.refreshWorkspace();
             ci = gj;
           } else {
             this.ensureToolRecordOnTimeline(turnMsg, headCall);
@@ -1284,13 +1485,22 @@ export class ChatViewModel {
             let execStart: number = Date.now();
             let exec: ToolExecResult = await WorkToolRunner.execute(
               ctx, conv.id, headCall.name, headCall.argsJson);
-            this.applyToolResult(headCall, exec, execStart);
+            this.applyToolResult(ctx, conv.id, headCall, exec, execStart);
             if (exec.imageDataUrl !== '') {
               imageDataUrl = exec.imageDataUrl;
               imagePath = parseToolArgPath(headCall.argsJson);
             }
             if (WorkFileService.isMutatingTool(headCall.name)) {
               await this.refreshWorkspace();
+            }
+            if (ctx !== null) {
+              SessionLogService.append(ctx, conv.id, 'tool_result', {
+                'step': step,
+                'name': headCall.name,
+                'ok': !headCall.isError,
+                'durationMs': headCall.durationMs,
+                'result': headCall.result
+              });
             }
             let reminder: string = this.noteWorkRepeat(headCall);
             if (reminder !== '') {
@@ -1302,6 +1512,7 @@ export class ChatViewModel {
           }
         }
         if (this.abortSignal.aborted) {
+          turnEndStatus = 'aborted';
           this.finalizeWorkTurn(turnMsg, true, conv);
           break;
         }
@@ -1318,15 +1529,30 @@ export class ChatViewModel {
         for (let r: number = 0; r < reminders.length; r++) {
           messages.push(LoopMessage.user(reminders[r]));
         }
+        // 用户插话(next-step steering): 本轮结束后注入, 下一步请求可见
+        if (this.workSteerQueue.length > 0) {
+          let drained: string[] = this.workSteerQueue;
+          this.workSteerQueue = [];
+          for (let s: number = 0; s < drained.length; s++) {
+            messages.push(LoopMessage.user('【用户补充】' + drained[s]));
+          }
+        }
       }
 
       // 步数耗尽: 在最后一条消息上标注(防失控保险, 正常长任务触不到)
       if (!this.abortSignal.aborted && step >= Constants.WORK_MAX_STEPS && conv.messages.length > 0) {
+        turnEndStatus = 'max_steps';
         let last: Message = conv.messages[conv.messages.length - 1];
         if (last.role === 'assistant') {
           this.appendTurnNote(last, '⏹ 已连续执行 ' + Constants.WORK_MAX_STEPS.toString() +
             ' 轮工具调用(防失控保险), 发送"继续"可接着执行。');
         }
+      }
+      if (this.context !== null) {
+        SessionLogService.append(this.context, conv.id, 'turn_end', { 'status': turnEndStatus });
+      }
+      if (finalAnswerText !== '' && !this.abortSignal.aborted) {
+        this.maybeGenerateTitle(conv, lastUserText, finalAnswerText);
       }
     } catch (e) {
       let err: Error = e as Error;
@@ -1340,10 +1566,16 @@ export class ChatViewModel {
           errMsg.displayContent = errMsg.content;
           conv.messages.push(errMsg);
         }
+        if (this.context !== null) {
+          SessionLogService.append(this.context, conv.id, 'turn_end',
+            { 'status': 'error', 'error': msg });
+        }
       }
     } finally {
-      this.isStreaming = false;
+      this.markStreamEnd();
       this.streamTarget = null;
+      this.pendingAsk = null;
+      AskUserBridge.cancelAll();
       if (this.streamTimer !== -1) {
         clearTimeout(this.streamTimer);
         this.streamTimer = -1;
@@ -1392,12 +1624,20 @@ export class ChatViewModel {
     turnMsg.toolCalls.push(call);
   }
 
-  // 追加运行时快照(日期/文件树/任务清单): 仅当与历史末尾已有快照内容不一致时追加
+  // 追加运行时快照(日期/文件树/任务清单/目标/提醒): 仅当与历史末尾已有快照内容不一致时追加
   private async appendRuntimeSnapshotIfNeeded(messages: LoopMessage[],
     ctx: common.UIAbilityContext, convId: string): Promise<void> {
     let tree: string = await WorkFileService.listWorkspaceTree(ctx, convId);
     let todoText: string = WorkFileService.readTodo(ctx, convId);
-    let snapshot: string = AgentLoopService.buildRuntimeSnapshot(tree, todoText);
+    let goalText: string = '';
+    let scheduleText: string = '';
+    let root: string = WorkFileService.workspaceRoot(ctx, convId);
+    let goal = GoalService.read(root);
+    if (goal !== null) {
+      goalText = GoalService.render(goal);
+    }
+    scheduleText = ScheduleService.renderList(ScheduleService.list(root));
+    let snapshot: string = AgentLoopService.buildRuntimeSnapshot(tree, todoText, goalText, scheduleText);
     if (AgentLoopService.findLastSnapshot(messages) !== snapshot) {
       messages.push(LoopMessage.user(snapshot));
     }
@@ -1490,18 +1730,28 @@ export class ChatViewModel {
     return chars / 2;
   }
 
-  // 工具结果送回模型前的最后一步处理: 头尾保留式截断(对齐 DeepSeek Harness
-  // output-retention 的 headTail 策略)——中段以精确省略提示替代; 末尾的汇总/结论
-  // 往往落在结果尾部, 不能一刀切丢弃
-  private applyToolResult(call: ToolCallRecord, exec: ToolExecResult, execStart: number): void {
+  // 工具结果送回模型前的最后一步处理: 溢出暂存 + 头尾保留式截断(对齐 DeepSeek Harness
+  // spill store + output-retention 的 headTail 策略)——超过送回上限的全文先落盘工作区
+  // .spill/ 目录(模型可用 read_file 读回), 再以头尾节选 + 定位提示替代中段; 末尾的
+  // 汇总/结论往往落在结果尾部, 不能一刀切丢弃。meta(如 diff 卡片)随记录持久化。
+  private applyToolResult(ctx: common.UIAbilityContext, convId: string,
+    call: ToolCallRecord, exec: ToolExecResult, execStart: number): void {
+    call.meta = exec.meta;
     if (exec.output.length > Constants.WORK_RESULT_MAX_CHARS) {
-      let headLen: number = Constants.WORK_RESULT_MAX_CHARS -
-        Constants.WORK_RESULT_KEEP_TAIL - 120;
-      let tail: string = exec.output.substring(exec.output.length - Constants.WORK_RESULT_KEEP_TAIL);
-      let omitted: number = exec.output.length - headLen - Constants.WORK_RESULT_KEEP_TAIL;
-      call.result = exec.output.substring(0, headLen) +
-        '\n\n...(中段省略 ' + omitted.toString() +
-        ' 字符；需要原文时用 read_file/search_files/parse_document 分页读取)...\n\n' + tail;
+      let root: string = WorkFileService.workspaceRoot(ctx, convId);
+      let spillRel: string = SpillStore.save(root, call.name, exec.output);
+      let headLen: number = Constants.WORK_SPILL_HEAD_CHARS;
+      let tailLen: number = Math.min(Constants.WORK_SPILL_TAIL_CHARS,
+        Math.max(0, exec.output.length - headLen));
+      let head: string = exec.output.substring(0, headLen);
+      let tail: string = tailLen > 0 ?
+        exec.output.substring(exec.output.length - tailLen) : '';
+      let omitted: number = exec.output.length - headLen - tailLen;
+      let locator: string = spillRel !== '' ?
+        '完整结果已保存到工作区 ' + spillRel + ', 需要原文用 read_file 读取' :
+        '完整结果暂存失败, 请用 search_files/parse_document 从源文件重新获取';
+      call.result = head + '\n\n...(中段省略 ' + omitted.toString() +
+        ' 字符；' + locator + ')...\n\n' + tail;
     } else {
       call.result = exec.output;
     }
@@ -1539,7 +1789,7 @@ export class ChatViewModel {
       return;
     }
     if (aborted) {
-      this.appendTurnNote(turnMsg, '⏹ 任务已手动停止');
+      this.appendTurnNote(turnMsg, '任务已手动停止');
     }
     turnMsg.displayContent = turnMsg.content;
   }
@@ -1585,7 +1835,7 @@ export class ChatViewModel {
       msg.content = msg.content + '\n\n⚠️ ' + err;
     }
     msg.displayContent = msg.content;
-    this.isStreaming = false;
+    this.markStreamEnd();
     this.streamTarget = null;
     if (this.streamTimer !== -1) {
       clearTimeout(this.streamTimer);
@@ -1595,7 +1845,7 @@ export class ChatViewModel {
   }
 
   private handleStreamDone(msg: Message, conv: Conversation): void {
-    this.isStreaming = false;
+    this.markStreamEnd();
     this.streamTarget = null;
     // 流式结束前同步 displayContent, 让 RichTextView 解析最终完整内容
     msg.displayContent = msg.content;
@@ -1651,15 +1901,33 @@ export class ChatViewModel {
     }
   }
 
+  // 流式任务开始: 同步 AppStorage 标记, 供 EntryAbility.onBackground 判断是否申请后台保活
+  private markStreamStart(): void {
+    this.isStreaming = true;
+    AppStorage.setOrCreate<boolean>('chatStreamingActive', true);
+  }
+
+  // 流式任务结束: 同步标记并释放后台保活(前台期间未申请时为空操作)
+  private markStreamEnd(): void {
+    this.isStreaming = false;
+    AppStorage.set<boolean>('chatStreamingActive', false);
+    if (this.context !== null) {
+      BackgroundTaskService.stop(this.context);
+    }
+  }
+
   // 停止流式(聊天流/工作模式循环通用)
   stopStreaming(): void {
     if (!this.isStreaming) {
       return;
     }
-    this.isStreaming = false;
+    this.markStreamEnd();
     this.abortSignal.aborted = true;
     ChatService.abort();
     AgentLoopService.abort();
+    // 挂起中的 ask_user_question 立即落定(以取消收场), 避免工具永久挂起
+    AskUserBridge.cancelAll();
+    this.pendingAsk = null;
     if (this.streamTimer !== -1) {
       clearTimeout(this.streamTimer);
       this.streamTimer = -1;
@@ -1726,7 +1994,7 @@ export class ChatViewModel {
     conv.messages.push(newAssistant);
 
     this.abortSignal = new AbortSignal();
-    this.isStreaming = true;
+    this.markStreamStart();
     this.streamTarget = newAssistant;
     this.streamTimer = -1;
 

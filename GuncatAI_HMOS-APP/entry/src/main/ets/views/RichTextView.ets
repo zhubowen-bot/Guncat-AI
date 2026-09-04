@@ -16,8 +16,10 @@ import { sanitizeMarkdownForRender } from '../common/MarkdownSanitizer';
 @Component
 export struct RichTextView {
   @Prop content: string = '';
-  // 外部「复制局部」按钮点击次数, 每次递增触发开启文本选择模式 (长按拖选 + 复制)
+  // 文本选择常开(长按拖选 + 局部复制); selectionTrigger 仅为兼容旧调用方保留, 已无实际作用
   @Prop @Watch('onSelectionTrigger') selectionTrigger: number = 0;
+  // 消息区空白单击复位信号(ChatPage 递增): 武装(发生过拖选)状态下收到即取消选区
+  @StorageLink('richSelectionResetTick') @Watch('onSelectionResetTick') resetTick: number = 0;
   // v1 组件不支持 @State 修饰 controller, 按库文档使用无装饰器字段
   private controller: MarkdownController = new MarkdownController();
   // 响应式监听系统主题 (由 EntryAbility 写入 AppStorage)
@@ -113,11 +115,18 @@ export struct RichTextView {
         // ignore
       }
     });
+    // 文本选择常开: 创建即允许长按拖选局部复制, 不再需要「复制局部」按钮触发
+    this.controller.setTextSelectionEnable(true);
   }
 
-  // 外部「复制局部」按钮触发: 开启跨 Text 文本选择能力, 长按即可拖选复制
+  // 兼容保留: 历史调用方递增 selectionTrigger 时重复开启一次(无副作用)
   onSelectionTrigger(): void {
     this.controller.setTextSelectionEnable(true);
+  }
+
+  // 消息区空白单击信号: 武装(发生过拖选)状态下复位选区, 未武装则忽略
+  onSelectionResetTick(): void {
+    this.handleRootClick();
   }
 
   // 根据系统深色模式切换代码块主题与语法高亮配色
@@ -214,5 +223,54 @@ export struct RichTextView {
       }
     }
     .width('100%')
+    // 桌面端: 跟踪本组件内的左键拖选, 之后单击任意处即可取消选区
+    .onMouse((event: MouseEvent) => {
+      this.trackMouseForSelection(event);
+    })
+    // 组件内单击: 若此前发生过拖选, 复位选区(重建 Markdown 组件)
+    .onClick(() => {
+      this.handleRootClick();
+    })
+  }
+
+  // ===== 单击取消文本选择(桌面鼠标拖选场景) =====
+  // 三方库自身要求双击空白才取消, 且未公开清除选区的接口;
+  // 这里跟踪"发生过拖选"状态, 拖选后的下一次单击通过 renderKey 重建组件复位选区。
+  // 未拖选过的普通点击(链接/图片/代码复制等)不会触发重建, 避免无谓闪烁
+  private mousePressed: boolean = false;
+  private mousePressX: number = 0;
+  private mousePressY: number = 0;
+  private selectionArmed: boolean = false;
+
+  private trackMouseForSelection(event: MouseEvent): void {
+    if (event.action === MouseAction.Press && event.button === 0) {
+      this.mousePressed = true;
+      this.mousePressX = event.x;
+      this.mousePressY = event.y;
+    } else if (event.action === MouseAction.Move && this.mousePressed &&
+      event.button === 0) {
+      const dx: number = event.x - this.mousePressX;
+      const dy: number = event.y - this.mousePressY;
+      if (dx * dx + dy * dy > 16) {
+        this.selectionArmed = true;
+      }
+    } else if (event.action === MouseAction.Release) {
+      this.mousePressed = false;
+    }
+  }
+
+  private handleRootClick(): void {
+    if (!this.selectionArmed) {
+      return;
+    }
+    this.clearActiveTextSelection();
+  }
+
+  // 复位选区: 关→开文本选择能力并重建 Markdown 组件, 高亮与操作条随之消失
+  private clearActiveTextSelection(): void {
+    this.selectionArmed = false;
+    this.controller.setTextSelectionEnable(false);
+    this.controller.setTextSelectionEnable(true);
+    this.renderKey++;
   }
 }
