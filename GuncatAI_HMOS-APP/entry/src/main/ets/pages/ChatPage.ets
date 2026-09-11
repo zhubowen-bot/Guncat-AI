@@ -18,6 +18,7 @@ import { Conversation } from '../model/Conversation';
 import { ConversationListItem } from '../model/ConversationListItem';
 import { ApiConfig } from '../model/ApiConfig';
 import { MultimodalConfig } from '../model/MultimodalConfig';
+import { SearchEngineSettings } from '../service/LocalWebSearch';
 import { ApiProfile } from '../model/ApiProfile';
 import { FileItem, PreviewData } from '../common/Types';
 import { WorkFileService, WorkspaceFileInfo } from '../service/WorkFileService';
@@ -653,6 +654,8 @@ struct ChatPage {
         initTopP: this.vm.apiConfig.topP !== null ? this.vm.apiConfig.topP.toString() : '',
         initMaxTokens: this.vm.apiConfig.maxTokens !== null ? this.vm.apiConfig.maxTokens.toString() : '',
         initExtraBody: this.vm.apiConfig.extraBody,
+        initAutoSuffix: this.vm.apiConfig.autoSuffix,
+        initLocalSearchJson: JSON.stringify(this.vm.localSearchConfig.toJson()),
         initMmBaseUrl: this.vm.multimodalConfig.baseUrl,
         initMmApiKey: this.vm.multimodalConfig.apiKey,
         initMmModel: this.vm.multimodalConfig.model,
@@ -671,7 +674,8 @@ struct ChatPage {
             this.refreshTick++;
           }
         },
-        onSave: (name: string, api: ApiConfig, mm: MultimodalConfig) => {
+        onSave: (name: string, api: ApiConfig, mm: MultimodalConfig, search: SearchEngineSettings) => {
+          this.vm.saveLocalSearchConfig(search);
           this.vm.saveCurrentApiProfile(name, api, mm).then(() => {
             this.settingsOpen = false;
             this.showToast('配置已保存');

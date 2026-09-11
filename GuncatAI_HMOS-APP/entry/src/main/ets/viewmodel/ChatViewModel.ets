@@ -10,7 +10,8 @@ import { MultimodalConfig } from '../model/MultimodalConfig';
 import { ApiProfile } from '../model/ApiProfile';
 import { FileItem, StreamCallbacks, AbortSignal, ParsedFileResult } from '../common/Types';
 import { AgentLoader } from '../service/AgentLoader';
-import { ChatService } from '../service/ChatService';
+import { ChatService, ChatStreamResult } from '../service/ChatService';
+import { LOCAL_SEARCH_TOOL_NAME, LocalWebSearch, SearchEngineSettings, LocalSearchOutcome } from '../service/LocalWebSearch';
 import { AgentLoopService, LoopError, LoopMessage, LoopTurnCallbacks, LoopTurnResult } from '../service/AgentLoopService';
 import { WorkFileService, WorkspaceFileInfo, ToolExecResult } from '../service/WorkFileService';
 import { WorkToolRunner } from '../service/WorkToolRunner';
@@ -25,6 +26,7 @@ import { ToolCallRecord } from '../model/ToolCallRecord';
 import { FileUploadService } from '../service/FileUploadService';
 import { FileService, PickedFile } from '../service/FileService';
 import { MultimodalService } from '../service/MultimodalService';
+import { HarnessTools, WEB_FETCH_TOOL_NAME } from '../service/HarnessTools';
 import { StorageManager } from '../data/StorageManager';
 import { Constants } from '../common/Constants';
 import { generateMessageId } from '../common/Utils';
@@ -52,6 +54,8 @@ export class ChatViewModel {
   drawerOpen: boolean = false;
   apiConfig: ApiConfig = ApiConfig.default();
   multimodalConfig: MultimodalConfig = MultimodalConfig.default();
+  // 本地内置联网搜索配置(引擎 + 各引擎 Key/BaseUrl), 与服务端联网搜索开关独立
+  localSearchConfig: SearchEngineSettings = new SearchEngineSettings();
   apiProfiles: ApiProfile[] = [];
   currentApiProfileId: string = '';
 
@@ -182,6 +186,11 @@ export class ChatViewModel {
     this.webSearchEnabled = await StorageManager.loadBoolean(this.context, Constants.LS_KEY_WEB_SEARCH_ENABLED, true);
     this.autoReadEnabled = await StorageManager.loadBoolean(
       this.context, Constants.LS_KEY_AUTO_READ_ENABLED, false);
+    // 本地内置联网搜索配置加载并注入运行时快照
+    let searchCfgJson: string = await StorageManager.loadString(
+      this.context, Constants.LS_KEY_LOCAL_SEARCH_CONFIG, '');
+    this.localSearchConfig = SearchEngineSettings.parse(searchCfgJson);
+    LocalWebSearch.bind(this.localSearchConfig);
 
     // 加载智能体; 工作模式作为与智能体平行的固定项注入列表顶部
     this.agents = await AgentLoader.loadAllAgents(this.context);
@@ -692,6 +701,16 @@ export class ChatViewModel {
     this.multimodalConfig = profile.multimodalConfig;
   }
 
+  // 保存本地内置联网搜索配置并刷新运行时快照(引擎切换/Key 更新立即生效)
+  async saveLocalSearchConfig(cfg: SearchEngineSettings): Promise<void> {
+    this.localSearchConfig = cfg;
+    LocalWebSearch.bind(cfg);
+    if (this.context !== null) {
+      await StorageManager.saveString(this.context, Constants.LS_KEY_LOCAL_SEARCH_CONFIG,
+        JSON.stringify(cfg.toJson()));
+    }
+  }
+
   private async persistApiProfiles(): Promise<void> {
     if (this.context !== null) {
       await StorageManager.saveApiProfiles(this.context, this.apiProfiles);
@@ -1183,45 +1202,8 @@ export class ChatViewModel {
     // 构造 history(不包含 user 占位 assistant)
     let history: Message[] = conv.messages.slice(0, conv.messages.length - 1);
 
-    let streamStartMs: number = Date.now();
-    let callbacks: StreamCallbacks = new StreamCallbacks();
-    callbacks.onToken = (delta: string): void => {
-      assistantMsg.content += delta;
-      this.updateLiveTokenSpeed(assistantMsg, streamStartMs);
-      // displayContent 与 content 同步, 但流式中渲染走纯 Text, 避免每 token 双倍 setter 通知
-      this.scheduleStreamUpdate();
-    };
-    callbacks.onReasoning = (text: string): void => {
-      assistantMsg.reasoning = text;
-      this.updateLiveTokenSpeed(assistantMsg, streamStartMs);
-      this.scheduleStreamUpdate();
-    };
-    callbacks.onUsage = (speed: number, hit: number): void => {
-      if (speed > 0) {
-        assistantMsg.tokenSpeed = speed;
-      }
-      if (hit >= 0) {
-        assistantMsg.cacheHitRate = hit;
-      }
-      this.scheduleStreamUpdate();
-    };
-    callbacks.onError = (err: string): void => {
-      this.handleStreamError(assistantMsg, err);
-    };
-    callbacks.onDone = (_full: string): void => {
-      this.handleStreamDone(assistantMsg, conv);
-    };
-
-    ChatService.streamChat(
-      this.apiConfig,
-      this.currentAgent,
-      history,
-      fullText,
-      this.thinkingEnabled,
-      this.webSearchEnabled,
-      callbacks,
-      this.abortSignal
-    );
+    // 流式请求 + 本地联网搜索工具循环(search_web 由模型决定, 本地执行后回灌)
+    await this.runChatStream(conv, assistantMsg, history, fullText);
   }
 
   // ===== 工作模式 Agent Loop 主循环 (Codex 式时间线) =====
@@ -1401,7 +1383,7 @@ export class ChatViewModel {
           this.finalizeWorkTurn(turnMsg, false, conv);
           // 粘性 max-tokens(对齐 dsh): 输出顶到上限即收尾并提示续跑
           if (turn.finishReason === 'max_tokens') {
-            this.appendTurnNote(turnMsg, '⏹ 本轮输出达到模型上限(max tokens), 已自动收尾。发送"继续"接着输出。');
+            this.appendTurnNote(turnMsg, ' 本轮输出达到模型上限(max tokens), 已自动收尾。发送"继续"接着输出。');
             turnEndStatus = 'max_tokens';
           }
           break;
@@ -1409,7 +1391,8 @@ export class ChatViewModel {
 
         // 工具轮: 连续的只读调用经有界滚动池并发执行(上限 WORK_MAX_PARALLEL_TOOLS,
         // 结果按模型顺序提交), 其余调用逐个执行(对齐 dsh 的 exclusive/parallel 调度)
-        let turnLoopMsg: LoopMessage = LoopMessage.assistant(turn.content, turn.toolCalls);
+        // fromTurn 携带思考文本与签名: Anthropic 思考模式下下一轮请求需回传 thinking 块
+        let turnLoopMsg: LoopMessage = LoopMessage.fromTurn(turn);
         let imageDataUrl: string = '';
         let imagePath: string = '';
         let reminders: string[] = [];
@@ -1544,7 +1527,7 @@ export class ChatViewModel {
         turnEndStatus = 'max_steps';
         let last: Message = conv.messages[conv.messages.length - 1];
         if (last.role === 'assistant') {
-          this.appendTurnNote(last, '⏹ 已连续执行 ' + Constants.WORK_MAX_STEPS.toString() +
+          this.appendTurnNote(last, ' 已连续执行 ' + Constants.WORK_MAX_STEPS.toString() +
             ' 轮工具调用(防失控保险), 发送"继续"可接着执行。');
         }
       }
@@ -1828,6 +1811,169 @@ export class ChatViewModel {
     msg.tokenSpeed = (msg.content.length + msg.reasoning.length) / elapsedSec;
   }
 
+  // 聊天模式流式请求(含本地内置联网搜索工具循环):
+  // search_web 强制注入请求体(三协议), 是否调用由模型决定; 调用后在手机本地执行并回灌下一轮。
+  // 服务端联网搜索开关(webSearchEnabled)完全不动; 引用格式指引随搜索结果回传,
+  // 不改写系统提示词与请求前缀(保护跨轮 KV 缓存)。
+  private async runChatStream(conv: Conversation, assistantMsg: Message,
+    history: Message[], userText: string): Promise<void> {
+    let round: number = 0;
+    let currentUserText: string = userText;
+    let currentHistory: Message[] = history;
+    let failed: boolean = false;
+    while (true) {
+      round++;
+      let streamStartMs: number = Date.now();
+      let callbacks: StreamCallbacks = new StreamCallbacks();
+      callbacks.onToken = (delta: string): void => {
+        assistantMsg.content += delta;
+        this.updateLiveTokenSpeed(assistantMsg, streamStartMs);
+        this.scheduleStreamUpdate();
+      };
+      callbacks.onReasoning = (text: string): void => {
+        assistantMsg.reasoning = text;
+        this.updateLiveTokenSpeed(assistantMsg, streamStartMs);
+        this.scheduleStreamUpdate();
+      };
+      callbacks.onUsage = (speed: number, hit: number): void => {
+        if (speed > 0) {
+          assistantMsg.tokenSpeed = speed;
+        }
+        if (hit >= 0) {
+          assistantMsg.cacheHitRate = hit;
+        }
+        this.scheduleStreamUpdate();
+      };
+      callbacks.onToolCalls = (calls: ToolCallRecord[]): void => {
+        // 模型生成调用参数过程中即时同步(preparing 态), 与工作模式行为一致
+        for (let i: number = 0; i < calls.length; i++) {
+          let call: ToolCallRecord = calls[i];
+          if (call.name === '' || assistantMsg.toolCalls.indexOf(call) >= 0) {
+            continue;
+          }
+          assistantMsg.toolCalls.push(call);
+          call.preparing = true;
+        }
+      };
+      callbacks.onError = (err: string): void => {
+        failed = true;
+        this.handleStreamError(assistantMsg, err);
+      };
+      // 多轮循环的收尾由本方法在结束时统一调用 handleStreamDone, 每轮不重复收尾
+      callbacks.onDone = (_full: string): void => {};
+
+      let result: ChatStreamResult = await ChatService.streamChat(
+        this.apiConfig, this.currentAgent, currentHistory, currentUserText,
+        this.thinkingEnabled, this.webSearchEnabled, callbacks, this.abortSignal);
+      assistantMsg.thinkingSignature = result.thinkingSignature;
+      // 中断: 与旧流程一致, 不做收尾(由 stopStreaming 负责状态)
+      if (this.abortSignal.aborted) {
+        return;
+      }
+      // 出错: handleStreamError 已提示, 继续走 handleStreamDone 同步 displayContent(与旧流程一致)
+      if (failed) {
+        break;
+      }
+      // 只看本轮是否有新工具调用: assistantMsg.toolCalls 是跨轮累计的(旧调用保留供回灌/展示),
+      // 若用它判断, 模型给出最终回答(无新调用)的轮次也永远不满足退出条件
+      let roundCalls: ToolCallRecord[] = result.toolCalls;
+      if (roundCalls.length === 0) {
+        break;
+      }
+      if (round >= Constants.CHAT_SEARCH_MAX_ROUNDS) {
+        assistantMsg.content += '\n\n 已连续搜索 ' + Constants.CHAT_SEARCH_MAX_ROUNDS.toString() +
+          ' 轮(防失控保险), 停止继续搜索。';
+        break;
+      }
+      // 执行模型发起的本地工具调用(search_web / web_fetch 均在手机本地执行;
+      // 其余未知调用填错误结果送回, 由模型自行纠正)
+      for (let i: number = 0; i < roundCalls.length; i++) {
+        let call: ToolCallRecord = roundCalls[i];
+        call.preparing = false;
+        if (call.result !== '') {
+          continue;
+        }
+        let execStart: number = Date.now();
+        if (call.name === LOCAL_SEARCH_TOOL_NAME) {
+          let query: string = ChatViewModel.parseSearchQuery(call.argsJson);
+          let outcome: LocalSearchOutcome = await LocalWebSearch.searchWeb(query, this.abortSignal);
+          call.durationMs = Date.now() - execStart;
+          if (outcome.ok) {
+            call.isError = false;
+            call.result = outcome.contentForAI;
+            assistantMsg.content += '\n\n 进行了一次本机联网搜索(' + outcome.engineLabel + ')：' + query + '\n';
+          } else {
+            call.isError = true;
+            call.result = '搜索失败: ' + outcome.errorMessage;
+            assistantMsg.content += '\n\n 本机联网搜索失败：' + outcome.errorMessage + '\n';
+          }
+        } else if (call.name === WEB_FETCH_TOOL_NAME) {
+          let args: Record<string, Object> = ChatViewModel.parseArgsObject(call.argsJson);
+          let url: string = ChatViewModel.readArgString(args, 'url');
+          let fetchResult: ToolExecResult = await HarnessTools.toolWebFetch(args);
+          call.durationMs = Date.now() - execStart;
+          call.isError = !fetchResult.ok;
+          call.result = fetchResult.output;
+          if (fetchResult.ok) {
+            assistantMsg.content += '\n\n 读取了一次网页：' + (url === '' ? '(未提供 url)' : url) + '\n';
+          } else {
+            assistantMsg.content += '\n\n 读取网页失败：' +
+              (url === '' ? '(未提供 url)' : url) + '\n';
+          }
+        } else {
+          call.durationMs = 0;
+          call.isError = true;
+          call.result = '未知工具: ' + call.name +
+            '(聊天模式仅支持 ' + LOCAL_SEARCH_TOOL_NAME + ' / ' + WEB_FETCH_TOOL_NAME + ')';
+        }
+      }
+      this.persistConversations();
+      this.notifyUIChange();
+      // 下一轮: 历史包含带工具结果的 assistant 消息(conv.messages 末条), 不追加用户消息
+      currentHistory = conv.messages;
+      currentUserText = '';
+    }
+    this.handleStreamDone(assistantMsg, conv);
+  }
+
+  // search_web 参数解析: 取 query 字段, 解析失败回落原始参数文本
+  private static parseSearchQuery(argsJson: string): string {
+    try {
+      let parsed: Object = JSON.parse(argsJson === '' ? '{}' : argsJson);
+      if (typeof parsed === 'object' && parsed !== null && !(parsed instanceof Array)) {
+        let q: Object = (parsed as Record<string, Object>)['query'];
+        if (typeof q === 'string' && (q as string).trim() !== '') {
+          return q as string;
+        }
+      }
+    } catch (e) {
+      // ignore
+    }
+    return argsJson.trim();
+  }
+
+  // 工具调用参数 JSON → 对象(解析失败回落空对象)
+  private static parseArgsObject(argsJson: string): Record<string, Object> {
+    try {
+      let parsed: Object = JSON.parse(argsJson === '' ? '{}' : argsJson);
+      if (typeof parsed === 'object' && parsed !== null && !(parsed instanceof Array)) {
+        return parsed as Record<string, Object>;
+      }
+    } catch (e) {
+      // ignore
+    }
+    let empty: Record<string, Object> = {};
+    return empty;
+  }
+
+  private static readArgString(args: Record<string, Object>, key: string): string {
+    let v: Object | undefined = args[key];
+    if (typeof v === 'string') {
+      return v as string;
+    }
+    return '';
+  }
+
   private handleStreamError(msg: Message, err: string): void {
     if (msg.content === '') {
       msg.content = '⚠️ ' + err;
@@ -1999,44 +2145,8 @@ export class ChatViewModel {
     this.streamTimer = -1;
 
     let history: Message[] = conv.messages.slice(0, conv.messages.length - 1);
-    let streamStartMs: number = Date.now();
-    let callbacks: StreamCallbacks = new StreamCallbacks();
-    callbacks.onToken = (delta: string): void => {
-      newAssistant.content += delta;
-      this.updateLiveTokenSpeed(newAssistant, streamStartMs);
-      this.scheduleStreamUpdate();
-    };
-    callbacks.onReasoning = (text: string): void => {
-      newAssistant.reasoning = text;
-      this.updateLiveTokenSpeed(newAssistant, streamStartMs);
-      this.scheduleStreamUpdate();
-    };
-    callbacks.onUsage = (speed: number, hit: number): void => {
-      if (speed > 0) {
-        newAssistant.tokenSpeed = speed;
-      }
-      if (hit >= 0) {
-        newAssistant.cacheHitRate = hit;
-      }
-      this.scheduleStreamUpdate();
-    };
-    callbacks.onError = (err: string): void => {
-      this.handleStreamError(newAssistant, err);
-    };
-    callbacks.onDone = (_full: string): void => {
-      this.handleStreamDone(newAssistant, conv);
-    };
-
-    ChatService.streamChat(
-      this.apiConfig,
-      this.currentAgent,
-      history,
-      regenContent,
-      this.thinkingEnabled,
-      this.webSearchEnabled,
-      callbacks,
-      this.abortSignal
-    );
+    // 流式请求 + 本地联网搜索工具循环(与 sendUserMessage 共用)
+    await this.runChatStream(conv, newAssistant, history, regenContent);
   }
 
   // 复制

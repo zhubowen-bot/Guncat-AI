@@ -72,6 +72,9 @@ class DeviceFsAdapter implements FsAdapter {
   }
 }
 
+// web_fetch 工具名(工作模式工具表与聊天模式强制注入共用)
+export const WEB_FETCH_TOOL_NAME: string = 'web_fetch';
+
 export class HarnessTools {
   // ===== 工具分类(与 WorkFileService 的并发调度联动) =====
 
@@ -428,7 +431,8 @@ export class HarnessTools {
 
   // ===== web_fetch =====
 
-  private static async toolWebFetch(args: Record<string, Object>): Promise<ToolExecResult> {
+  // 公开给聊天模式工具循环复用(自包含: 只依赖 args, 不触碰工作区)
+  static async toolWebFetch(args: Record<string, Object>): Promise<ToolExecResult> {
     let url: string = HarnessTools.strArg(args, 'url', '');
     if (url === '') {
       return HarnessTools.fail('缺少参数 url');
@@ -562,7 +566,7 @@ export class HarnessTools {
         'path', HarnessTools.strProp('目标文件相对路径'),
         'file_text', HarnessTools.strProp('create 时的完整文件内容; str_replace 时改传 old_string/new_string; insert 时传 insert_line/insert_text')),
       ['command', 'path']));
-    defs.push(HarnessTools.makeTool('web_fetch',
+    defs.push(HarnessTools.makeTool(WEB_FETCH_TOOL_NAME,
       '抓取 http(s) 网页/接口原文: GET 请求(≤2MB), HTML 自动剥离为可读文本, JSON/文本原样返回(超长截断)。用于读服务端联网搜索给出的具体来源、抓公开文档/接口数据。不可达或非 2xx 会明确报错; 需要下载文件到工作区用 download_file。',
       HarnessTools.props2(
         'url', HarnessTools.strProp('要抓取的 http(s) 链接'),
@@ -620,6 +624,16 @@ export class HarnessTools {
         'max_results', HarnessTools.strProp('可选: 返回行数上限, 默认 40')),
       ['query']));
     return defs;
+  }
+
+  // web_fetch 的协议无关定义(聊天模式强制注入时复用, 保持描述单点维护)
+  static webFetchDef(): Record<string, Object> {
+    return HarnessTools.makeTool(WEB_FETCH_TOOL_NAME,
+      '抓取 http(s) 网页/接口原文: GET 请求(≤2MB), HTML 自动剥离为可读文本, JSON/文本原样返回(超长截断)。用于读取联网搜索结果中的具体来源、用户给出的链接、公开文档与接口数据。不可达或非 2xx 会明确报错。',
+      HarnessTools.props2(
+        'url', HarnessTools.strProp('要抓取的 http(s) 链接'),
+        'max_chars', HarnessTools.strProp('可选: 返回文本字符上限, 默认 24000')),
+      ['url']);
   }
 
   // ===== 底层小工具 =====

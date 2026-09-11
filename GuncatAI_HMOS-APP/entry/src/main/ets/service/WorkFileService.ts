@@ -14,6 +14,8 @@ import { WorkSkillService } from './WorkSkillService';
 import { HarnessTools } from './HarnessTools';
 import { arrayBufferToBase64 } from '../common/Utils';
 import { Constants } from '../common/Constants';
+import { LocalWebSearch, LocalSearchOutcome, LOCAL_SEARCH_TOOL_DESC_WORK, LOCAL_SEARCH_TOOL_DESC_WORK_FALLBACK,
+  LOCAL_SEARCH_QUERY_PROP_DESC } from './LocalWebSearch';
 
 const DOMAIN: number = 0x0000;
 const TAG: string = 'WorkFileService';
@@ -395,6 +397,7 @@ export class WorkFileService {
       name === 'write_docx' || name === 'write_xlsx' || name === 'write_pptx' ||
       name === 'edit_ppt' || name === 'write_csv' || name === 'download_file' ||
       name === 'write_svg' || name === 'todo_write' || name === 'record_search' ||
+      name === 'search_web' ||
       name === 'transform_file' || HarnessTools.isMutating(name);
   }
 
@@ -485,6 +488,10 @@ export class WorkFileService {
       let sources: string = WorkFileService.strArg(args, 'sources', '');
       return WorkFileService.toolRecordSearch(root, query, summary, sources);
     }
+    if (name === 'search_web') {
+      let query: string = WorkFileService.strArg(args, 'query', '');
+      return await WorkFileService.toolSearchWeb(root, query);
+    }
     if (name === 'list_skills') {
       return WorkFileService.ok(WorkSkillService.listText());
     }
@@ -525,6 +532,29 @@ export class WorkFileService {
       block = block + '来源:\n' + sources.trim() + '\n';
     }
     return WorkFileService.toolWrite(root, '.searches.md', block, true);
+  }
+
+  // search_web: 手机本地直连搜索引擎(不经过模型服务商服务端)。
+  // 结果清单送回模型的同时自动登记到 .searches.md —— 本地搜索虽然会在对话历史留下
+  // 工具调用, 但旧轮次的结果会被上下文压缩/修剪, 落盘记录永远可由 read_file 找回。
+  private static async toolSearchWeb(root: string, query: string): Promise<ToolExecResult> {
+    if (query.trim() === '') {
+      return WorkFileService.fail('缺少参数 query');
+    }
+    let outcome: LocalSearchOutcome = await LocalWebSearch.searchWeb(query);
+    if (!outcome.ok) {
+      return WorkFileService.fail(outcome.errorMessage === '' ? '搜索失败' : outcome.errorMessage);
+    }
+    let block: string = '\n## ' + WorkFileService.formatStamp(new Date().getTime()) +
+      ' · ' + query.trim() + '（本地内置搜索 · ' + outcome.engineLabel + '）\n来源:\n';
+    let maxUrls: number = outcome.items.length > 8 ? 8 : outcome.items.length;
+    for (let i: number = 0; i < maxUrls; i++) {
+      block = block + '- [' + outcome.items[i].title + '](' + outcome.items[i].url + ')\n';
+    }
+    WorkFileService.toolWrite(root, '.searches.md', block, true);
+    let head: string = '【本地内置联网搜索】(手机直连 · ' + outcome.engineLabel +
+      ' · 结果已自动登记到 .searches.md)\n\n';
+    return WorkFileService.ok(head + outcome.contentForAI);
   }
 
   private static formatStamp(ts: number): string {
@@ -1162,7 +1192,9 @@ export class WorkFileService {
 
   // ===== 工具定义(送入模型的 JSON Schema, 协议无关的中间表示) =====
 
-  static toolDefs(): Record<string, Object>[] {
+  // webSearchEnabled: 服务端联网搜索是否开启 —— 开启时 search_web 描述切换为"兜底版",
+  // 引导模型优先走服务端 web_search(描述跟随托管工具同步增删, 不引入额外的前缀缓存失效)
+  static toolDefs(webSearchEnabled: boolean): Record<string, Object>[] {
     let defs: Record<string, Object>[] = [];
     defs.push(WorkFileService.makeTool('list_files',
       '列出工作区中的文件与目录。path 为空时列出整个工作区(含子目录), 否则列出指定目录。返回每项的相对路径与大小。',
@@ -1298,8 +1330,12 @@ export class WorkFileService {
       '创建/更新当前任务的任务清单。复杂任务开始时先建立清单, 每完成一项立即更新状态; 简单任务(1-2步)不必建清单。todos 为 JSON 数组, status 取 pending/in_progress/completed。',
       WorkFileService.props1('todos', WorkFileService.strProp('任务清单 JSON 数组, 如 [{"content":"解析数据","status":"in_progress"},{"content":"生成报告","status":"pending"}]')),
       ['todos']));
+    defs.push(WorkFileService.makeTool('search_web',
+      webSearchEnabled ? LOCAL_SEARCH_TOOL_DESC_WORK_FALLBACK : LOCAL_SEARCH_TOOL_DESC_WORK,
+      WorkFileService.props1('query', WorkFileService.strProp(LOCAL_SEARCH_QUERY_PROP_DESC)),
+      ['query']));
     defs.push(WorkFileService.makeTool('record_search',
-      '保存一次联网搜索的记录到工作区 .searches.md。联网搜索由服务端完成, 不会在对话历史中留下任何工具调用记录, 因此每次你借助联网搜索获得信息后, 必须立即调用本工具登记: 查询词 + 关键结论摘要(可选主要来源 URL, 多个用换行分隔)。否则后续轮次(包括你自己)都无法追溯这次搜索。',
+      '保存一次服务端联网搜索的记录到工作区 .searches.md。服务端联网搜索由模型服务商在请求内完成, 不会在对话历史中留下任何工具调用记录, 因此每次你借助服务端联网搜索获得信息后, 必须立即调用本工具登记: 查询词 + 关键结论摘要(可选主要来源 URL, 多个用换行分隔)。注意: 本地内置搜索工具(search_web)的结果已自动登记到 .searches.md, 不要对它重复调用本工具。否则后续轮次(包括你自己)都无法追溯这次搜索。',
       WorkFileService.props3(
         'query', WorkFileService.strProp('本次联网搜索使用的关键词/查询'),
         'summary', WorkFileService.strProp('本次搜索获得的关键结论或信息要点(简明扼要)'),

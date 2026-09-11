@@ -1,4 +1,5 @@
 // 共享类型定义
+import { ToolCallRecord } from '../model/ToolCallRecord';
 
 // 文件队列项(对齐 web 版本的 pendingFiles)
 export class FileItem {
@@ -85,6 +86,8 @@ export class StreamCallbacks {
   onReasoning: (text: string) => void = (_text: string): void => {};
   // 由 API 返回的 usage 派生的统计; 无返回值时传 -1
   onUsage: (tokenSpeed: number, cacheHitRate: number) => void = (_speed: number, _hit: number): void => {};
+  // 工具调用流式生成过程中上抛(聊天模式本地联网搜索等 function tool)
+  onToolCalls: (calls: ToolCallRecord[]) => void = (_calls: ToolCallRecord[]): void => {};
   onError: (error: string) => void = (_error: string): void => {};
   onDone: (fullContent: string) => void = (_fullContent: string): void => {};
 }

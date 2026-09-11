@@ -5,11 +5,14 @@
 //   anthropic-messages → content_block tool_use / input_json_delta + tool_result 回传
 // 循环驱动(执行工具/步数控制/历史裁剪)在 ChatViewModel.executeWorkLoop 中。
 import { http } from '@kit.NetworkKit';
-import { StreamAccumulator, getProtocol,
+import { StreamAccumulator, getProtocol, resolveEndpointUrl,
   extractChatCompletionsDelta, extractChatCompletionsReasoning, extractChatCompletionsUsage,
   extractResponsesDelta, extractResponsesReasoning, extractResponsesUsage, extractResponsesFailure,
   extractAnthropicDelta, extractAnthropicReasoning, extractAnthropicUsage, extractAnthropicFailure,
+  extractAnthropicSignature, extractAnthropicRedactedThinking,
   deriveStreamStats } from './ChatService';
+import { ToolCallAccumulator, collectCompletionsToolDelta, collectResponsesToolItem,
+  collectAnthropicToolEvent, genToolCallId } from './ToolCallStream';
 import { WorkFileService } from './WorkFileService';
 import { ApiConfig } from '../model/ApiConfig';
 import { ToolCallRecord } from '../model/ToolCallRecord';
@@ -52,11 +55,16 @@ export class LoopError extends Error {
 // 与协议无关的循环消息: assistant 消息的工具调用与执行结果都挂在 toolCalls 上
 // (构建协议请求体时再拆分为 assistant(tool_calls) + tool/function_call_output/tool_result 消息)
 // imageDataUrl 仅用于 user 消息携带工作区图片(view_image 工具注入), 不持久化。
+// reasoning/thinkingSignature/redactedThinking 仅在内存循环内使用: Anthropic 协议思考模式下
+// 工具循环的 assistant 消息必须把思考块原样回传(置于消息首位), 否则服务端 400。
 export class LoopMessage {
   role: string = 'user'; // 'system' | 'user' | 'assistant'
   content: string = '';
   toolCalls: ToolCallRecord[] = [];
   imageDataUrl: string = '';
+  reasoning: string = '';
+  thinkingSignature: string = '';
+  redactedThinking: string = '';
 
   static system(content: string): LoopMessage {
     let m: LoopMessage = new LoopMessage();
@@ -89,12 +97,26 @@ export class LoopMessage {
     m.toolCalls = calls;
     return m;
   }
+
+  // 由单轮结果构造 assistant 循环消息: 同时携带思考文本与签名,
+  // 供 Anthropic 协议在下一轮请求中回传 thinking 块(思考模式下必传)
+  static fromTurn(turn: LoopTurnResult): LoopMessage {
+    let m: LoopMessage = LoopMessage.assistant(turn.content, turn.toolCalls);
+    m.reasoning = turn.reasoning;
+    m.thinkingSignature = turn.thinkingSignature;
+    m.redactedThinking = turn.redactedThinking;
+    return m;
+  }
 }
 
 // 单轮模型返回
 export class LoopTurnResult {
   content: string = '';
   reasoning: string = '';
+  // Anthropic 协议: 思考块的签名(signature_delta)与加密思考块(redacted_thinking.data),
+  // 回传 thinking 块时随块携带, 供服务端校验
+  thinkingSignature: string = '';
+  redactedThinking: string = '';
   toolCalls: ToolCallRecord[] = [];
   tokenSpeed: number = -1;
   cacheHitRate: number = -1;
@@ -119,48 +141,18 @@ export class LoopTurnCallbacks {
     (_attempt: number, _reason: string): void => {};
 }
 
-// 流式工具调用累积器: completions/responses/anthropic 三种协议统一汇入
-class ToolCallAccumulator {
-  calls: ToolCallRecord[] = [];
-  // 协议内 index(completions 的 delta.index / anthropic 的 block index) → calls 下标
-  keyMap: number[] = [];
-
-  // 取 key 对应的记录, 不存在则用 maker 创建并登记
-  patch(key: number, maker: () => ToolCallRecord): ToolCallRecord {
-    for (let i: number = 0; i < this.keyMap.length; i++) {
-      if (this.keyMap[i] === key) {
-        return this.calls[i];
-      }
-    }
-    let rec: ToolCallRecord = maker();
-    this.calls.push(rec);
-    this.keyMap.push(key);
-    return rec;
-  }
-
-  // 无显式 index 的协议(responses)直接整块追加
-  append(rec: ToolCallRecord): void {
-    this.calls.push(rec);
-    this.keyMap.push(-1 - this.calls.length);
-  }
-
-  find(key: number): ToolCallRecord | null {
-    for (let i: number = 0; i < this.keyMap.length; i++) {
-      if (this.keyMap[i] === key) {
-        return this.calls[i];
-      }
-    }
-    return null;
-  }
-}
-
+// 流式工具调用累积器: 三种协议统一汇入(共享实现见 ToolCallStream.ts)
 export class AgentLoopService {
   private static activeRequest: http.HttpRequest | null = null;
   private static cachedToolDefs: Record<string, Object>[] = [];
+  private static cachedToolDefsFlag: boolean = false;
 
-  private static getToolDefs(): Record<string, Object>[] {
-    if (AgentLoopService.cachedToolDefs.length === 0) {
-      AgentLoopService.cachedToolDefs = WorkFileService.toolDefs();
+  // 工具表缓存(按服务端联网搜索开关区分: 开关变化时 search_web 描述在"标准/兜底"间切换)
+  private static getToolDefs(webSearchEnabled: boolean): Record<string, Object>[] {
+    if (AgentLoopService.cachedToolDefs.length === 0 ||
+      AgentLoopService.cachedToolDefsFlag !== webSearchEnabled) {
+      AgentLoopService.cachedToolDefs = WorkFileService.toolDefs(webSearchEnabled);
+      AgentLoopService.cachedToolDefsFlag = webSearchEnabled;
     }
     return AgentLoopService.cachedToolDefs;
   }
@@ -174,25 +166,10 @@ export class AgentLoopService {
     includeTools: boolean = true,
     toolOverrides: Record<string, Object>[] | null = null): Promise<LoopTurnResult> {
     let protocol: string = getProtocol(config.provider);
-    let path: string;
-    if (protocol === 'responses') {
-      path = Constants.RESPONSES_PATH;
-    } else if (protocol === 'anthropic') {
-      let trimmedBase: string = config.baseUrl.replace(/\/+$/, '');
-      if (trimmedBase.endsWith('/v1') || trimmedBase.endsWith('/anthropic/v1')) {
-        path = Constants.MESSAGES_PATH;
-      } else if (trimmedBase === 'https://api.deepseek.com' || trimmedBase === 'http://api.deepseek.com') {
-        path = Constants.ANTHROPIC_DEEPSEEK_MESSAGES_PATH;
-      } else {
-        path = Constants.ANTHROPIC_V1_MESSAGES_PATH;
-      }
-    } else {
-      path = Constants.CHAT_COMPLETIONS_PATH;
-    }
-    let url: string = config.baseUrl.replace(/\/+$/, '') + path;
+    let url: string = resolveEndpointUrl(config, protocol);
 
     let tools: Record<string, Object>[] = includeTools ?
-      (toolOverrides !== null ? toolOverrides : AgentLoopService.getToolDefs()) : [];
+      (toolOverrides !== null ? toolOverrides : AgentLoopService.getToolDefs(webSearchEnabled)) : [];
     let body: Record<string, Object>;
     if (protocol === 'responses') {
       body = AgentLoopService.buildResponsesBody(config, messages, tools, thinkingEnabled, reasoningEffort, webSearchEnabled);
@@ -237,7 +214,7 @@ export class AgentLoopService {
           result.reasoning += reasoning;
           callbacks.onReasoning(result.reasoning);
         }
-        AgentLoopService.collectResponsesToolItem(sseData, callAcc);
+        collectResponsesToolItem(sseData, callAcc);
         let usageObj: Record<string, Object> | null = extractResponsesUsage(sseData);
         if (usageObj !== null) {
           let stats: number[] = deriveStreamStats(usageObj, Date.now() - startTime);
@@ -262,7 +239,16 @@ export class AgentLoopService {
           result.reasoning += reasoning;
           callbacks.onReasoning(result.reasoning);
         }
-        AgentLoopService.collectAnthropicToolEvent(sseData, callAcc);
+        // 思考块签名与加密思考块: 回传 thinking 块时随块携带(服务端校验所需)
+        let signature: string = extractAnthropicSignature(sseData);
+        if (signature !== '') {
+          result.thinkingSignature += signature;
+        }
+        let redacted: string = extractAnthropicRedactedThinking(sseData);
+        if (redacted !== '') {
+          result.redactedThinking = redacted;
+        }
+        collectAnthropicToolEvent(sseData, callAcc);
         let usageObj: Record<string, Object> | null = extractAnthropicUsage(sseData);
         if (usageObj !== null) {
           let stats: number[] = deriveStreamStats(usageObj, Date.now() - startTime);
@@ -282,7 +268,7 @@ export class AgentLoopService {
           result.reasoning += reasoning;
           callbacks.onReasoning(result.reasoning);
         }
-        AgentLoopService.collectCompletionsToolDelta(sseData, callAcc);
+        collectCompletionsToolDelta(sseData, callAcc);
         let usageObj: Record<string, Object> | null = extractChatCompletionsUsage(sseData);
         if (usageObj !== null) {
           let stats: number[] = deriveStreamStats(usageObj, Date.now() - startTime);
@@ -739,163 +725,6 @@ export class AgentLoopService {
     }
   }
 
-  // ===== 流式工具调用累积(按协议) =====
-
-  // completions: delta.tool_calls[{index, id?, function?:{name?, arguments?}}]
-  private static collectCompletionsToolDelta(sseData: string, acc: ToolCallAccumulator): void {
-    try {
-      let json: Object = JSON.parse(sseData);
-      if (typeof json !== 'object' || json === null) {
-        return;
-      }
-      let choices: Object = (json as Record<string, Object>)['choices'];
-      if (!(choices instanceof Array) || choices.length === 0) {
-        return;
-      }
-      let first: Object = choices[0];
-      if (typeof first !== 'object' || first === null) {
-        return;
-      }
-      let delta: Object = (first as Record<string, Object>)['delta'];
-      if (typeof delta !== 'object' || delta === null) {
-        return;
-      }
-      let rawCalls: Object = (delta as Record<string, Object>)['tool_calls'];
-      if (!(rawCalls instanceof Array)) {
-        return;
-      }
-      let arr: Object[] = rawCalls as Object[];
-      for (let i: number = 0; i < arr.length; i++) {
-        let item: Object = arr[i];
-        if (typeof item !== 'object' || item === null) {
-          continue;
-        }
-        let rec: Record<string, Object> = item as Record<string, Object>;
-        let rawIndex: Object = rec['index'];
-        let key: number = acc.calls.length;
-        if (typeof rawIndex === 'number') {
-          key = rawIndex as number;
-        }
-        let call: ToolCallRecord = acc.patch(key, (): ToolCallRecord => {
-          return ToolCallRecord.of('', '', '');
-        });
-        let id: Object = rec['id'];
-        if (typeof id === 'string' && (id as string) !== '') {
-          call.id = id as string;
-        }
-        let fn: Object = rec['function'];
-        if (typeof fn === 'object' && fn !== null) {
-          let fnRec: Record<string, Object> = fn as Record<string, Object>;
-          let name: Object = fnRec['name'];
-          if (typeof name === 'string' && (name as string) !== '') {
-            call.name = name as string;
-          }
-          let args: Object = fnRec['arguments'];
-          if (typeof args === 'string') {
-            call.argsJson += args as string;
-          }
-        }
-      }
-    } catch (e) {
-      // 单条 SSE 解析失败忽略
-    }
-  }
-
-  // responses: response.output_item.done 携带完整 function_call 项
-  private static collectResponsesToolItem(sseData: string, acc: ToolCallAccumulator): void {
-    try {
-      let json: Object = JSON.parse(sseData);
-      if (typeof json !== 'object' || json === null) {
-        return;
-      }
-      let type: Object = (json as Record<string, Object>)['type'];
-      if (typeof type !== 'string' || (type as string) !== 'response.output_item.done') {
-        return;
-      }
-      let item: Object = (json as Record<string, Object>)['item'];
-      if (typeof item !== 'object' || item === null) {
-        return;
-      }
-      let itemRec: Record<string, Object> = item as Record<string, Object>;
-      let itemType: Object = itemRec['type'];
-      if (typeof itemType !== 'string' || (itemType as string) !== 'function_call') {
-        return;
-      }
-      let callId: Object = itemRec['call_id'];
-      let itemId: Object = itemRec['id'];
-      let name: Object = itemRec['name'];
-      let args: Object = itemRec['arguments'];
-      let call: ToolCallRecord = ToolCallRecord.of(
-        typeof callId === 'string' ? callId as string :
-          (typeof itemId === 'string' ? itemId as string : AgentLoopService.genCallId()),
-        typeof name === 'string' ? name as string : '',
-        typeof args === 'string' ? args as string : ''
-      );
-      acc.append(call);
-    } catch (e) {
-      // ignore
-    }
-  }
-
-  // anthropic: content_block_start(tool_use) + input_json_delta 增量
-  private static collectAnthropicToolEvent(sseData: string, acc: ToolCallAccumulator): void {
-    try {
-      let json: Object = JSON.parse(sseData);
-      if (typeof json !== 'object' || json === null) {
-        return;
-      }
-      let type: Object = (json as Record<string, Object>)['type'];
-      if (typeof type !== 'string') {
-        return;
-      }
-      let eventType: string = type as string;
-      if (eventType === 'content_block_start') {
-        let rawIndex: Object = (json as Record<string, Object>)['index'];
-        let block: Object = (json as Record<string, Object>)['content_block'];
-        if (typeof block !== 'object' || block === null) {
-          return;
-        }
-        let blockRec: Record<string, Object> = block as Record<string, Object>;
-        let blockType: Object = blockRec['type'];
-        if (typeof blockType !== 'string' || (blockType as string) !== 'tool_use') {
-          return;
-        }
-        let key: number = acc.calls.length;
-        if (typeof rawIndex === 'number') {
-          key = rawIndex as number;
-        }
-        acc.patch(key, (): ToolCallRecord => {
-          let id: Object = blockRec['id'];
-          let name: Object = blockRec['name'];
-          return ToolCallRecord.of(
-            typeof id === 'string' ? id as string : AgentLoopService.genCallId(),
-            typeof name === 'string' ? name as string : '', '');
-        });
-      } else if (eventType === 'content_block_delta') {
-        let rawIndex: Object = (json as Record<string, Object>)['index'];
-        let delta: Object = (json as Record<string, Object>)['delta'];
-        if (typeof delta !== 'object' || delta === null || typeof rawIndex !== 'number') {
-          return;
-        }
-        let deltaRec: Record<string, Object> = delta as Record<string, Object>;
-        let deltaType: Object = deltaRec['type'];
-        if (typeof deltaType !== 'string' || (deltaType as string) !== 'input_json_delta') {
-          return;
-        }
-        let call: ToolCallRecord | null = acc.find(rawIndex as number);
-        if (call === null) {
-          return;
-        }
-        let partial: Object = deltaRec['partial_json'];
-        if (typeof partial === 'string') {
-          call.argsJson += partial as string;
-        }
-      }
-    } catch (e) {
-      // ignore
-    }
-  }
-
   // 兜底补全: 缺名字的调用记录不送回(避免协议校验失败), 空 argsJson 填 '{}'
   private static normalizeCalls(callAcc: ToolCallRecord[]): ToolCallRecord[] {
     let out: ToolCallRecord[] = [];
@@ -905,7 +734,7 @@ export class AgentLoopService {
         continue;
       }
       if (call.id === '') {
-        call.id = AgentLoopService.genCallId();
+        call.id = genToolCallId();
       }
       if (call.argsJson.trim() === '') {
         call.argsJson = '{}';
@@ -913,10 +742,6 @@ export class AgentLoopService {
       out.push(call);
     }
     return out;
-  }
-
-  private static genCallId(): string {
-    return 'call_' + Date.now().toString() + '_' + Math.floor(Math.random() * 100000).toString();
   }
 
   // ===== 协议请求体构建 =====
@@ -1105,8 +930,11 @@ export class AgentLoopService {
           AgentLoopService.appendAnthropicText(msgs, 'user', m.content);
         }
       } else if (m.role === 'assistant') {
+        // 思考模式下必须把上一轮 assistant 的思考块回传(置于消息首位), 否则服务端 400;
+        // 思考文本与签名仅内存循环内的消息携带(fromTurn), 历史重建的消息不回传
+        let thinking: Object[] = AgentLoopService.anthropicThinkingBlocks(m, thinkingEnabled);
         if (m.toolCalls.length > 0) {
-          let blocks: Object[] = [];
+          let blocks: Object[] = thinking.slice();
           if (m.content !== '') {
             blocks.push({ type: 'text', text: m.content });
           }
@@ -1131,11 +959,19 @@ export class AgentLoopService {
           }
           AgentLoopService.appendAnthropicBlocks(msgs, 'user', results);
         } else if (m.content !== '') {
-          AgentLoopService.appendAnthropicText(msgs, 'assistant', m.content);
+          if (thinking.length > 0) {
+            let blocks: Object[] = thinking.slice();
+            blocks.push({ type: 'text', text: m.content });
+            AgentLoopService.appendAnthropicBlocks(msgs, 'assistant', blocks);
+          } else {
+            AgentLoopService.appendAnthropicText(msgs, 'assistant', m.content);
+          }
         }
       }
     }
-    let maxTokens: number = config.maxTokens !== null ? config.maxTokens : 8192;
+    // 未配置时默认 128K(与聊天模式一致); 顶满由粘性收尾提示续跑
+    let maxTokens: number = config.maxTokens !== null ?
+      config.maxTokens : Constants.DEFAULT_MAX_OUTPUT_TOKENS;
     let finalTools: Record<string, Object>[] = AgentLoopService.anthropicTools(tools);
     if (webSearchEnabled) {
       let searchTool: Record<string, Object> = {
@@ -1213,6 +1049,27 @@ export class AgentLoopService {
       });
     }
     return out;
+  }
+
+  // Anthropic 思考回传块(assistant 消息的首位块): 思考模式开启且本轮确有思考内容时生成。
+  // 签名仅在流式捕获到时携带(官方 API 校验签名; 部分兼容服务不返回签名则省略该字段)。
+  private static anthropicThinkingBlocks(m: LoopMessage, thinkingEnabled: boolean): Object[] {
+    let blocks: Object[] = [];
+    if (!thinkingEnabled) {
+      return blocks;
+    }
+    if (m.redactedThinking !== '') {
+      blocks.push({ type: 'redacted_thinking', data: m.redactedThinking });
+      return blocks;
+    }
+    if (m.reasoning !== '') {
+      let block: Record<string, Object> = { type: 'thinking', thinking: m.reasoning };
+      if (m.thinkingSignature !== '') {
+        block['signature'] = m.thinkingSignature;
+      }
+      blocks.push(block);
+    }
+    return blocks;
   }
 
   // data:image/png;base64,XXXX → ['image/png', 'XXXX']
