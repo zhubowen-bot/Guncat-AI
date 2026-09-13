@@ -4,7 +4,7 @@
 
 Guncat Work is a native HarmonyOS AI chat client built with ArkTS and ArkUI. Its primary interface is not hosted in a WebView.
 
-Current app version: `6.1.0`
+Current app version: `6.1.2`
 
 ## Features
 
@@ -137,7 +137,7 @@ Agents are managed through `resources/rawfile/agents.json` and separate Markdown
 
 | Agent | Category | Purpose |
 | --- | --- | --- |
-| 轻简模式 (Light & Simple) | General | Guncat 3.0-Mini base: lighter and faster than Flash, task-adaptive output length — concise for simple chat, fully elaborated for complex tasks |
+| 轻简模式 (Light & Simple) | General | Guncat 3.1-Flash base: Guncat's first Flash-dedicated independent foundation, the lightest agent built for everyday chat and simple knowledge queries |
 | 效率模式 (Efficiency) | General | Guncat 3.0-Flash base: gap-driven execution for instant responses, answer thoroughness on par with Pro |
 | 专家模式 (Expert) | General | Guncat 3.0-Pro base: the most powerful monolithic super-agent with full expert capabilities and industry-leading anti-hallucination |
 | 经典模式 (Classic) | General | Based on Guncat 2.5-Lite: mature lightweight general agent, structured CoT for high-quality long outputs |
@@ -697,6 +697,12 @@ You can also select content in Gallery or a file manager and choose Guncat Work 
 - Items received from the system share sheet are never sent automatically; the user must tap Send.
 - Original attachments are not copied into permanent app storage.
 - Requests use HTTPS. Data-processing policies still depend on the configured model provider.
+
+## Version 6.1.2 (New agent: Guncat 3.1-Flash)
+
+- Added **Guncat 3.1-Flash (Light & Simple Mode)**: Guncat's first Flash-dedicated independent foundation — a brand-new design that inherits no architecture from the 2.0/2.5/3.0 series, purpose-built for everyday conversation and lightweight information tasks; it takes over 3.0-Mini's place as the lightest entry in the family and is listed first in the agent list. It stands parallel to Efficiency Mode (3.0-Flash), not as its upgrade: Efficiency Mode handles all-purpose task execution, while Light & Simple Mode handles everyday conversation and simple knowledge queries.
+- rawfile adds `Guncat 3.1-Flash_prompt_ZH_CN.md` / `_EN.md`, updates `agents.json` (3.1-Flash listed first) and `icons/guncat-3.1-flash.png`; the "Play with the App" panel now includes the Light & Simple Mode (3.1-Flash base) guide; the 3.0-Mini prompt files and icon are kept in rawfile but no longer appear in the default agent list.
+- Bumped to version 6.1.2 (`AppScope/app.json5` versionName 6.1.2 / versionCode 612 synced).
 
 ## Version 6.1.0 (DeepSeek Harness port)
 

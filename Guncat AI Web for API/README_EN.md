@@ -8,6 +8,7 @@
 
 Web for API Version: 5.2.1
 
+2026.9.1 Added **Guncat 3.1-Flash (Light & Simple Mode)** and placed it first in the agent list: Guncat's first Flash-dedicated independent foundation — a brand-new design that inherits no architecture from the 2.0/2.5/3.0 series, purpose-built for everyday conversation and lightweight information tasks, taking over 3.0-Mini's place as the lightest entry in the family (in `agents.json`, 3.1-Flash comes before 3.0-Flash); it stands parallel to Efficiency Mode (3.0-Flash), not as its upgrade — Efficiency Mode handles all-purpose task execution while Light & Simple Mode handles everyday conversation and simple knowledge queries; bilingual prompts, `agents.json`, and the per-agent icon are synced, and the 3.0-Mini prompt files are kept but no longer appear in the default agent list
 2026.9.1 **Real-time** Mermaid rendering: ```mermaid code blocks are rendered to SVG diagrams during streaming, without waiting for the whole answer to finish — rendering starts as soon as a diagram code block is closed (the trailing ``` arrives); the mermaid library is preloaded when a question is sent (downloading in parallel with the text stream, eliminating the extra wait for the first diagram); a source-keyed SVG cache makes diagrams re-insert instantly after each streaming frame rebuilds the DOM (no flicker, no duplicate rendering), half-streamed unclosed diagram blocks are skipped until the next frame, and parse failures keep the source code without retrying the same source
 2026.8.27 Version bumped to **5.2.1**: added **Guncat 3.0-Mini (Light & Simple Mode)** and placed it first in the agent list (in `agents.json`, 3.0-Mini comes before 3.0-Flash) — a small all-purpose agent further streamlined from 3.0-Flash. The core change is removing the Output Richness Principle in favor of the **Task-Adaptive Output Principle**: answer length is decided by task complexity and user needs — light conversation is naturally concise, standard tasks are medium-length, and complex tasks are fully elaborated, fitting the task without padding; it fully retains 3.0-Flash's three-layers-in-one architecture, Fast/Standard two-tier modes, tool-calling methodology, and anti-hallucination system
 2026.8.31 Cache optimization: today's date moved from the **front** of the system prompt to an **append at the end** of the system prompt (applied uniformly across all three protocols) — the prompt body prefix stays byte-for-byte stable, so provider prompt-prefix caches are hit, preventing the whole long prompt cache from being invalidated when the date changes across days; the "current time baseline" descriptions in the 3.0-series prompts were updated accordingly
@@ -48,6 +49,8 @@ Due to cross-origin restrictions, the `file://` protocol cannot read external JS
     ├── Guncat 3.0-Flash_prompt_EN.md    # English version
     ├── Guncat 3.0-Mini_prompt_ZH_CN.md  # Chinese version
     ├── Guncat 3.0-Mini_prompt_EN.md     # English version
+    ├── Guncat 3.1-Flash_prompt_ZH_CN.md # Chinese version
+    ├── Guncat 3.1-Flash_prompt_EN.md    # English version
     ├── Guncat 3.0-Pro_prompt_ZH_CN.md   # Chinese version
     ├── Guncat 3.0-Pro_prompt_EN.md      # English version
     ├── Guncat Cnvt-Paper_prompt.md
@@ -61,13 +64,13 @@ Due to cross-origin restrictions, the `file://` protocol cannot read external JS
     {
       "agents": [
         {
-          "id": "guncat-3.0-flash",
-          "name": "效率模式",
-          "description": "Guncat 3.0-Flash：专家级轻量全能智能体，融合多轮搜索、多步推理与行业领先的反幻觉体系，缺口驱动执行带来极速响应",
-          "shortDescription": "Guncat 3.0-Flash「新」",
-          "icon": "icons/guncat-3.0-flash.png",
+          "id": "guncat-3.1-flash",
+          "name": "轻简模式",
+          "description": "Guncat 3.1-Flash：专为日常聊天开发的智能体，Guncat系列首个Flash独立基座，适用于简单聊天或简单知识查询",
+          "shortDescription": "Guncat 3.1-Flash「新」",
+          "icon": "icons/guncat-3.1-flash.png",
           "category": "通用智能体",
-          "promptFile": "Guncat 3.0-Flash_prompt_EN.md"
+          "promptFile": "Guncat 3.1-Flash_prompt_EN.md"
         }
       ]
     }
@@ -84,7 +87,7 @@ Each agent configuration includes:
 
 ### Core Features
 
-* **Agent Switching**: Switch between different Guncat agents via the sidebar drawer (3.0 series: Efficiency Mode / Light & Simple Mode / Expert Mode, 2.5 Classic Mode, Conversion / Search / Evaluation domain experts), each agent with a configurable icon and dual descriptions
+* **Agent Switching**: Switch between different Guncat agents via the sidebar drawer (Light & Simple Mode (3.1 series) plus Efficiency / Expert Modes (3.0 series), 2.5 Classic Mode, Conversion / Search / Evaluation domain experts), each agent with a configurable icon and dual descriptions
 * **Markdown Rendering**: Full Markdown syntax support including code highlighting, tables, lists, blockquotes, etc.
 * **Streaming Output**: Typewriter-effect streaming display for AI responses
 * **Deep Thinking / Web Search Toggles**: UI switches for manually enabling or disabling deep thinking, web search, and other features; new conversations reset the deep-thinking default by agent name (off in Efficiency Mode, off in Light & Simple Mode, on in Expert Mode)

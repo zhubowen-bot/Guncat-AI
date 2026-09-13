@@ -6,6 +6,7 @@
 
 Web for API 版本：5.2.1
 
+2026.9.1 新增 **Guncat 3.1-Flash（轻简模式）** 并置于智能体列表首位：Guncat 系列首个 Flash 独立基座——全新设计、不继承 2.0/2.5/3.0 系列架构，专为日常聊天与轻量信息任务打造，接替 3.0-Mini 成为系列最轻量入口（`agents.json` 中 3.1-Flash 排在 3.0-Flash 之前）；它与效率模式（3.0-Flash）是并列关系而非升级关系——效率模式承担全能任务执行，轻简模式承担日常对话与简单知识查询；同步双语提示词、`agents.json` 与独立图标，3.0-Mini 提示词文件保留但不再出现在默认智能体列表
 2026.9.1 Mermaid 图表**实时渲染**：```mermaid 代码块在流式输出过程中即渲染为 SVG 图表，无需等待整条回答结束——图表代码块一经闭合（收到结尾 ```）立即开始渲染；mermaid 库在发送提问时预加载（与文字流式并行下载，消除首图额外等待）；源码级 SVG 缓存使流式每帧重建 DOM 后图表即时复用（无闪烁、不重复渲染），流式中尚未闭合的半截图表代码块自动跳过，解析失败保留源码且同一源码不重复重试
 2026.8.27 版本升至 **5.2.1**：新增 **Guncat 3.0-Mini（轻简模式）** 并置于智能体列表首位（`agents.json` 中 3.0-Mini 排在 3.0-Flash 之前）——基于 3.0-Flash 进一步精简打造的小型全能智能体，核心变化是移除了输出丰富性原则，代之以**任务适配输出原则**：回答长度由任务复杂度与用户需求决定，简单对话简洁自然、标准任务中等篇幅、复杂任务充分展开，恰如其分而不堆砌；完整保留 3.0-Flash 的三层一体架构、极速/标准双档模式、工具调用方法论与反幻觉体系
 2026.8.31 缓存优化：今天的日期从系统提示词**最前面**改为附加到系统提示词**末尾**（三种协议统一生效）——提示词主体前缀保持逐字节稳定，从而命中服务商的前缀缓存，避免日期跨天变化导致整个长提示词缓存失效；同步更新 3.0 系列提示词中「当前时间基准」的描述
@@ -48,6 +49,8 @@ Guncat AI Web for API 是 Guncat 智能体框架的**自定义配置客户端方
     ├── Guncat 3.0-Flash_prompt_EN.md    # English version
     ├── Guncat 3.0-Mini_prompt_ZH_CN.md  # 中文版
     ├── Guncat 3.0-Mini_prompt_EN.md     # English version
+    ├── Guncat 3.1-Flash_prompt_ZH_CN.md # 中文版
+    ├── Guncat 3.1-Flash_prompt_EN.md    # English version
     ├── Guncat 3.0-Pro_prompt_ZH_CN.md   # 中文版
     ├── Guncat 3.0-Pro_prompt_EN.md      # English version
     ├── Guncat Cnvt-Paper_prompt.md
@@ -61,13 +64,13 @@ Guncat AI Web for API 是 Guncat 智能体框架的**自定义配置客户端方
     {
       "agents": [
         {
-          "id": "guncat-3.0-flash",
-          "name": "效率模式",
-          "description": "Guncat 3.0-Flash：专家级轻量全能智能体，融合多轮搜索、多步推理与行业领先的反幻觉体系，缺口驱动执行带来极速响应",
-          "shortDescription": "Guncat 3.0-Flash「新」",
-          "icon": "icons/guncat-3.0-flash.png",
+          "id": "guncat-3.1-flash",
+          "name": "轻简模式",
+          "description": "Guncat 3.1-Flash：专为日常聊天开发的智能体，Guncat系列首个Flash独立基座，适用于简单聊天或简单知识查询",
+          "shortDescription": "Guncat 3.1-Flash「新」",
+          "icon": "icons/guncat-3.1-flash.png",
           "category": "通用智能体",
-          "promptFile": "Guncat 3.0-Flash_prompt_EN.md"
+          "promptFile": "Guncat 3.1-Flash_prompt_EN.md"
         }
       ]
     }
@@ -84,7 +87,7 @@ Guncat AI Web for API 是 Guncat 智能体框架的**自定义配置客户端方
 
 ### 核心能力
 
-* **智能体切换**：通过侧边栏抽屉切换不同 Guncat 智能体（3.0 系列：效率模式 / 轻简模式 / 专家模式，2.5 经典模式，转换专家 / 检索专家 / 评估专家各领域专家），每个智能体可配置独立图标与双描述
+* **智能体切换**：通过侧边栏抽屉切换不同 Guncat 智能体（轻简模式（3.1 系列）与效率模式 / 专家模式（3.0 系列），2.5 经典模式，转换专家 / 检索专家 / 评估专家各领域专家），每个智能体可配置独立图标与双描述
 * **Markdown 渲染**：完整支持 Markdown 语法，包括代码高亮、表格、列表、引用等
 * **流式输出**：支持 AI 回复的打字机效果流式显示
 * **深度思考 / 联网搜索开关**：界面提供工具开关，用户可手动开启或关闭深度思考、联网搜索等功能；新建对话时按智能体名称重置深度思考默认值（效率模式默认关闭、轻简模式默认关闭、专家模式默认开启）

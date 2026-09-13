@@ -14,7 +14,7 @@
 
 # Guncat AI
 
-> New-generation LLM agent framework: from structured-CoT agent clusters (2.0/2.5) to the **Guncat 3.0 monolithic super-agent** built with Prompt-as-Orchestration. RAR-based anti-hallucination agents spanning general-purpose, retrieval, rewriting, legal, and model-evaluation — deployed across Python, Web-for-API, Yuanqi, Qingyan, Coze, and HarmonyOS.
+> New-generation LLM agent framework: from structured-CoT agent clusters (2.0/2.5) to the **Guncat 3.0 monolithic super-agent** built with Prompt-as-Orchestration, plus the all-new **Guncat 3.1-Flash** Flash-dedicated lightweight foundation for everyday chat. RAR-based anti-hallucination agents spanning general-purpose, retrieval, rewriting, legal, and model-evaluation — deployed across Python, Web-for-API, Yuanqi, Qingyan, Coze, and HarmonyOS.
 
 * * *
 
@@ -89,7 +89,7 @@ The series-wide signature trait, active at highest priority at all times: token-
 
 ## Agent Series
 
-Guncat comprises **8 agent series**, each representing a core technical implementation of "how an agent is organized, driven, and produces content."
+Guncat comprises **9 agent series**, each representing a core technical implementation of "how an agent is organized, driven, and produces content."
 
 ### Guncat 3.0 Series — Monolithic Super-Agent (Prompt-as-Orchestration)
 
@@ -102,6 +102,14 @@ The latest-generation foundation and a generational leap over 2.5: through pure 
 The **Output Richness Principle** runs through 3.0-Pro and 3.0-Flash: token-abundant, never compressed, never omitted, never perfunctory — better long than lossy. **3.0-Mini is the deliberate exception, replacing it with the Task-Adaptive Output Principle.**
 
 All 3.0-series prompts are maintained in [Guncat 3.0](./Guncat%20AI%20Release/Guncat%203.0/) (Pro / Flash / Mini, CN + EN).
+
+### Guncat 3.1 Series — Flash-Dedicated Lightweight Foundation (Everyday Chat)
+
+The newest member of the family and **Guncat's first Flash-dedicated independent foundation**: a brand-new, from-scratch design that inherits no architecture from the 2.0/2.5/3.0 series. 3.1-Flash takes over the lightweight-entry position of 3.0-Mini as the lightest agent in the Guncat family.
+
+* **3.1-Flash**: Purpose-built for everyday conversation and lightweight information tasks. It stands **parallel to 3.0-Flash, not as its upgrade** — 3.0-Flash handles all-purpose task execution, while 3.1-Flash handles daily chat and simple knowledge queries. It deliberately trades some absolute capability ceiling for three core experience gains: a far smaller prompt (lower system-injection overhead and context occupancy), more efficient language (no stock-phrase padding), and a more natural, faster chat experience. For complex tasks, specialized domains, and in-depth research, use Guncat 3.0-Pro / 3.0-Flash.
+
+All 3.1-series prompts are maintained in [Guncat 3.1](./Guncat%20AI%20Release/Guncat%203.1/) (Flash, CN + EN), and the series is carried by Web for API and the HarmonyOS native app as **Light & Simple Mode**.
 
 ### Guncat 2.0 Series — All-Purpose Agent Cluster
 
@@ -328,6 +336,7 @@ The same set of agents can be carried by different clients or platforms. Guncat 
 * "Configuration-as-Agent" architecture: The agent list is defined by `agents.json`, with prompts stored as external `.md` files.
 * Users select their own API service (OpenAI, Azure, Zhipu, Tongyi Qianwen, DeepSeek, etc.). Since version 5.0.0, access methods are unified into three mainstream protocols — OpenAI Completions (`/chat/completions`), OpenAI Responses (`/responses`), and Anthropic Messages (`/messages`) — with automatic migration of legacy configs.
 * Aligned with the HarmonyOS Native App 5.1.0: Files API hybrid upload for large attachments, soft modern UI (low-saturation palette, large corner radii, soft shadows), updated icon assets (file names unchanged), and a table extraction tool that dynamically lists models from all saved API profiles.
+* 2026.9.1: the Light & Simple Mode base was replaced by the all-new **Guncat 3.1-Flash** — Guncat's first Flash-dedicated independent foundation, purpose-built for everyday conversation and lightweight information tasks; it takes over 3.0-Mini's place at the top of the agent list as the lightest entry in the family (parallel to 3.0-Flash, not its upgrade); bilingual prompts, `agents.json`, and the per-agent icon synced to all deployment variants.
 * 5.2.1: added **Guncat 3.0-Mini (Light & Simple Mode)** and placed it first in the agent list — further streamlined from 3.0-Flash, replacing the Output Richness Principle with the Task-Adaptive Output Principle (answer length fits the task: concise for light chat, fully elaborated for complex tasks); bilingual prompts, `agents.json`, and the per-agent icon synced to all deployment variants.
 * 5.2.0: the deep-thinking toggle now explicitly controls the request per protocol (aligned with the official DeepSeek parameters) — OpenAI Completions `thinking.type` + `reasoning_effort`, Anthropic Messages `thinking.type` + `output_config.effort`, OpenAI Responses `reasoning.effort = high/none` (`none` disables thinking); when web search is enabled, the previous assistant's `reasoning_content` is sent back in multi-turn turns to avoid 400 errors; new conversations reset the deep-thinking default by agent name (off in Efficiency Mode, on in Expert Mode).
 * Suitable for: Cross-platform unified entry point, flexible deployment with user's own API.
@@ -353,6 +362,7 @@ A pre-built `.bat` file is included; simply click to launch the local HTTP servi
 
 * A **pure ArkTS + ArkUI** native HarmonyOS application, **not a WebView wrapper**.
 * Native SSE streaming communication via `@kit.NetworkKit`'s `http.requestInStream`.
+* Version 6.1.2: the Light & Simple Mode base was replaced by the all-new **Guncat 3.1-Flash** (listed first) — Guncat's first Flash-dedicated independent foundation, purpose-built for everyday conversation and lightweight information tasks, taking over 3.0-Mini's place as the lightest entry in the family; rawfile synced with the bilingual 3.1-Flash prompts, `agents.json`, and the dedicated icon.
 * Version 5.2.1: added **Guncat 3.0-Mini (Light & Simple Mode)** (listed first) — further streamlined from 3.0-Flash, replacing the Output Richness Principle with the Task-Adaptive Output Principle; rawfile synced with the bilingual Mini prompts, `agents.json`, and the dedicated icon; new conversations default Light & Simple Mode's deep thinking off.
 * Version 5.2.0: synced the Guncat 3.0-series agent foundations (Efficiency Mode = 3.0-Flash / Expert Mode = 3.0-Pro / Classic Mode = 2.5-Lite), per-agent sidebar icons via the new `icon` field (`$rawfile` dynamic loading with cat-avatar fallback), and dual descriptions (`shortDescription` for the sidebar list, full `description` for the new-conversation page); removed the 2.0-series prompts — the rawfile prompt library is fully aligned with Web for API 5.2.0.
 * Version 5.2.0 (deep thinking): the deep-thinking toggle now explicitly controls the request per protocol (OpenAI Completions `thinking.type` + `reasoning_effort`, Anthropic Messages `thinking.type` + `output_config.effort`, OpenAI Responses `reasoning.effort = high/none`); with web search enabled, the previous assistant's `reasoning_content` is sent back in multi-turn turns to avoid 400 errors; new conversations reset the deep-thinking default by agent name (off in Efficiency Mode, on in Expert Mode).
@@ -412,7 +422,7 @@ Copyright (c) 2026 Zhu Bowen
 
 # Guncat AI
 
-> 新一代 LLM 智能体框架：从结构化 CoT × 多代理协作（2.0/2.5）进化到以 Prompt-as-Orchestration 构建的 **单体化超级智能体**。基于 RAR 的防幻觉智能体，覆盖通用、检索、改写、法律和模型评估——可部署在 Python、Web-for-API、元器、清言、Coze 和鸿蒙上。
+> 新一代 LLM 智能体框架：从结构化 CoT × 多代理协作（2.0/2.5）进化到以 Prompt-as-Orchestration 构建的 **单体化超级智能体**，以及全新 Flash 专用轻量基座的日常对话智能体 **Guncat 3.1-Flash**。基于 RAR 的防幻觉智能体，覆盖通用、检索、改写、法律和模型评估——可部署在 Python、Web-for-API、元器、清言、Coze 和鸿蒙上。
 
 ---
 
@@ -487,7 +497,7 @@ Guncat 3.0 通过纯提示词工程，在单个模型内完整复现当前 Agent
 
 ## 智能体系列
 
-Guncat 包含 **8 个智能体系列**，每条系列代表一种「智能体如何被组织、如何被驱动、如何产出内容」的核心技术实现。
+Guncat 包含 **9 个智能体系列**，每条系列代表一种「智能体如何被组织、如何被驱动、如何产出内容」的核心技术实现。
 
 ### Guncat 3.0 系列 — 单体化超级智能体（Prompt-as-Orchestration）
 
@@ -500,6 +510,14 @@ Guncat 包含 **8 个智能体系列**，每条系列代表一种「智能体如
 **输出丰富性原则**贯穿 3.0-Pro 与 3.0-Flash：token 充裕、不压缩、不省略、不敷衍，宁可篇幅长不可信息丢；**3.0-Mini 是刻意的例外，代之以任务适配输出原则。**
 
 全套 3.0 系列提示词统一维护于 [Guncat 3.0](./Guncat%20AI%20Release/Guncat%203.0/)（Pro / Flash / Mini，中英双语）。
+
+### Guncat 3.1 系列 — Flash 专用轻量基座（日常对话）
+
+家族最新成员，也是 **Guncat 首个 Flash 专用独立基座**：全新设计、不继承 2.0/2.5/3.0 系列架构。3.1-Flash 接替 3.0-Mini 成为 Guncat 家族的最轻量入口。
+
+- **3.1-Flash**：专为日常聊天与轻量信息任务打造。它与 3.0-Flash 是**并列关系而非升级关系**——3.0-Flash 承担全能任务执行，3.1-Flash 承担日常对话与简单知识查询。它在绝对能力上限上有所取舍，换来三项核心体验提升：提示词体量更小（更低的系统注入开销与上下文占用）、语言更高效（无套话堆砌）、聊天更自然、响应更快。复杂任务、专业领域与深度研究请使用 Guncat 3.0-Pro / 3.0-Flash。
+
+全套 3.1 系列提示词统一维护于 [Guncat 3.1](./Guncat%20AI%20Release/Guncat%203.1/)（Flash，中英双语），并以「轻简模式」搭载于 Web for API 与鸿蒙原生应用。
 
 ### Guncat 2.0 系列 — 全能 Agent 集群
 
@@ -726,6 +744,7 @@ Guncat Eval-LLM 的设计与提示词工程已开源技术报告：[技术报告
 - 「配置即智能体」架构：智能体列表由 `agents.json` 定义，提示词以外部 `.md` 文件存储。
 - 用户自选大模型服务（OpenAI、Azure、智谱、通义千问、DeepSeek 等）。5.0.0 起接入方式统一为三种主流协议——OpenAI Completions（`/chat/completions`）、OpenAI Responses（`/responses`）、Anthropic Messages（`/messages`），旧配置自动迁移。
 - 已对齐鸿蒙原生应用 5.1.0：大附件 Files API 混合上传、柔和现代 UI（低饱和配色、大圆角、柔和阴影）、应用图标资源更新（文件名不变），表格识别工具动态展示所有配置方案的模型。
+- 2026.9.1：轻简模式基座更换为全新的 **Guncat 3.1-Flash**——Guncat 系列首个 Flash 独立基座，专为日常对话与轻量信息任务打造；接替 3.0-Mini 成为智能体列表首位与家族最轻量入口（与 3.0-Flash 并列而非升级）；同步双语提示词、`agents.json` 与独立图标至所有部署变体。
 - 5.2.1：新增 **Guncat 3.0-Mini（轻简模式）** 并置于智能体列表首位——基于 3.0-Flash 进一步精简，移除输出丰富性原则、代之以任务适配输出原则（回答长度由任务复杂度决定：简单对话简洁自然、复杂任务充分展开）；同步双语提示词、`agents.json` 与独立图标至所有部署变体。
 - 5.2.0：深度思考开关按协议显式控制（对齐 DeepSeek 官方参数）——OpenAI Completions `thinking.type` + `reasoning_effort`、Anthropic Messages `thinking.type` + `output_config.effort`、OpenAI Responses `reasoning.effort = high/none`（`none` 关闭思考）；联网搜索开启时多轮对话自动回传上一轮 assistant 的 `reasoning_content`，避免 400；新建对话按智能体名称重置深度思考默认值（效率模式默认关闭、专家模式默认开启）。
 - 适合：跨平台统一入口、用户自有 API 灵活部署。
@@ -751,6 +770,7 @@ Guncat Eval-LLM 的设计与提示词工程已开源技术报告：[技术报告
 
 - **纯 ArkTS + ArkUI** 鸿蒙原生应用，**非 WebView 套壳**。
 - 基于 `@kit.NetworkKit` 的 `http.requestInStream` 实现原生 SSE 流式通信。
+- 6.1.2：轻简模式基座更换为全新的 **Guncat 3.1-Flash**（置于列表首位）——Guncat 系列首个 Flash 独立基座，专为日常对话与轻量信息任务打造；接替 3.0-Mini 成为家族最轻量入口；rawfile 同步双语 3.1-Flash 提示词、`agents.json` 与独立图标。
 - 5.2.1：新增 **Guncat 3.0-Mini（轻简模式）**（置于列表首位）——基于 3.0-Flash 进一步精简，以任务适配输出原则取代输出丰富性原则；rawfile 同步双语 Mini 提示词、`agents.json` 与独立图标；新建对话轻简模式深度思考默认关闭。
 - 5.2.0：同步 Guncat 3.0 系列智能体基座（效率模式=3.0-Flash / 专家模式=3.0-Pro / 经典模式=2.5-Lite），新增侧边栏独立图标（`icon` 字段，`$rawfile` 动态加载、未配置回退猫头像）与双描述机制（侧边栏展示 `shortDescription`、新建对话页展示完整 `description`）；移除 2.0 系列提示词，rawfile 提示词库全量对齐 Web for API 5.2.0。
 - 5.2.0（深度思考）：深度思考开关按协议显式控制（OpenAI Completions `thinking.type` + `reasoning_effort`、Anthropic Messages `thinking.type` + `output_config.effort`、OpenAI Responses `reasoning.effort = high/none`）；联网搜索开启时多轮对话自动回传上一轮 assistant 的 `reasoning_content`，避免 400；新建对话按智能体名称重置深度思考默认值（效率模式默认关闭、专家模式默认开启）。

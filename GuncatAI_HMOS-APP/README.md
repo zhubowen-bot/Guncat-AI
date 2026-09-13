@@ -4,7 +4,7 @@
 
 Guncat Work 是使用 ArkTS 与 ArkUI 开发的原生 HarmonyOS AI 对话客户端，代替了原有的 WebView 承载主界面的旧方案。
 
-当前应用版本：`6.1.0`
+当前应用版本：`6.1.2`
 
 ## 主要功能
 
@@ -137,7 +137,7 @@ Guncat Work 是使用 ArkTS 与 ArkUI 开发的原生 HarmonyOS AI 对话客户�
 
 | 智能体      | 类别    | 功能                                                         |
 | -------- | ----- | ---------------------------------------------------------- |
-| 轻简模式     | 通用智能体 | Guncat 3.0-Mini 基座：比 Flash 更轻更快，任务适配输出长度，简单对话简洁自然、复杂任务充分展开 |
+| 轻简模式     | 通用智能体 | Guncat 3.1-Flash 基座：系列首个 Flash 独立基座，专为日常聊天与简单知识查询打造的最轻量智能体 |
 | 效率模式     | 通用智能体 | Guncat 3.0-Flash 基座：缺口驱动执行带来极速响应，回答详尽度与 Pro 同标准            |
 | 专家模式     | 通用智能体 | Guncat 3.0-Pro 基座：最强大的单体化超级智能体，全系专家能力与行业领先的反幻觉体系           |
 | 经典模式     | 通用智能体 | 基于 Guncat 2.5-Lite：成熟的轻量级通用智能体，结构化思维链引导高质量长输出              |
@@ -702,6 +702,12 @@ hvigorw --mode module -p product=default -p module=entry@default -p buildMode=de
 - 从系统分享接收的内容不会自动发送，必须由用户主动点击发送。
 - 原始附件不会作为永久文件复制到应用数据中。
 - 网络请求使用 HTTPS，实际数据处理政策以所配置的模型服务商为准。
+
+## 6.1.2 更新（新增 Guncat 3.1-Flash）
+
+- 新增 **Guncat 3.1-Flash（轻简模式）**：Guncat 系列首个 Flash 独立基座——全新设计、不继承 2.0/2.5/3.0 系列架构，专为日常聊天与轻量信息任务打造；接替 3.0-Mini 成为系列最轻量入口，并置于智能体列表首位。它与效率模式（3.0-Flash）是并列关系而非升级关系：效率模式承担全能任务执行，轻简模式承担日常对话与简单知识查询。
+- rawfile 同步新增 `Guncat 3.1-Flash_prompt_ZH_CN.md` / `_EN.md`、更新 `agents.json`（3.1-Flash 排在首位）与 `icons/guncat-3.1-flash.png`；「玩转应用」面板同步收录轻简模式（3.1-Flash 基座）攻略；3.0-Mini 提示词文件与图标保留在 rawfile 中，但不再出现在默认智能体列表。
+- 版本升至 6.1.2（`AppScope/app.json5` versionName 6.1.2 / versionCode 612 同步）。
 
 ## 6.1.0 更新（DeepSeek Harness 移植）
 
