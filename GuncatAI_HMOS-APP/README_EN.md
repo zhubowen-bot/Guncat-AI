@@ -119,6 +119,8 @@ Work mode is an **independent identity parallel to the chat agents** — the �
 - **Local parsing engine**: `.docx/.xlsx/.pptx/.pdf` text is extracted entirely on-device — no multimodal parsing API and no quota consumption.
 - **Task checklist discipline**: complex tasks start with a `todo_write` checklist; checklist and workspace state reach the model through a "runtime context" snapshot appended to the tail of the conversation. Progress is updated item by item.
 - **Codex-style timeline**: each turn is its own message, laid out chronologically as "thinking → tool steps → answer" inside a single-container timeline; tool steps expand to show arguments and results.
+- **Codex-style artifacts card**: after a task finishes, generated/modified files are summarized in an "Artifacts" card at the end of the conversation, expanded by default; each file's line-diff thumbnail is collapsed by default and can be expanded individually. The view auto-scrolls to the bottom when the task finishes, so the card is immediately visible.
+- **In-place preview & one-click share**: files in the artifacts card, the workspace popover, and the right-hand details panel can be tapped to preview in place via HarmonyOS Preview Kit, or shared directly through the system share panel — no paths, zip archives, or format pickers involved.
 - **Three-protocol tool calling**: OpenAI Completions / OpenAI Responses / Anthropic Messages all support streaming function calling; the web-search toggle remains in the tool row (the server-side search tool coexists with client tools).
 
 ### UI and motion (5.1.0)
@@ -821,6 +823,8 @@ You can also select content in Gallery or a file manager and choose Guncat Work 
 - Requests use HTTPS. Data-processing policies still depend on the configured model provider.
 
 ## Version 6.2.0 (New Skill System)
+- Added a **Codex-style artifacts card** in Work Mode: after a task finishes, generated/modified files are summarized in an "Artifacts" card at the end of the conversation, expanded by default; each file's line-diff thumbnail is collapsed by default and can be expanded individually. The view auto-scrolls to the bottom when the task finishes, so the card is immediately visible.
+- Added **in-place file preview & one-click share**: files in the artifacts card, the workspace popover, and the right-hand details panel can be tapped to preview in place via HarmonyOS Preview Kit, or shared directly through the system share panel — no paths, zip archives, or format pickers involved. `write_file` / `append_file` and other text-generation tools now also produce line diffs, so both the artifacts card and expanded tool cards show add/delete changes.
 - The full set of Office skills for Work Mode is now officially available! You can now professionally process and generate PPT, Word, Excel, and other office documents, handling everyday office tasks all in one place.
 - The Paper Conversion Expert, Legal, Research, and Screening/Retrieval Experts, and LLM Evaluation Expert are now packaged as Skills embedded in Work Mode. No need to switch chat engines—use them directly in Work Mode!
 - Added local web search (built into the software, no manual toggle required). It can be invoked in both Work Mode and Chat Mode, so web access is no longer limited by the server-side web access toggle!

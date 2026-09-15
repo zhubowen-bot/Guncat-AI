@@ -41,79 +41,23 @@
       <header class="hero">
         <img class="hero-icon" src="assets/app-icon.png" alt="应用图标">
         <h1 class="hero-title">玩转应用</h1>
-        <p class="hero-sub">Version 6.2.0 (620_1)</p>
+        <p class="hero-sub">Version 6.2.0 (620_3)</p>
       </header>
 
-      <!-- 新功能体验面板: 首页最前面的最新功能速览, 直接展示, 无需跳转子页 -->
+      <!-- 新功能体验面板: 首页入口卡, 点击进入 Version 6.2 新功能子页 -->
       <section class="toc toc-gap">
         <div class="toc-header">新功能体验</div>
 
-        <!-- 新功能: 工作模式可直接执行 JS 代码 -->
-        <div class="card">
+        <a class="card" href="#/008">
           <div class="card-icon">
-            <svg viewBox="0 0 24 24"><path d="M9.4 16.6 4.8 12l4.6-4.6L8 6l-6 6 6 6zm5.2 0 4.6-4.6-4.6-4.6L16 6l6 6-6 6z"/></svg>
+            <svg viewBox="0 0 24 24"><path d="M19 9l1.25-2.75L23 5l-2.75-1.25L19 1l-1.25 2.75L15 5l2.75 1.25L19 9zm-7.5.5L9 4 6.5 9.5 1 12l5.5 2.5L9 20l2.5-5.5L17 12l-5.5-2.5zM19 15l-1.25 2.75L15 19l2.75 1.25L19 23l1.25-2.75L23 19l-2.75-1.25L19 15z"/></svg>
           </div>
           <div class="card-body">
-            <div class="card-title">新增 JS 代码运行沙箱</div>
-            <div class="card-text">工作模式新增 JS 代码运行沙箱，支持在设备本机的独立 JS 引擎沙箱里现场执行代码，结果可直接写成工作区文件。</div>
+            <div class="card-title">看看 Version 6.2 带来哪些新体验</div>
+            <div class="card-text">新版本带来产物卡片、文件预览与一键分享、代码运行沙箱、Office 三件套专业技能、专家智能体内嵌、本地联网搜索、全局自由复制等新能力，每一项都精准落在真实需求的心坎上！</div>
           </div>
-        </div>
-
-        <!-- 新功能: 全套 Office Skill -->
-        <div class="card">
-          <div class="card-icon">
-            <svg viewBox="0 0 24 24"><path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/></svg>
-          </div>
-          <div class="card-body">
-            <div class="card-title">全套 Office Skill 上线</div>
-            <div class="card-text">工作模式的全套 Office 技能正式上线！现在你可以专业化地处理和生成 PPT、Word、Excel 等办公文档，日常办公琐事一站搞定。</div>
-          </div>
-        </div>
-
-        <!-- 新功能: 五位专家智能体接入工作模式 -->
-        <div class="card">
-          <div class="card-icon">
-            <svg viewBox="0 0 24 24"><path d="M9.68 13.69 12 11.93l2.31 1.76-.88-2.85L15.75 9h-2.84L12 6.19 11.09 9H8.25l2.31 1.84-.88 2.85zM20 10c0-4.42-3.58-8-8-8s-8 3.58-8 8c0 2.03.76 3.87 2 5.28V23l6-2 6 2v-7.72c1.24-1.41 2-3.25 2-5.28zm-8-6c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6 2.69-6 6-6z"/></svg>
-          </div>
-          <div class="card-body">
-            <div class="card-title">专家智能体嵌入工作模式</div>
-            <div class="card-text">论文转换专家，法律、研究、筛滤检索专家，LLM评估专家，现已打包为 Skill 嵌入工作模式，无需切换聊天引擎，在工作模式中直接使用！</div>
-          </div>
-        </div>
-
-        <!-- 新功能: 本地联网搜索 -->
-        <div class="card">
-          <div class="card-icon">
-            <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/></svg>
-          </div>
-          <div class="card-body">
-            <div class="card-title">本地联网搜索</div>
-            <div class="card-text">新增本地联网搜索（软件内置，无需手动开关），工作模式、聊天模式都能调用，关闭联网搜索开关也不用担心断网啦！</div>
-          </div>
-        </div>
-
-        <!-- 新功能: 全局自由复制 -->
-        <div class="card">
-          <div class="card-icon">
-            <svg viewBox="0 0 24 24"><path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg>
-          </div>
-          <div class="card-body">
-            <div class="card-title">全局自由复制</div>
-            <div class="card-text">所有回答文本都能直接自由复制，无需再手动点击复制局部按钮，想复制哪里就复制哪里，随心所欲更方便！</div>
-          </div>
-        </div>
-
-        <!-- 功能: 太方便了！长程任务后台可继续工作 -->
-        <div class="card">
-          <div class="card-icon">
-            <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 14.5v-9l6 4.5-6 4.5z"/></svg>
-          </div>
-          <div class="card-body">
-            <div class="card-title">工作模式后台继续工作</div>
-            <div class="card-text">工作模式下，退出应用到后台、熄灭屏幕等，智能体会继续在后台工作，任务不会被打断，你可以自由刷视频、看新闻，等待时间也不无聊！</div>
-          </div>
-        </div>
-
+          <div class="card-arrow"><svg viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg></div>
+        </a>
 
       </section>
 
@@ -1131,6 +1075,103 @@
             <div class="card-text">个别单元格识别有误时，可在 HTML 代码页复制源码手动修正后再用，或重新拍摄更清晰的图片识别。</div>
             <div class="card-text">识别依赖多模态模型：请先在设置中配置好主模型或多模态解析模型，并选择具备视觉能力的模型，否则会提示配置缺失。</div>
             <div class="card-text">表格识别是独立页面，不占用对话上下文；识别结果与聊天记录互相独立，可放心反复尝试。</div>
+          </div>
+        </div>
+
+      </div>
+
+    </main>
+  </section>
+
+  <!-- ═══════════════════════════════════════════════════
+       子页 · Version 6.2 新功能体验
+       ═══════════════════════════════════════════════════ -->
+  <section class="view" id="view-008">
+    <main class="page">
+
+      <div class="pagebar">
+        <a class="back" href="#/" aria-label="返回目录">
+          <svg viewBox="0 0 24 24"><path d="m15 6-6 6 6 6"/></svg>
+        </a>
+        <div class="pagebar-title">Version 6.2 新功能体验</div>
+      </div>
+
+      <!-- 顶部图片轮播: 照片先留空待补充, 后续把 008-1.png ~ 008-8.png 放入 assets/,
+           并把下方占位 src 替换为 assets/008-N.png 即可;
+           每张图对应下面一张介绍卡, 增删时图和卡必须成对同步修改 -->
+      <div class="gallery">
+        <div class="gallery-track">
+          <img src="assets/008-1.png" alt="产物卡片">
+          <img src="assets/008-2.png" alt="JS 代码运行沙箱">
+          <img src="assets/008-3.png" alt="Office 技能">
+          <img src="assets/008-4.png" alt="专家智能体嵌入工作模式">
+          <img src="assets/008-5.png" alt="本地联网搜索">
+          <img src="assets/008-6.png" alt="全局自由复制">
+          <img src="assets/008-7.png" alt="工作模式后台继续工作">
+
+        </div>
+        <div class="gallery-dots"></div>
+      </div>
+
+      <!-- 与轮播联动的介绍卡: 第 N 张图对应第 N 张卡, 只显示当前那张 -->
+      <div class="gallery-cards">
+
+        <!-- 1 新增产物汇总卡片 -->
+        <div class="card">
+          <div class="card-body">
+            <div class="card-title">新增交付卡片、文件预览与分享</div>
+            <div class="card-text">任务完成后，改动的文件会以卡片汇总在对话流末尾，默认展开；需要时点开还可查看每个文件的增删详情。</div>
+            <div class="card-text">重磅更新来啦！产物卡片、工作区面板中的文件可直接点击预览！可一键通过系统分享面板分享原始文件，陈年老问题终于被解决！</div>
+          </div>
+        </div>
+
+
+        <!-- 2 JS 代码运行沙箱 -->
+        <div class="card">
+          <div class="card-body">
+            <div class="card-title">新增 JS 代码运行沙箱</div>
+            <div class="card-text">工作模式新增 JS 代码运行沙箱，支持在设备本机的独立 JS 引擎沙箱里现场执行代码，结果可直接写成工作区文件。</div>
+          </div>
+        </div>
+
+        <!-- 3 全套 Office Skill -->
+        <div class="card">
+          <div class="card-body">
+            <div class="card-title">全套 Office Skill 上线</div>
+            <div class="card-text">心心念念的工作模式的全套 Office 技能正式上线啦！现在你可以专业化地处理和生成 PPT、Word、Excel 等办公文档，日常办公琐事一站搞定。</div>
+            <div class="card-text">如今，Excel支持专业化的格式编辑、数据清洗与处理工作，PPT和Word已上线全量格式处理能力与内容嵌入能力，Office办公AI化从未如此真实！</div>
+          </div>
+        </div>
+
+        <!-- 4 专家智能体嵌入工作模式 -->
+        <div class="card">
+          <div class="card-body">
+            <div class="card-title">专家智能体嵌入工作模式</div>
+            <div class="card-text">原有的五个专家模式——论文转换专家，法律、研究、筛滤检索专家，LLM评估专家，现已打包为 Skill 嵌入工作模式，无需切换到对应聊天引擎，即可在工作模式中直接使用五大专家模式的全量能力！</div>
+          </div>
+        </div>
+
+        <!-- 5 本地联网搜索 -->
+        <div class="card">
+          <div class="card-body">
+            <div class="card-title">本地联网搜索</div>
+            <div class="card-text">新增本地联网搜索（软件内置，无需手动开关），工作模式、聊天模式都能调用，即使不小心关闭了联网搜索开关也不用担心断网啦！</div>
+          </div>
+        </div>
+
+        <!-- 6 全局自由复制 -->
+        <div class="card">
+          <div class="card-body">
+            <div class="card-title">全局自由复制</div>
+            <div class="card-text">所有回答文本都能直接自由复制，无需再手动点击复制局部按钮，想复制哪里就复制哪里，随心所欲更方便！</div>
+          </div>
+        </div>
+
+        <!-- 7 工作模式后台继续工作 -->
+        <div class="card">
+          <div class="card-body">
+            <div class="card-title">工作模式后台继续工作</div>
+            <div class="card-text">工作模式下，退出应用到后台、熄灭屏幕等，智能体会继续在后台工作，任务不会被打断，你可以自由刷视频、看新闻，等待时间也不无聊！</div>
           </div>
         </div>
 

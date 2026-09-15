@@ -12,6 +12,8 @@ import { SettingsPanel } from '../views/SettingsPanel';
 import { PlayGuidePanel } from '../views/PlayGuidePanel';
 import { WorkspaceBar, WorkspaceFileIcons } from '../views/WorkspaceBar';
 import { WorkTurnView } from '../views/WorkTurnView';
+import { WorkArtifactsCard } from '../views/WorkArtifactsCard';
+import { WorkArtifactFile, WorkArtifactSummary, WorkArtifactUtil } from '../common/WorkArtifacts';
 import { Message } from '../model/Message';
 import { Agent } from '../model/Agent';
 import { Conversation } from '../model/Conversation';
@@ -122,6 +124,10 @@ struct ChatPage {
   // 模型选择弹层开关(挂在输入区左下角模型胶囊上方)
   @State private modelMenuOpen: boolean = false;
   @State private previewItems: PreviewData[] = [];
+  // 工作模式产物汇总卡(对话流末尾 Codex 风格 Changes 卡片)
+  @State private workArtifacts: WorkArtifactFile[] = [];
+  @State private workArtifactAdds: number = 0;
+  @State private workArtifactDels: number = 0;
   @State private readerVisible: boolean = false;
   @State private readerPhase: string = '';
   @State private readerProgress: number = 0;
@@ -139,6 +145,8 @@ struct ChatPage {
   // 会话工作时间计时: 工作模式任务执行期间每秒累计(秒数存 VM 供工作区面板显示), 切换/新建会话归零
   private workTickTimer: number = -1;
   private lastWorkConvId: string = '';
+  // 上一次流式状态: 用于任务结束瞬间自动滚到底部, 让刚生成的产物卡片直接可见
+  private lastStreamingState: boolean = false;
   private voiceInputService: VoiceInputService = new VoiceInputService();
   // 用户手指触摸滚动期间暂停自动置底, 松手后恢复
   // (避免 scrollTo 与进行中的手势冲突导致白屏)
@@ -168,6 +176,9 @@ struct ChatPage {
       await TextReaderService.stop();
     };
     this.vm.setStateChangeListener(() => {
+      // 记录本次回调前的流式状态与产物数量, 用于判断“任务刚结束/产物卡刚出现”时需要置底
+      const wasStreaming: boolean = this.lastStreamingState;
+      const prevArtifacts: number = this.workArtifacts.length;
       // 切到非工作模式的智能体/会话时收起工作区弹层
       if (!this.vm.workMode && this.workspacePopupOpen) {
         this.workspacePopupOpen = false;
@@ -180,18 +191,25 @@ struct ChatPage {
       this.rebuildPreviewItems();
       // 详情面板统计快照随 VM 状态变化重建(工具结果/流式统计到达后立刻反映)
       this.rebuildWorkStats();
+      // 产物汇总卡同样随工具结果/工作区刷新即时重建
+      this.rebuildWorkArtifacts();
       // 侧栏/抽屉的会话列表轻量投影(新增/删除/改名后同步)
       this.convListItems = this.vm.getConversationListItems();
+      this.lastStreamingState = this.vm.isStreaming;
       this.refreshTick++;
-      // 仅流式期间跟随置底(流式中的常态跟随由 100ms 定时器负责)。空闲期的周期性状态变化
-      // (如每 3 秒的工作区刷新)绝不能拉底, 否则用户上翻阅读时每隔几秒被突然拽回底部
+      // 流式期间跟随置底(流式中的常态跟随由 100ms 定时器负责)。
+      // 任务刚结束或产物卡刚出现时, 也要自动滚到底部, 避免用户手动下翻才能看到产物。
       if (this.vm.isStreaming && !this.userScrolling) {
+        this.scrollToBottomDelayed();
+      } else if (!this.vm.isStreaming && !this.userScrolling &&
+        (wasStreaming || (this.workArtifacts.length > 0 && prevArtifacts === 0))) {
         this.scrollToBottomDelayed();
       }
     });
     this.vm.init().then(() => {
       this.refreshTick++;
       this.convListItems = this.vm.getConversationListItems();
+      this.rebuildWorkArtifacts();
       this.consumeSharedFiles();
       setTimeout(() => {
         if (!this.userScrolling) {
@@ -1308,6 +1326,21 @@ struct ChatPage {
           })
         }
       }, (msg: Message) => msg.id)
+
+      // 工作模式产物汇总卡: 放在对话流末尾, 默认折叠(Codex 风格 Changes)
+      if (!this.vm.isStreaming && this.workArtifacts.length > 0) {
+        WorkArtifactsCard({
+          files: this.workArtifacts,
+          totalAdds: this.workArtifactAdds,
+          totalDels: this.workArtifactDels,
+          onPreview: (path: string) => {
+            this.vm.previewWorkspaceFile(path);
+          },
+          onShare: (path: string) => {
+            this.vm.shareWorkspaceFile(path);
+          }
+        })
+      }
     }
     .width('100%')
     .padding(14)
@@ -1738,6 +1771,38 @@ struct ChatPage {
     this.workStats = s;
   }
 
+  // 重建工作模式产物汇总卡: 从消息工具调用中聚合改动文件, 并只保留工作区仍存在的文件
+  private rebuildWorkArtifacts(): void {
+    if (!this.vm.workMode) {
+      this.workArtifacts = [];
+      this.workArtifactAdds = 0;
+      this.workArtifactDels = 0;
+      return;
+    }
+    let summary: WorkArtifactSummary = WorkArtifactUtil.collect(this.vm.currentMessages);
+    let existing: Map<string, boolean> = new Map<string, boolean>();
+    let files: WorkspaceFileInfo[] = this.vm.workspaceFiles;
+    for (let i: number = 0; i < files.length; i++) {
+      if (!files[i].isDir) {
+        existing.set(files[i].path, true);
+      }
+    }
+    let kept: WorkArtifactFile[] = [];
+    let adds: number = 0;
+    let dels: number = 0;
+    for (let i: number = 0; i < summary.files.length; i++) {
+      let f: WorkArtifactFile = summary.files[i];
+      if (existing.has(f.path)) {
+        kept.push(f);
+        adds += f.adds;
+        dels += f.dels;
+      }
+    }
+    this.workArtifacts = kept;
+    this.workArtifactAdds = adds;
+    this.workArtifactDels = dels;
+  }
+
   // 目标文本需读文件, 加 3 秒缓存避免每秒渲染都做 IO
   private goalCacheConvId: string = '';
   private goalCacheAt: number = 0;
@@ -1922,25 +1987,46 @@ struct ChatPage {
             } else {
               ForEach(this.vm.workspaceFiles, (item: WorkspaceFileInfo) => {
                 Row({ space: 8 }) {
-                  if (item.isDir) {
-                    SymbolGlyph($r('sys.symbol.folder'))
-                      .fontSize(16)
-                      .fontColor([$r('app.color.text_tertiary')])
-                  } else {
-                    SymbolGlyph(WorkspaceFileIcons.iconFor(item.path))
-                      .fontSize(16)
-                      .fontColor([$r('app.color.text_tertiary')])
+                  Row({ space: 8 }) {
+                    if (item.isDir) {
+                      SymbolGlyph($r('sys.symbol.folder'))
+                        .fontSize(16)
+                        .fontColor([$r('app.color.text_tertiary')])
+                    } else {
+                      SymbolGlyph(WorkspaceFileIcons.iconFor(item.path))
+                        .fontSize(16)
+                        .fontColor([$r('app.color.text_tertiary')])
+                    }
+                    Text(item.path)
+                      .fontSize(13)
+                      .fontColor($r('app.color.text_secondary'))
+                      .maxLines(1)
+                      .textOverflow({ overflow: TextOverflow.Ellipsis })
+                      .layoutWeight(1)
                   }
-                  Text(item.path)
-                    .fontSize(13)
-                    .fontColor($r('app.color.text_secondary'))
-                    .maxLines(1)
-                    .textOverflow({ overflow: TextOverflow.Ellipsis })
-                    .layoutWeight(1)
+                  .layoutWeight(1)
+                  .onClick(() => {
+                    if (this.vm.isStreaming || item.isDir) {
+                      return;
+                    }
+                    this.vm.previewWorkspaceFile(item.path);
+                  })
                   if (!item.isDir) {
                     Text(WorkFileService.formatSize(item.size))
                       .fontSize(11)
                       .fontColor($r('app.color.text_tertiary'))
+                    Text('分享')
+                      .fontSize(11)
+                      .fontColor($r('app.color.brand'))
+                      .padding({ left: 6, right: 6, top: 3, bottom: 3 })
+                      .borderRadius(8)
+                      .backgroundColor($r('app.color.brand_light'))
+                      .onClick(() => {
+                        if (this.vm.isStreaming) {
+                          return;
+                        }
+                        this.vm.shareWorkspaceFile(item.path);
+                      })
                     SymbolGlyph($r('sys.symbol.trash'))
                       .fontSize(14)
                       .fontColor([$r('app.color.text_tertiary')])

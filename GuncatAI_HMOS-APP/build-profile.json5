@@ -6,9 +6,9 @@
         "type": "HarmonyOS",
         "material": {
           "storeFile": "C:/Users/a1519/Desktop/AI文本转换/aitransformer.p12",
-          "storePassword": "000000199954A8D2ED349F7A7F298EFE58C77C2BFE0654B1B0524A3B73DA8110B65909F88463FD55D9",
+          "storePassword": "0000001933CBCD6A92F477E84E6ABCF94BE9E2BBECE6127182065173612BE8DFFC767299B502861988",
           "keyAlias": "aitransformer",
-          "keyPassword": "0000001931911E913EAF6470C037E18E1A26201B0F050D15A0EA031FB0CEAA55C55FA423524F3E6173",
+          "keyPassword": "00000019FEE1EC259960F563FCC2E23026556F5333818895B022010D6E856DDB722B4D4A014C32A5A6",
           "signAlg": "SHA256withECDSA",
           "profile": "C:/Users/a1519/Desktop/AI文本转换/guncataiRelease.p7b",
           "certpath": "C:/Users/a1519/Desktop/AI文本转换/aitransformer.cer"

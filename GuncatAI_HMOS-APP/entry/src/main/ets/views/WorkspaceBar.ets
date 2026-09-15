@@ -258,30 +258,52 @@ export struct WorkspaceBar {
   private buildFileRow(item: WorkspaceFileInfo) {
     Row({ space: 8 }) {
       // 目录用文件夹图标, 文件按扩展名映射类别图标
-      SymbolGlyph(item.isDir ? $r('sys.symbol.folder') : WorkspaceFileIcons.iconFor(item.path))
-        .fontSize(14)
-        .fontColor([$r('app.color.brand')])
-      Text(item.path)
-        .fontSize(12)
-        .fontColor($r('app.color.text_primary'))
-        .maxLines(1)
-        .textOverflow({ overflow: TextOverflow.Ellipsis })
-        .layoutWeight(1)
+      Row({ space: 8 }) {
+        SymbolGlyph(item.isDir ? $r('sys.symbol.folder') : WorkspaceFileIcons.iconFor(item.path))
+          .fontSize(14)
+          .fontColor([$r('app.color.brand')])
+        Text(item.path)
+          .fontSize(12)
+          .fontColor($r('app.color.text_primary'))
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .layoutWeight(1)
+      }
+      .layoutWeight(1)
+      .onClick(() => {
+        if (this.vm.isStreaming || item.isDir) {
+          return;
+        }
+        this.vm.previewWorkspaceFile(item.path);
+      })
       if (!item.isDir) {
         Text(WorkFileService.formatSize(item.size))
           .fontSize(10)
           .fontColor($r('app.color.text_secondary'))
+        // 一键分享原始文件: 不弹路径/压缩包/格式选择
+        Text('分享')
+          .fontSize(10)
+          .fontColor($r('app.color.brand'))
+          .padding({ left: 6, right: 6, top: 3, bottom: 3 })
+          .borderRadius(8)
+          .backgroundColor($r('app.color.brand_light'))
+          .onClick(() => {
+            if (this.vm.isStreaming) {
+              return;
+            }
+            this.vm.shareWorkspaceFile(item.path);
+          })
+        Text('✕')
+          .fontSize(12)
+          .fontColor($r('app.color.text_tertiary'))
+          .padding({ left: 4, right: 2 })
+          .onClick(() => {
+            if (this.vm.isStreaming) {
+              return;
+            }
+            this.vm.deleteWorkspaceFile(item.path);
+          })
       }
-      Text('✕')
-        .fontSize(12)
-        .fontColor($r('app.color.text_tertiary'))
-        .padding({ left: 6, right: 2 })
-        .onClick(() => {
-          if (this.vm.isStreaming) {
-            return;
-          }
-          this.vm.deleteWorkspaceFile(item.path);
-        })
     }
     .width('100%')
     .padding({ left: 10, right: 8, top: 6, bottom: 6 })

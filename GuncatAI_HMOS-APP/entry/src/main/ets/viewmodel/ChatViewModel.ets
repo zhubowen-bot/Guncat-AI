@@ -37,6 +37,10 @@ import { common } from '@kit.AbilityKit';
 import { cameraPicker, camera } from '@kit.CameraKit';
 import { util } from '@kit.ArkTS';
 import { image } from '@kit.ImageKit';
+import { fileIo, fileUri } from '@kit.CoreFileKit';
+import { uniformTypeDescriptor } from '@kit.ArkData';
+import { filePreview } from '@kit.PreviewKit';
+import { systemShare } from '@kit.ShareKit';
 
 @Observed
 export class ChatViewModel {
@@ -616,6 +620,79 @@ export class ChatViewModel {
     if (removed) {
       this.workspaceJustAdded = this.workspaceJustAdded.filter((n: string): boolean => n !== path);
       await this.refreshWorkspace();
+    }
+  }
+
+  // 就地预览工作区文件: 使用系统 Preview Kit 的预览弹窗, 不暴露路径/压缩包/格式选择
+  async previewWorkspaceFile(rel: string): Promise<void> {
+    if (this.context === null) {
+      promptAction.showToast({ message: '上下文未初始化', duration: 1500 });
+      return;
+    }
+    let conv: Conversation | null = this.currentConversation;
+    if (conv === null) {
+      promptAction.showToast({ message: '当前没有工作会话', duration: 1500 });
+      return;
+    }
+    let root: string = WorkFileService.workspaceRoot(this.context, conv.id);
+    let abs: string | null = WorkFileService.resolveSafe(root, rel);
+    if (abs === null || !fileIo.accessSync(abs) || fileIo.statSync(abs).isDirectory()) {
+      promptAction.showToast({ message: '文件不存在或已被删除', duration: 1500 });
+      return;
+    }
+    let uri: string = fileUri.getUriFromPath(abs);
+    let baseName: string = rel.substring(rel.lastIndexOf('/') + 1);
+    try {
+      let supported: boolean = await filePreview.canPreview(this.context, uri);
+      if (!supported) {
+        promptAction.showToast({ message: '该文件类型暂不支持系统预览', duration: 2000 });
+        return;
+      }
+      await filePreview.openPreview(this.context, {
+        title: baseName,
+        uri: uri,
+        mimeType: FileService.guessTypeByName(rel)
+      });
+    } catch (e) {
+      let err: Error = e as Error;
+      promptAction.showToast({ message: '预览失败: ' + (err.message !== undefined ? err.message : String(e)), duration: 2000 });
+    }
+  }
+
+  // 一键分享工作区原始文件: 直接拉起系统分享面板, 不要求用户选路径/打包/格式
+  async shareWorkspaceFile(rel: string): Promise<void> {
+    if (this.context === null) {
+      promptAction.showToast({ message: '上下文未初始化', duration: 1500 });
+      return;
+    }
+    let conv: Conversation | null = this.currentConversation;
+    if (conv === null) {
+      promptAction.showToast({ message: '当前没有工作会话', duration: 1500 });
+      return;
+    }
+    let root: string = WorkFileService.workspaceRoot(this.context, conv.id);
+    let abs: string | null = WorkFileService.resolveSafe(root, rel);
+    if (abs === null || !fileIo.accessSync(abs) || fileIo.statSync(abs).isDirectory()) {
+      promptAction.showToast({ message: '文件不存在或已被删除', duration: 1500 });
+      return;
+    }
+    let uri: string = fileUri.getUriFromPath(abs);
+    let baseName: string = rel.substring(rel.lastIndexOf('/') + 1);
+    let dot: number = rel.lastIndexOf('.');
+    let ext: string = dot >= 0 ? rel.substring(dot) : '';
+    let utd: string = ext !== '' ?
+      uniformTypeDescriptor.getUniformDataTypeByFilenameExtension(ext) : 'general.file';
+    try {
+      let data: systemShare.SharedData = new systemShare.SharedData({
+        utd: utd,
+        uri: uri,
+        title: baseName
+      });
+      let controller: systemShare.ShareController = new systemShare.ShareController(data);
+      await controller.show(this.context, { selectionMode: systemShare.SelectionMode.SINGLE });
+    } catch (e) {
+      let err: Error = e as Error;
+      promptAction.showToast({ message: '分享失败: ' + (err.message !== undefined ? err.message : String(e)), duration: 2000 });
     }
   }
 

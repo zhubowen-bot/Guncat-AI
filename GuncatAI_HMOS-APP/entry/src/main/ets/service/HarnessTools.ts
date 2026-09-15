@@ -272,7 +272,9 @@ export class HarnessTools {
         return HarnessTools.fail('文件已存在, create 仅用于新建: ' + rel);
       }
       let text: string = HarnessTools.strArg(args, 'file_text', '');
-      return HarnessTools.writeTextFile(root, rel, abs, text, false, null, context, convId);
+      return HarnessTools.writeTextFile(root, rel, abs, text, false,
+        DiffUtil.computeFileDiff('', text, rel, Constants.WORK_EDIT_CONTEXT_LINES),
+        context, convId);
     }
     if (!fileIo.accessSync(abs)) {
       return HarnessTools.fail('文件不存在: ' + rel);

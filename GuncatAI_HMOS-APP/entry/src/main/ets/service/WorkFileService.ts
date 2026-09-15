@@ -8,6 +8,7 @@ import { util } from '@kit.ArkTS';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { ZipWriter, ZipEntry } from '../export/ZipWriterTs';
 import { PickedFile } from './FileService';
+import { DiffUtil, FileDiff } from '../common/DiffUtil';
 import { OfficeReader } from './OfficeReader';
 import { PdfTextExtractor } from './PdfTextExtractor';
 import { WorkSkillService } from './WorkSkillService';
@@ -362,12 +363,38 @@ export class WorkFileService {
       if (fileIo.accessSync(abs) && fileIo.statSync(abs).isDirectory()) {
         return WorkFileService.fail('路径是已存在的目录, 不能写入: ' + rel);
       }
+      // 文本类写入(CSV/SVG/转换输出等)记录旧文本, 用于产物卡片的行级 diff 缩略
+      let oldText: string | null = null;
+      const TEXT_DIFF_MAX_BYTES: number = 512 * 1024;
+      if (WorkFileService.isTextFile(rel) && bytes.length <= TEXT_DIFF_MAX_BYTES) {
+        if (fileIo.accessSync(abs)) {
+          let oldSize: number = fileIo.statSync(abs).size;
+          if (oldSize <= TEXT_DIFF_MAX_BYTES) {
+            let oldBytes: Uint8Array = WorkFileService.readBytes(abs, oldSize);
+            if (!WorkFileService.looksBinary(oldBytes)) {
+              let decoder: util.TextDecoder = util.TextDecoder.create('utf-8', { ignoreBOM: true });
+              oldText = decoder.decodeToString(oldBytes, { stream: false });
+            }
+          }
+        } else {
+          oldText = '';
+        }
+      }
       let parentDir: string = abs.substring(0, abs.lastIndexOf('/'));
       if (parentDir !== root) {
         WorkFileService.ensureDir(parentDir);
       }
       WorkFileService.writeBytes(abs, bytes);
-      return WorkFileService.ok('已写入 ' + rel + ' (' + WorkFileService.formatSize(bytes.length) + ')');
+      let result: ToolExecResult = WorkFileService.ok(
+        '已写入 ' + rel + ' (' + WorkFileService.formatSize(bytes.length) + ')');
+      if (oldText !== null && !WorkFileService.looksBinary(bytes)) {
+        let decoder: util.TextDecoder = util.TextDecoder.create('utf-8', { ignoreBOM: true });
+        let newText: string = decoder.decodeToString(bytes, { stream: false });
+        let diff: FileDiff = DiffUtil.computeFileDiff(oldText, newText, rel,
+          Constants.WORK_EDIT_CONTEXT_LINES);
+        result.meta = JSON.stringify(diff.toJsonObject());
+      }
+      return result;
     } catch (e) {
       let msg: string = '';
       if (e instanceof Error) {
@@ -916,6 +943,18 @@ export class WorkFileService {
     if (fileIo.accessSync(abs) && fileIo.statSync(abs).isDirectory()) {
       return WorkFileService.fail('路径是已存在的目录, 不能写入: ' + rel);
     }
+    // 写入前旧文本: 新文件为 '', 文本文件读旧内容用于生成行级 diff; 二进制/Office 不生成
+    let oldText: string | null = null;
+    if (!fileIo.accessSync(abs)) {
+      oldText = '';
+    } else if (WorkFileService.isTextFile(rel)) {
+      let oldSize: number = fileIo.statSync(abs).size;
+      let oldBytes: Uint8Array = WorkFileService.readBytes(abs, oldSize);
+      if (!WorkFileService.looksBinary(oldBytes)) {
+        let decoder: util.TextDecoder = util.TextDecoder.create('utf-8', { ignoreBOM: true });
+        oldText = decoder.decodeToString(oldBytes, { stream: false });
+      }
+    }
     let encoder: util.TextEncoder = new util.TextEncoder();
     let bytes: Uint8Array = encoder.encode(content);
     if (bytes.length > Constants.WORK_WRITE_MAX_BYTES) {
@@ -940,7 +979,16 @@ export class WorkFileService {
     }
     WorkFileService.writeBytes(abs, bytes);
     let verb: string = append ? '追加写入' : '写入';
-    return WorkFileService.ok('已' + verb + ' ' + rel + ' (' + WorkFileService.formatSize(bytes.length) + ')');
+    let result: ToolExecResult = WorkFileService.ok(
+      '已' + verb + ' ' + rel + ' (' + WorkFileService.formatSize(bytes.length) + ')');
+    if (oldText !== null) {
+      let decoder: util.TextDecoder = util.TextDecoder.create('utf-8', { ignoreBOM: true });
+      let newText: string = decoder.decodeToString(bytes, { stream: false });
+      let diff: FileDiff = DiffUtil.computeFileDiff(oldText, newText, rel,
+        Constants.WORK_EDIT_CONTEXT_LINES);
+      result.meta = JSON.stringify(diff.toJsonObject());
+    }
+    return result;
   }
 
   private static toolDelete(root: string, rel: string): ToolExecResult {
