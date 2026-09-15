@@ -29,21 +29,15 @@
 
 <br/>
 
-<!-- ── 多端与生态 / Cross-Platform & Ecosystem ────────────────────────────── -->
+<!-- ── 多端与客户端 / Cross-Platform Clients ──────────────────────────────── -->
 
 [![Web for API](https://img.shields.io/badge/Web_for_API-RESTful-2496ED?style=for-the-badge)][webapi]
 [![ArkTS](https://img.shields.io/badge/HarmonyOS-ArkTS_Native-007DFF?style=for-the-badge)][harmony]
-[![Tencent Yuanqi](https://img.shields.io/badge/Tencent-Yuanqi-0052D9?style=for-the-badge)][yuanqi]
-[![Zhipu Qingyan](https://img.shields.io/badge/Zhipu-Qingyan-3859FF?style=for-the-badge)][qingyan]
-[![Coze](https://img.shields.io/badge/Coze-Service-4D53E8?style=for-the-badge)][coze]
 
 <br/>
 
 <!-- ── 仓库状态 / Repository Status ───────────────────────────────────────── -->
 
-[![Stars](https://img.shields.io/github/stars/zhubowen-bot/Guncat-AI?style=for-the-badge&label=Stars&color=f5c542&logo=github)][stars]
-[![Forks](https://img.shields.io/github/forks/zhubowen-bot/Guncat-AI?style=for-the-badge&label=Forks&color=orange)][forks]
-[![Issues](https://img.shields.io/github/issues/zhubowen-bot/Guncat-AI?style=for-the-badge&label=Issues&color=red)][issues]
 [![Last Commit](https://img.shields.io/github/last-commit/zhubowen-bot/Guncat-AI?style=for-the-badge&label=Last%20Commit&color=blue)][commits]
 [![Top Language](https://img.shields.io/github/languages/top/zhubowen-bot/Guncat-AI?style=for-the-badge)][repo]
 [![License](https://img.shields.io/badge/License-MIT-3DA639?style=for-the-badge)][license]
@@ -54,9 +48,6 @@
 
 [repo]: https://github.com/zhubowen-bot/Guncat-AI
 [python]: https://www.python.org/
-[stars]: https://github.com/zhubowen-bot/Guncat-AI/stargazers
-[forks]: https://github.com/zhubowen-bot/Guncat-AI/forks
-[issues]: https://github.com/zhubowen-bot/Guncat-AI/issues
 [commits]: https://github.com/zhubowen-bot/Guncat-AI/commits/main
 [license]: #license
 [tech1]: #core-technology-i--rar-retrieval-augmented-reasoning
@@ -64,9 +55,6 @@
 [pro]: #guncat-25-pro--langgraph-code-driven-60-tool-ecosystem
 [webapi]: #3-guncat-web-for-api
 [harmony]: #5-harmonyos-native-app-arkts
-[yuanqi]: #1-tencent-yuanqi
-[qingyan]: #2-zhipu-qingyan
-[coze]: #4-coze-service-guncat-25-pro
 
 ---
 
