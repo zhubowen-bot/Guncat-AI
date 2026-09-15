@@ -8,8 +8,13 @@ import { http } from '@kit.NetworkKit';
 import { image } from '@kit.ImageKit';
 import { WorkFileService, ToolExecResult } from './WorkFileService';
 import { PdfTextExtractor, PdfPagesResult, PdfSearchHit, PdfRenderResult } from './PdfTextExtractor';
-import { DocxExporter } from '../export/DocxExporter';
+import { DocxBuilder, DocxImagePart, DocImageResolver } from '../export/DocxBuilder';
+import { DocxImporter, DocxImportResult } from '../export/DocxImporter';
+import { Doc, DocParser, DocOps, MdToDoc } from '../export/DocModel';
 import { XlsxExporter } from '../export/XlsxExporter';
+import { XlsxBuilder } from '../export/XlsxBuilder';
+import { XlsxImporter, XlsxImportResult } from '../export/XlsxImporter';
+import { XlsxWorkbook, XlsxParser, XlsxOps, MdToXlsx } from '../export/XlsxModel';
 import { CsvWriter } from '../export/CsvWriter';
 import { CsvParser } from '../common/CsvParser';
 import { DataPipeline, DpTable, DpOutcome } from '../common/DataPipeline';
@@ -27,8 +32,20 @@ export class WorkToolRunner {
     if (name === 'write_docx') {
       return await WorkToolRunner.toolWriteDocx(context, convId, argsJson);
     }
+    if (name === 'read_docx') {
+      return await WorkToolRunner.toolReadDocx(context, convId, argsJson);
+    }
+    if (name === 'edit_docx') {
+      return await WorkToolRunner.toolEditDocx(context, convId, argsJson);
+    }
     if (name === 'write_xlsx') {
       return await WorkToolRunner.toolWriteXlsx(context, convId, argsJson);
+    }
+    if (name === 'read_xlsx') {
+      return await WorkToolRunner.toolReadXlsx(context, convId, argsJson);
+    }
+    if (name === 'edit_xlsx') {
+      return await WorkToolRunner.toolEditXlsx(context, convId, argsJson);
     }
     if (name === 'write_csv') {
       return await WorkToolRunner.toolWriteCsv(context, convId, argsJson);
@@ -134,7 +151,25 @@ export class WorkToolRunner {
     return defVal;
   }
 
-  // ===== write_docx: Markdown -> .docx =====
+  // 文件名去扩展名+清洗(与 pdf_to_images 输出目录命名一致)
+  private static baseNameNoExt(rel: string): string {
+    let base: string = rel;
+    let slash: number = base.lastIndexOf('/');
+    if (slash >= 0) {
+      base = base.substring(slash + 1);
+    }
+    let dot: number = base.lastIndexOf('.');
+    if (dot > 0) {
+      base = base.substring(0, dot);
+    }
+    base = base.replace(/[\\/:*?"<>|]/g, '_').trim();
+    if (base === '') {
+      base = 'doc';
+    }
+    return base;
+  }
+
+  // ===== write_docx: Doc JSON / doc 文件 / Markdown -> .docx =====
   private static async toolWriteDocx(context: common.UIAbilityContext, convId: string,
     argsJson: string): Promise<ToolExecResult> {
     let args: Record<string, Object> | null = WorkToolRunner.parseArgs(argsJson);
@@ -142,23 +177,186 @@ export class WorkToolRunner {
       return WorkToolRunner.argError();
     }
     let rel: string = WorkToolRunner.strArg(args, 'path', '');
+    let docJson: string = WorkToolRunner.strArg(args, 'doc', '');
+    let docFile: string = WorkToolRunner.strArg(args, 'doc_file', '');
     let markdown: string = WorkToolRunner.strArg(args, 'markdown', '');
+    let title: string = WorkToolRunner.strArg(args, 'title', '');
+    let style: string = WorkToolRunner.strArg(args, 'style', '').toLowerCase();
     if (rel === '') {
       return WorkToolRunner.failMsg('缺少参数 path');
     }
-    if (markdown.trim() === '') {
-      return WorkToolRunner.failMsg('缺少参数 markdown');
+    if (!rel.toLowerCase().endsWith('.docx')) {
+      return WorkToolRunner.failMsg('path 建议以 .docx 结尾(当前: ' + rel + ')');
     }
-    let title: string = WorkToolRunner.strArg(args, 'title', 'Guncat Work 文档');
+    let root: string = WorkFileService.workspaceRoot(context, convId);
+    let doc: Doc;
     try {
-      let bytes: Uint8Array = await DocxExporter.buildDocxBytes(title, markdown);
-      return WorkFileService.writeBytesAt(context, convId, rel, bytes);
+      if (docJson.trim() !== '') {
+        doc = DocParser.parse(docJson);
+      } else if (docFile.trim() !== '') {
+        let abs: string | null = WorkFileService.resolveSafe(root, docFile);
+        if (abs === null || !WorkFileService.accessPath(abs) || WorkFileService.isDirPath(abs)) {
+          return WorkToolRunner.failMsg('doc_file 不存在或非法: ' + docFile);
+        }
+        doc = DocParser.parse(WorkToolRunner.readWorkspaceText(abs));
+      } else if (markdown.trim() !== '') {
+        doc = MdToDoc.convert(markdown, title !== '' ? title : 'Guncat Work 文档');
+      } else {
+        return WorkToolRunner.failMsg('缺少 doc/doc_file/markdown 参数(三选一)。' +
+          '正式文档用 doc(Doc JSON 结构化源, 支持封面/目录/分级标题/图片/表格, 语法 load_skill("docx"));' +
+          '长文档先 write_file("doc.json", …) 分块写好再传 doc_file; 简单内容可直接传 markdown');
+      }
+    } catch (e) {
+      return WorkToolRunner.failMsg(WorkToolRunner.extractErrMessage(e as Object));
+    }
+    if (title !== '') {
+      doc.title = title;
+    }
+    if (style !== '') {
+      if (!DocParser.isKnownStyle(style)) {
+        return WorkToolRunner.failMsg('未知样式 "' + style + '"(支持 default/academic/minimal)');
+      }
+      doc.style = style;
+    }
+    try {
+      let bytes: Uint8Array = await DocxBuilder.buildDocxBytes(doc,
+        WorkToolRunner.docxResolver(context, root));
+      let result: ToolExecResult = WorkFileService.writeBytesAt(context, convId, rel, bytes);
+      if (result.ok) {
+        result.output = '已生成《' + doc.title + '》(' + doc.blocks.length.toString() + ' 块' +
+          (doc.cover ? ', 含封面' : '') + (doc.toc ? ', 含目录' : '') + ', 样式 ' + doc.style +
+          ') → ' + rel + ' (' + WorkFileService.formatSize(bytes.length) + ')' +
+          '\n—— 用 read_docx 或 read_file 抽查内容; 需要改图/改字用 edit_docx。';
+      }
+      return result;
     } catch (e) {
       return WorkToolRunner.failMsg('生成 Word 文档失败: ' + WorkToolRunner.extractErrMessage(e as Object));
     }
   }
 
-  // ===== write_xlsx: Markdown表格/CSV/TSV -> .xlsx =====
+  // ===== read_docx: .docx -> Doc JSON(读回可编辑源; 外来文档抽取图片) =====
+  private static async toolReadDocx(context: common.UIAbilityContext, convId: string,
+    argsJson: string): Promise<ToolExecResult> {
+    let args: Record<string, Object> | null = WorkToolRunner.parseArgs(argsJson);
+    if (args === null) {
+      return WorkToolRunner.argError();
+    }
+    let rel: string = WorkToolRunner.strArg(args, 'path', '');
+    if (rel === '') {
+      return WorkToolRunner.failMsg('缺少参数 path');
+    }
+    if (!rel.toLowerCase().endsWith('.docx')) {
+      return WorkToolRunner.failMsg('read_docx 仅支持 .docx');
+    }
+    let root: string = WorkFileService.workspaceRoot(context, convId);
+    let abs: string | null = WorkFileService.resolveSafe(root, rel);
+    if (abs === null) {
+      return WorkToolRunner.failMsg('非法路径: ' + rel);
+    }
+    if (!WorkFileService.accessPath(abs)) {
+      return WorkToolRunner.failMsg('文件不存在: ' + rel);
+    }
+    // 外来文档图片输出目录: docx_images/<文件名>/(与 pdf_to_images 同款组织)
+    let base: string = WorkToolRunner.baseNameNoExt(rel);
+    let imageRelBase: string = 'docx_images/' + base;
+    let imageOutDir: string = root + '/' + imageRelBase;
+    try {
+      let r: DocxImportResult = await DocxImporter.import(abs, context.cacheDir + '/work_docx',
+        imageOutDir, imageRelBase);
+      let docJson: string = JSON.stringify(r.doc);
+      let head: string = r.embedded
+        ? '《' + rel + '》的 Doc 源(无损还原, ' + r.blockCount.toString() + ' 块):\n'
+        : '《' + rel + '》为外来 docx, 以下为近似导入的 Doc 源(' + r.blockCount.toString() +
+          ' 块; 文本/表格/图片已还原, 版式细节可能丢失; edit_docx 保存前会自动备份原文件):\n';
+      let out: string = head + docJson;
+      if (out.length > Constants.WORK_RESULT_MAX_CHARS) {
+        out = head + '整篇过大, 请用 edit_docx 的 update_block/delete_block/replace_text 按块号直接操作, ' +
+          '或用 read_file 查看。\n第 1 块预览: ' + docJson.substring(0, 1500) + '...';
+      }
+      if (!r.embedded && r.images.length > 0) {
+        out = out + '\n\n已抽取图片 ' + r.images.length.toString() +
+          ' 张(可用 view_image 逐张查看, 也可直接用于再次 write_docx):\n- ' + r.images.join('\n- ');
+      }
+      return WorkToolRunner.okMsg(out);
+    } catch (e) {
+      return WorkToolRunner.failMsg('读取 Word 文档失败: ' + WorkToolRunner.extractErrMessage(e as Object));
+    }
+  }
+
+  // ===== edit_docx: 对已有 .docx 应用操作并保存 =====
+  private static async toolEditDocx(context: common.UIAbilityContext, convId: string,
+    argsJson: string): Promise<ToolExecResult> {
+    let args: Record<string, Object> | null = WorkToolRunner.parseArgs(argsJson);
+    if (args === null) {
+      return WorkToolRunner.argError();
+    }
+    let rel: string = WorkToolRunner.strArg(args, 'path', '');
+    let opsJson: string = WorkToolRunner.strArg(args, 'ops', '');
+    if (rel === '') {
+      return WorkToolRunner.failMsg('缺少参数 path');
+    }
+    if (opsJson.trim() === '') {
+      return WorkToolRunner.failMsg('缺少参数 ops(JSON 数组), 如 [{"op":"update_block","index":2,"block":{"text":"新内容"}}]');
+    }
+    if (!rel.toLowerCase().endsWith('.docx')) {
+      return WorkToolRunner.failMsg('edit_docx 仅支持 .docx');
+    }
+    let root: string = WorkFileService.workspaceRoot(context, convId);
+    let abs: string | null = WorkFileService.resolveSafe(root, rel);
+    if (abs === null) {
+      return WorkToolRunner.failMsg('非法路径: ' + rel);
+    }
+    if (!WorkFileService.accessPath(abs)) {
+      return WorkToolRunner.failMsg('文件不存在: ' + rel + '(新建请用 write_docx)');
+    }
+    let base: string = WorkToolRunner.baseNameNoExt(rel);
+    let imageRelBase: string = 'docx_images/' + base;
+    let imageOutDir: string = root + '/' + imageRelBase;
+    try {
+      let r: DocxImportResult = await DocxImporter.import(abs, context.cacheDir + '/work_docx',
+        imageOutDir, imageRelBase);
+      let summary: string = DocOps.apply(r.doc, opsJson);
+      // 外来文件(无内嵌源)重建前先备份原文件, 防止近似导入造成不可逆损失
+      let backupNote: string = '';
+      if (!r.embedded) {
+        let backupRel: string = rel.replace(/\.docx$/i, '') + '_原版备份.docx';
+        let backupAbs: string | null = WorkFileService.resolveSafe(root, backupRel);
+        if (backupAbs !== null) {
+          WorkFileService.copyFileSync(abs, backupAbs);
+          backupNote = '\n原文件已备份为 ' + backupRel + '(外来 docx 为近似导入, 重建后不保留原版式细节)';
+        }
+      }
+      let bytes: Uint8Array = await DocxBuilder.buildDocxBytes(r.doc,
+        WorkToolRunner.docxResolver(context, root));
+      let result: ToolExecResult = WorkFileService.writeBytesAt(context, convId, rel, bytes);
+      if (result.ok) {
+        result.output = '《' + rel + '》已更新(' + r.doc.blocks.length.toString() + ' 块, ' +
+          WorkFileService.formatSize(bytes.length) + '):\n' + summary + backupNote;
+      }
+      return result;
+    } catch (e) {
+      return WorkToolRunner.failMsg('编辑 Word 文档失败: ' + WorkToolRunner.extractErrMessage(e as Object));
+    }
+  }
+
+  // 图片解析器(docx): 工作区路径 / data URL / http 交给 PptxImage; .svg 源文件自动栅格化
+  private static docxResolver(context: common.UIAbilityContext, root: string): DocImageResolver {
+    return async (src: string): Promise<DocxImagePart | null> => {
+      let p: PptxImagePart | null = await WorkToolRunner.imageResolver(context, root)(src);
+      if (p === null) {
+        return null;
+      }
+      let d: DocxImagePart = new DocxImagePart();
+      d.data = p.data;
+      d.mime = p.mime;
+      d.ext = p.ext;
+      d.widthPx = p.widthPx;
+      d.heightPx = p.heightPx;
+      return d;
+    };
+  }
+
+  // ===== write_xlsx: Workbook JSON / workbook 文件 / Markdown表格·CSV·TSV -> .xlsx =====
   private static async toolWriteXlsx(context: common.UIAbilityContext, convId: string,
     argsJson: string): Promise<ToolExecResult> {
     let args: Record<string, Object> | null = WorkToolRunner.parseArgs(argsJson);
@@ -166,22 +364,143 @@ export class WorkToolRunner {
       return WorkToolRunner.argError();
     }
     let rel: string = WorkToolRunner.strArg(args, 'path', '');
-    let table: string = WorkToolRunner.strArg(args, 'table', '');
     if (rel === '') {
       return WorkToolRunner.failMsg('缺少参数 path');
     }
-    if (table.trim() === '') {
-      return WorkToolRunner.failMsg('缺少参数 table');
+    if (!rel.toLowerCase().endsWith('.xlsx')) {
+      return WorkToolRunner.failMsg('path 建议以 .xlsx 结尾(当前: ' + rel + ')');
     }
-    let rows: string[][] = WorkToolRunner.parseTableInput(table);
-    if (rows.length === 0) {
-      return WorkToolRunner.failMsg('表格数据为空, 请提供 Markdown 表格、CSV 或 TSV 文本');
-    }
+    let workbookJson: string = WorkToolRunner.strArg(args, 'workbook', '');
+    let workbookFile: string = WorkToolRunner.strArg(args, 'workbook_file', '');
+    let table: string = WorkToolRunner.strArg(args, 'table', '');
+    let name: string = WorkToolRunner.strArg(args, 'name', '');
+    let style: string = WorkToolRunner.strArg(args, 'style', '');
+    let wb: XlsxWorkbook;
     try {
-      let bytes: Uint8Array = XlsxExporter.buildXlsxFromRows(rows);
-      return WorkFileService.writeBytesAt(context, convId, rel, bytes);
+      if (workbookJson.trim() !== '') {
+        wb = XlsxParser.parse(workbookJson);
+      } else if (workbookFile.trim() !== '') {
+        let root: string = WorkFileService.workspaceRoot(context, convId);
+        let abs: string | null = WorkFileService.resolveSafe(root, workbookFile);
+        if (abs === null) {
+          return WorkToolRunner.failMsg('workbook_file 越界或不存在: ' + workbookFile);
+        }
+        let text: string = WorkToolRunner.readWorkspaceText(abs);
+        wb = XlsxParser.parse(text);
+      } else if (table.trim() !== '') {
+        wb = MdToXlsx.convert(table, name);
+      } else {
+        return WorkToolRunner.failMsg('缺少内容: 传 workbook(Workbook JSON, 语法 load_skill("xlsx"))、' +
+          'workbook_file(工作区已有 workbook JSON 的相对路径)或 table(Markdown 表格/CSV/TSV 文本); ' +
+          '正式表格建议用 workbook 结构化源, 支持多工作表/公式/数字格式/列宽/冻结窗格。');
+      }
+      if (style !== '') {
+        if (!XlsxParser.isKnownStyle(style.toLowerCase())) {
+          return WorkToolRunner.failMsg('未知样式 "' + style + '"(支持 default/academic/minimal)');
+        }
+        wb.style = style.toLowerCase();
+      }
+      let bytes: Uint8Array = XlsxBuilder.buildXlsxBytes(wb);
+      let result: ToolExecResult = WorkFileService.writeBytesAt(context, convId, rel, bytes);
+      let sheetNames: string = '';
+      for (let i: number = 0; i < wb.sheets.length; i++) {
+        if (i > 0) {
+          sheetNames += '、';
+        }
+        sheetNames += wb.sheets[i].name;
+      }
+      result.output = '已写入 ' + rel + ' (' + wb.sheets.length.toString() + ' 个工作表: ' +
+        sheetNames + '; 样式 ' + wb.style + ')。\n' +
+        '—— 需要改数/改公式用 edit_xlsx 按 sheet/行/列操作; 想重做用 write_xlsx 传完整 workbook。';
+      return result;
     } catch (e) {
       return WorkToolRunner.failMsg('生成 Excel 文件失败: ' + WorkToolRunner.extractErrMessage(e as Object));
+    }
+  }
+
+  // ===== read_xlsx: .xlsx -> Workbook JSON(读回可编辑源) =====
+  private static async toolReadXlsx(context: common.UIAbilityContext, convId: string,
+    argsJson: string): Promise<ToolExecResult> {
+    let args: Record<string, Object> | null = WorkToolRunner.parseArgs(argsJson);
+    if (args === null) {
+      return WorkToolRunner.argError();
+    }
+    let rel: string = WorkToolRunner.strArg(args, 'path', '');
+    if (rel === '') {
+      return WorkToolRunner.failMsg('缺少参数 path');
+    }
+    if (!rel.toLowerCase().endsWith('.xlsx')) {
+      return WorkToolRunner.failMsg('read_xlsx 仅支持 .xlsx');
+    }
+    let root: string = WorkFileService.workspaceRoot(context, convId);
+    let abs: string | null = WorkFileService.resolveSafe(root, rel);
+    if (abs === null) {
+      return WorkToolRunner.failMsg('文件不存在: ' + rel);
+    }
+    try {
+      let r: XlsxImportResult = await XlsxImporter.import(abs, context.cacheDir + '/work_xlsx');
+      let jsonText: string = XlsxParser.toJson(r.workbook);
+      let hint: string = '\n坐标约定: edit_xlsx 的 row/index 按数据行从 1 起算(不含表头), 与上方 rows 一一对应; ' +
+        '改表头单元格用 set_header, 不能用 set_cell。';
+      let head: string = r.embedded
+        ? '《' + rel + '》的 Workbook 源(无损还原, ' + r.sheetCount.toString() + ' 个工作表, ' +
+          r.rowCount.toString() + ' 行数据):' + hint
+        : '《' + rel + '》为外来 xlsx, 以下为近似导入的 Workbook 源(' + r.sheetCount.toString() +
+          ' 个工作表, ' + r.rowCount.toString() + ' 行; 数值/文本/公式已还原, 样式与合并等细节可能丢失; ' +
+          'edit_xlsx 保存前会自动备份原文件):' + hint;
+      let out: string = head + jsonText;
+      if (out.length > Constants.WORK_RESULT_MAX_CHARS) {
+        out = head + '整簿过大, 请用 edit_xlsx 的 set_cell/add_row/delete_row/replace_text 按 sheet/行/列直接操作, ' +
+          '或用 read_file 查看文本视图。\n第 1 个工作表预览: ' +
+          jsonText.substring(0, 1500) + '...';
+      }
+      return WorkToolRunner.okMsg(out);
+    } catch (e) {
+      return WorkToolRunner.failMsg('读取 Excel 文件失败: ' + WorkToolRunner.extractErrMessage(e as Object));
+    }
+  }
+
+  // ===== edit_xlsx: 对已有 .xlsx 应用操作并保存 =====
+  private static async toolEditXlsx(context: common.UIAbilityContext, convId: string,
+    argsJson: string): Promise<ToolExecResult> {
+    let args: Record<string, Object> | null = WorkToolRunner.parseArgs(argsJson);
+    if (args === null) {
+      return WorkToolRunner.argError();
+    }
+    let rel: string = WorkToolRunner.strArg(args, 'path', '');
+    let opsJson: string = WorkToolRunner.strArg(args, 'ops', '');
+    if (rel === '') {
+      return WorkToolRunner.failMsg('缺少参数 path');
+    }
+    if (opsJson.trim() === '') {
+      return WorkToolRunner.failMsg('缺少参数 ops(JSON 数组), 如 [{"op":"set_cell","sheet":"收入","row":2,"col":2,"value":999}]');
+    }
+    if (!rel.toLowerCase().endsWith('.xlsx')) {
+      return WorkToolRunner.failMsg('edit_xlsx 仅支持 .xlsx');
+    }
+    let root: string = WorkFileService.workspaceRoot(context, convId);
+    let abs: string | null = WorkFileService.resolveSafe(root, rel);
+    if (abs === null) {
+      return WorkToolRunner.failMsg('文件不存在: ' + rel + '(新建请用 write_xlsx)');
+    }
+    try {
+      let r: XlsxImportResult = await XlsxImporter.import(abs, context.cacheDir + '/work_xlsx');
+      let summary: string = XlsxOps.apply(r.workbook, opsJson);
+      let backupNote: string = '';
+      if (!r.embedded) {
+        let backupRel: string = rel.replace(/\.xlsx$/i, '') + '_原版备份.xlsx';
+        let backupAbs: string | null = WorkFileService.resolveSafe(root, backupRel);
+        if (backupAbs !== null) {
+          WorkFileService.copyFileSync(abs, backupAbs);
+          backupNote = '\n原文件已备份为 ' + backupRel + '(外来 xlsx 为近似导入, 重建后不保留原样式细节)';
+        }
+      }
+      let bytes: Uint8Array = XlsxBuilder.buildXlsxBytes(r.workbook);
+      let result: ToolExecResult = WorkFileService.writeBytesAt(context, convId, rel, bytes);
+      result.output = summary + '\n已保存到 ' + rel + backupNote;
+      return result;
+    } catch (e) {
+      return WorkToolRunner.failMsg('编辑 Excel 文件失败: ' + WorkToolRunner.extractErrMessage(e as Object));
     }
   }
 

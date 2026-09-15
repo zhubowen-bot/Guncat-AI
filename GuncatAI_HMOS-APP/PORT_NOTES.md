@@ -2,8 +2,8 @@
 
 把 [DeepSeek Harness](https://github.com/deepseek-ai)（dsh）的核心 Agent Loop 能力移植到
 HarmonyOS 原生应用（基座为 GuncatAI_HMOS-APP 的「工作模式」），形成运行在鸿蒙 2in1/平板/手机
-上的 **Guncat Work 6.1**。无 shell 环境是前提：dsh 依赖进程的工具（bash/terminal/lsp/PTC）
-不移植，其余整套逻辑以 ArkTS 原生实现。
+上的 **Guncat Work 6.1**。无 shell 环境是前提：dsh 依赖进程的工具（bash/terminal/lsp）不移植，
+其余整套逻辑以 ArkTS 原生实现；dsh 的 PTC(run_code) 由本机 JS 引擎沙箱 `run_js` 顶替（见第四节）。
 
 ## 一、从 DeepSeek Harness 移植了什么
 
@@ -30,6 +30,7 @@ HarmonyOS 原生应用（基座为 GuncatAI_HMOS-APP 的「工作模式」），
 - **str_replace_editor**（dsh str-replace-editor）：view/create/str_replace/insert 四命令。
 - **web_fetch**（dsh web-fetch-http）：GET ≤2MB、HTML 剥离为可读文本、实体解码、截断标注。
 - **ask_user_question / schedule_* / goal_* / subagent / session_search**：见上表。
+- **run_js**（顶替 dsh 的 PTC/run_code，非移植而是新能力）：`service/JsCodeService.ts` + 原生 `libguncatjs.so`（`entry/src/main/cpp`，JSVM-API）。每次执行新建独立 JS 引擎实例，文件由 ArkTS 侧显式预载/落盘，详见 README「3.4 run_js：设备内 JS 执行沙箱」。
 
 ### UI（对齐 dsh web 端视觉）
 - 设计令牌：`--dsw-*` 色板整体移植进 `resources/base|dark/element/color.json`（浅色白底 + deepseek-500 强调；深色 `neutral-bluish-950` 底 + deepseek-450）。
@@ -50,21 +51,32 @@ record_search、技能系统（ppt/svg/data）。沙箱工作区形态不变（`
 ## 二、验证
 
 ```bash
-# 纯逻辑测试(PathMatcher/DiffUtil/FileSearchCore, 35 项)
+# 纯逻辑测试(PathMatcher/DiffUtil/FileSearchCore, 58 项)
 cd test/guncat-harness && node setup.mjs && node test-core.mjs
 
-# 服务层类型级检查(扁平化 + @kit stubs + tsc --noEmit)
+# 服务层类型级检查(扁平化 + @kit stubs + tsc --noEmit; libguncatjs.so 用 jsvm-shim 桩替代)
 node check-setup.mjs && npx -y -p typescript@5.5.4 tsc -p check/tsconfig.json
 
-# 真机构建
+# 真机构建(命令行构建需先设置 DEVECO_SDK_HOME, 例如
+#   $env:DEVECO_SDK_HOME="C:\Program Files\Huawei\DevEco Studio\sdk")
 "C:\Program Files\Huawei\DevEco Studio\tools\node\node.exe" `
   "C:\Program Files\Huawei\DevEco Studio\tools\hvigor\bin\hvigorw.js" `
   --mode module -p module=entry@default -p product=default assembleHap
 # 产物: entry/build/default/outputs/default/entry-default-signed.hap
+# run_js 的原生库会编译打包为 libs/{arm64-v8a,x86_64}/libguncatjs.so
 ```
 
+## 二·补、run_js 的原生部分（JSVM-API 沙箱）
+
+- **为什么用 JSVM-API**：ArkTS 禁止 `eval`/`new Function`（编译期就拒绝），应用内执行动态代码只能靠 JSVM-API 自建 JS 引擎实例（`libjsvm.so`，NDK C 接口，API 11 起，syscap `SystemCapability.ArkCompiler.JSVM`，三方应用可直接链接）。`napi/native_api.h` 负责 ArkTS↔C++，`ark_runtime/jsvm.h` 负责任务内的 JS 执行。
+- **文件**：`entry/src/main/cpp/{CMakeLists.txt, jsvm_sandbox.h/.cpp, napi_init.cpp}` + `cpp/types/libguncatjs/{index.d.ts, oh-package.json5}`；`entry/build-profile.json5` 新增 `externalNativeOptions`（CMake 路径 + abiFilters）。
+- **线程模型**：执行挂在 Node-API 异步任务（worker 线程）上，绝不占用 UI 线程；每次执行自建 VM + 上下文，执行完按规范逆序销毁。
+- **不可中断**：JSVM-API 没有终止执行的接口，死循环只能"放弃等待"——ArkTS 侧超时后把错误交还模型，并累计放弃次数，达到上限（2 次）即在本会话停用 `run_js`，避免持续满核耗电。
+- **边界收敛**：堆上限/源码长度/stdout/输出文件数与体积都有上限，且 native 侧对传入上限再做一次夹取；路径校验只在 ArkTS 侧 `resolveSafe()` 一处实现。
+- **改 native 后必须实机构建**（`assembleHap` 会跑 CMake/Ninja）；Node 侧测试无法覆盖原生逻辑，只能做类型级检查。
+
 ## 三、与 dsh 的刻意差异
-- 无 shell/终端/PTC(run_code)/LSP：鸿蒙无法运行子进程，相关工具不移植；grep 用正则引擎实现而非 ripgrep。
+- 无 shell/终端/LSP：鸿蒙无法运行子进程，相关工具不移植；grep 用正则引擎实现而非 ripgrep。dsh 的 PTC(run_code) 由 `run_js`（JSVM-API 沙箱，纯计算 + 显式文件桥接）顶替，能力等价但更受限：无网络、无模块加载、不可中断。
 - 事件日志为轻量补充，会话 UI 状态仍存 Preferences（带 OOM 防护），二者互补。
 - 子代理为前台阻塞式（无后台 job 调度），最多 40 步，报告制收口。
 - bundleName 沿用 `com.bowenapp.guncatai`（沿用现有签名材料）；如需独立身份，改 bundleName 后重新生成签名 profile。

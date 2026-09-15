@@ -55,7 +55,8 @@ export class SubagentService {
   }
 
   private static filteredToolDefs(): Record<string, Object>[] {
-    let all: Record<string, Object>[] = WorkFileService.toolDefs();
+    // 子代理不注入服务端联网搜索(false), 本地 search_web 用标准描述
+    let all: Record<string, Object>[] = WorkFileService.toolDefs(false);
     let excluded: string[] = SubagentService.excludedTools();
     let out: Record<string, Object>[] = [];
     for (let i: number = 0; i < all.length; i++) {
@@ -97,7 +98,8 @@ export class SubagentService {
           break;
         }
         // 执行工具(全部顺序执行; 子代理过程不进入 UI 时间线)
-        let loopMsg: LoopMessage = LoopMessage.assistant(turn.content, calls);
+        // fromTurn 携带思考文本与签名: Anthropic 思考模式下下一轮请求需回传 thinking 块
+        let loopMsg: LoopMessage = LoopMessage.fromTurn(turn);
         for (let i: number = 0; i < calls.length; i++) {
           if (abortSignal.aborted) {
             calls[i].result = '(子代理被中断, 无结果)';

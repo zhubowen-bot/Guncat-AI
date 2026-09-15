@@ -12,6 +12,9 @@ export class ApiConfig {
   topP: number | null = null;
   maxTokens: number | null = null;
   extraBody: string = '';
+  // 自动补全协议路径后缀(/chat/completions、/responses、/v1/messages 等)。
+  // 关闭后严格按填写的 Base URL 发起请求, 适合非标准路径的自建网关/代理; 默认开启。
+  autoSuffix: boolean = true;
 
   static default(): ApiConfig {
     return new ApiConfig();
@@ -59,6 +62,11 @@ export class ApiConfig {
     cfg.apiKey = (json['apiKey'] as string) ?? '';
     cfg.model = (json['model'] as string) ?? '';
     cfg.extraBody = (json['extraBody'] as string) ?? '';
+    // 旧存档无该字段时保持默认开启
+    let suffix: Object = json['autoSuffix'];
+    if (suffix !== undefined && suffix !== null) {
+      cfg.autoSuffix = (suffix as boolean) === true;
+    }
     let t: Object = json['temperature'];
     if (t !== undefined && t !== null) {
       cfg.temperature = t as number;
@@ -80,7 +88,8 @@ export class ApiConfig {
       'baseUrl': this.baseUrl,
       'apiKey': this.apiKey,
       'model': this.model,
-      'extraBody': this.extraBody
+      'extraBody': this.extraBody,
+      'autoSuffix': this.autoSuffix
     };
     if (this.temperature !== null) {
       result['temperature'] = this.temperature;

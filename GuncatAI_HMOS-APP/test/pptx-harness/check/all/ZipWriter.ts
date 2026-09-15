@@ -1,9 +1,9 @@
 import { util } from './arkts-shim.ts';
+import { XmlUtil } from './XmlUtil.ts';
 
 // 极简 ZIP 归档写入器(STORE 方式, 无压缩)
-// .docx/.xlsx 本质是 zip 包, HarmonyOS zlib 模块不提供多条目归档 API, 因此手动组装 zip 结构。
+// .docx 本质是 zip 包, HarmonyOS zlib 模块不提供多条目归档 API, 因此手动组装 zip 结构。
 // Word/Excel 等办公软件完全兼容 STORE 方式的 zip。
-// 注意: 本文件为 .ts(供 viewmodel/service 等 TS 模块复用), 不能导入 .ets, 因此 dosDateTime 在文件内实现。
 
 // zip 内条目
 export class ZipEntry {
@@ -44,7 +44,7 @@ export class ZipWriter {
     let localParts: Uint8Array[] = [];
     let centralParts: Uint8Array[] = [];
     let offset: number = 0;
-    let dosDt: number = ZipWriter.dosDateTime(new Date());
+    let dosDt: number = XmlUtil.dosDateTime(new Date());
     for (let i: number = 0; i < entries.length; i++) {
       let entry: ZipEntry = entries[i];
       let nameBytes: Uint8Array = encoder.encode(entry.name);
@@ -111,17 +111,6 @@ export class ZipWriter {
     ZipWriter.pushAll(all, centralParts);
     all.push(new Uint8Array(eocd.buffer));
     return ZipWriter.concat(all);
-  }
-
-  // DOS 日期时间(用于 zip 头), 返回 32 位: 高16位=时间, 低16位=日期 (与 XmlUtil.dosDateTime 同实现)
-  private static dosDateTime(d: Date): number {
-    let year: number = d.getFullYear();
-    if (year < 1980) {
-      year = 1980;
-    }
-    let time: number = (d.getHours() << 11) | (d.getMinutes() << 5) | Math.floor(d.getSeconds() / 2);
-    let date: number = ((year - 1980) << 9) | ((d.getMonth() + 1) << 5) | d.getDate();
-    return (time << 16) | date;
   }
 
   private static totalLen(parts: Uint8Array[]): number {

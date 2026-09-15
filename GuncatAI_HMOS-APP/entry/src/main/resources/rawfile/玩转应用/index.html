@@ -41,8 +41,81 @@
       <header class="hero">
         <img class="hero-icon" src="assets/app-icon.png" alt="应用图标">
         <h1 class="hero-title">玩转应用</h1>
-        <p class="hero-sub">学会这些小技巧，让 Guncat Work 更好用</p>
+        <p class="hero-sub">Version 6.2.0 (620_1)</p>
       </header>
+
+      <!-- 新功能体验面板: 首页最前面的最新功能速览, 直接展示, 无需跳转子页 -->
+      <section class="toc toc-gap">
+        <div class="toc-header">新功能体验</div>
+
+        <!-- 新功能: 工作模式可直接执行 JS 代码 -->
+        <div class="card">
+          <div class="card-icon">
+            <svg viewBox="0 0 24 24"><path d="M9.4 16.6 4.8 12l4.6-4.6L8 6l-6 6 6 6zm5.2 0 4.6-4.6-4.6-4.6L16 6l6 6-6 6z"/></svg>
+          </div>
+          <div class="card-body">
+            <div class="card-title">新增 JS 代码运行沙箱</div>
+            <div class="card-text">工作模式新增 JS 代码运行沙箱，支持在设备本机的独立 JS 引擎沙箱里现场执行代码，结果可直接写成工作区文件。</div>
+          </div>
+        </div>
+
+        <!-- 新功能: 全套 Office Skill -->
+        <div class="card">
+          <div class="card-icon">
+            <svg viewBox="0 0 24 24"><path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/></svg>
+          </div>
+          <div class="card-body">
+            <div class="card-title">全套 Office Skill 上线</div>
+            <div class="card-text">工作模式的全套 Office 技能正式上线！现在你可以专业化地处理和生成 PPT、Word、Excel 等办公文档，日常办公琐事一站搞定。</div>
+          </div>
+        </div>
+
+        <!-- 新功能: 五位专家智能体接入工作模式 -->
+        <div class="card">
+          <div class="card-icon">
+            <svg viewBox="0 0 24 24"><path d="M9.68 13.69 12 11.93l2.31 1.76-.88-2.85L15.75 9h-2.84L12 6.19 11.09 9H8.25l2.31 1.84-.88 2.85zM20 10c0-4.42-3.58-8-8-8s-8 3.58-8 8c0 2.03.76 3.87 2 5.28V23l6-2 6 2v-7.72c1.24-1.41 2-3.25 2-5.28zm-8-6c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6 2.69-6 6-6z"/></svg>
+          </div>
+          <div class="card-body">
+            <div class="card-title">专家智能体嵌入工作模式</div>
+            <div class="card-text">论文转换专家，法律、研究、筛滤检索专家，LLM评估专家，现已打包为 Skill 嵌入工作模式，无需切换聊天引擎，在工作模式中直接使用！</div>
+          </div>
+        </div>
+
+        <!-- 新功能: 本地联网搜索 -->
+        <div class="card">
+          <div class="card-icon">
+            <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/></svg>
+          </div>
+          <div class="card-body">
+            <div class="card-title">本地联网搜索</div>
+            <div class="card-text">新增本地联网搜索（软件内置，无需手动开关），工作模式、聊天模式都能调用，关闭联网搜索开关也不用担心断网啦！</div>
+          </div>
+        </div>
+
+        <!-- 新功能: 全局自由复制 -->
+        <div class="card">
+          <div class="card-icon">
+            <svg viewBox="0 0 24 24"><path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg>
+          </div>
+          <div class="card-body">
+            <div class="card-title">全局自由复制</div>
+            <div class="card-text">所有回答文本都能直接自由复制，无需再手动点击复制局部按钮，想复制哪里就复制哪里，随心所欲更方便！</div>
+          </div>
+        </div>
+
+        <!-- 功能: 太方便了！长程任务后台可继续工作 -->
+        <div class="card">
+          <div class="card-icon">
+            <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 14.5v-9l6 4.5-6 4.5z"/></svg>
+          </div>
+          <div class="card-body">
+            <div class="card-title">工作模式后台继续工作</div>
+            <div class="card-text">工作模式下，退出应用到后台、熄灭屏幕等，智能体会继续在后台工作，任务不会被打断，你可以自由刷视频、看新闻，等待时间也不无聊！</div>
+          </div>
+        </div>
+
+
+      </section>
 
       <!-- 目录面板: href="#/xxx" 对应一个 view-xxx 子页 -->
       <nav class="toc">
@@ -256,7 +329,8 @@
       <div class="card">
         <div class="card-body">
           <div class="card-title">联网搜索：建议开启</div>
-          <div class="card-text">联网搜索默认开启，建议不要手动关闭。关闭联网搜索后，模型无法获取实时网络信息，回答仅依赖过时的知识库。</div>
+          <div class="card-text">* 自 6.1.2 版本开始，新增本机内置联网搜索兜底能力，不支持关闭。“联网搜索”开关仍控制 API 服务端联网能力；</div>
+          <div class="card-text">联网搜索默认开启，建议不要手动关闭。关闭联网搜索后，模型无法获取实时网络信息，回答仅依赖过时的知识库。自6.1.2版本开始，关闭联网搜索开关后通过本地联网搜索仍可获取实时网络信息，但仍然建议您开启该开关，以获得最高的性价比和搜索质量。</div>
           <div class="card-text">联网搜索不属于本地工具，可用能力取决于对接的 API 平台，部分平台不支持该功能就会调用报错。</div>
           <div class="card-text">DeepSeek 、火山方舟等不少 API 平台在使用 OpenAI‑Completions 协议时可能报错，接入联网搜索更推荐选用 OpenAI‑Responses 或 Anthropic‑Messages 协议。</div>
         </div>
@@ -479,7 +553,7 @@
         <div class="pagebar-title">工作模式</div>
       </div>
 
-      <!-- 顶部图片轮播: 本页共 24 张图, 文件名 005-1.png ~ 005-24.png (放入 assets/ 即可);
+      <!-- 顶部图片轮播: 本页共 25 张图, 文件名 005-1.png ~ 005-25.png (放入 assets/ 即可);
            每张图对应下面一张介绍卡, 增删时图和卡必须成对同步修改 -->
       <div class="gallery">
         <div class="gallery-track">
@@ -507,6 +581,7 @@
           <img src="assets/005-22.png" alt="子代理 subagent">
           <img src="assets/005-23.png" alt="会话检索 session_search">
           <img src="assets/005-24.png" alt="技能系统">
+          <img src="assets/005-25.png" alt="设备内执行代码 run_js">
         </div>
         <div class="gallery-dots"></div>
       </div>
@@ -692,11 +767,11 @@
         <div class="card">
           <div class="card-body">
             <div class="card-title">Office 办公三件套（write_docx / write_xlsx / write_csv）</div>
-            <div class="card-text">write_docx：把 Markdown 生成 Word 文档（.docx）。标题、加粗斜体、有序无序列表、表格、引用、图片（内嵌图片）都支持，产出排版精良、手机上可直接阅读的成品。</div>
-            <div class="card-text">write_xlsx：把表格数据生成 Excel（.xlsx），Markdown 表格、CSV、TSV 自动识别，首行为表头。</div>
+            <div class="card-text">write_docx：把 Doc JSON（或 Markdown）生成 Word 文档（.docx）。分级标题、加粗斜体、列表、表格、引用、代码块、公式、封面、静态目录都支持，产出排版精良、手机上可直接阅读的成品；read_docx 读回源、edit_docx 改块/增删/全文替换/换样式，外来文件修改前自动备份。</div>
+            <div class="card-text">write_xlsx：生成 Excel（.xlsx）。正式表格用 Workbook JSON：多工作表、表头、公式（合计/同比等派生值必须写成公式，改数自动联动）、数字格式（金额/百分比/年份）、列宽、冻结窗格；简单表也可直接吃 Markdown 表格/CSV/TSV。read_xlsx 读回、edit_xlsx 改单元格/加行/加表/全局改词。</div>
             <div class="card-text">write_csv：同样输入生成 CSV 文件，遵循 RFC 4180 标准转义，默认带 UTF-8 BOM——用 Excel 或 WPS 打开中文不乱码。</div>
             <div class="card-text">怎么选：给人看的、带样式的表格选 xlsx；后续还要程序处理或导入其他系统选 csv；文章报告选 docx。</div>
-            <div class="card-text">与聊天引擎「一键导出 Word」的区别：导出是把已有回答转成 Word；write_docx 是工作模式里主动产出的成品文件，内容、文件名、路径都由任务决定。</div>
+            <div class="card-text">与聊天引擎「一键导出 Word」的区别：导出是把已有回答转成 Word；write_docx 是工作模式里主动产出的成品文件，内容、文件名、路径都由任务决定。生成前会先加载 docx / xlsx 技能获取语法与排版规范。</div>
           </div>
         </div>
 
@@ -779,8 +854,19 @@
           <div class="card-body">
             <div class="card-title">技能系统（list_skills / load_skill）</div>
             <div class="card-text">技能是打包好的领域操作指南（纯文档）。接到对应任务时，智能体先 list_skills 查看有哪些技能，再 load_skill 按需加载——就像新员工上岗前先翻一遍岗位手册，而不是凭感觉干活。</div>
-            <div class="card-text">内置三大技能：ppt（Deck 语法、设计规范、主题、自检清单，任何 PPT 任务开始前先加载）；svg（SVG 绘制规范与「生成→预览→修正」工作流，图标/流程图/信息图配方）；data（数据管道的完整语法与清洗、提取、互转配方）。</div>
-            <div class="card-text">加载是渐进式的：先读技能正文，需要细节再读参考分册。技能正文优先于模型自己的默认做法——这保证了产出稳定符合规范，也是 PPT、生图与数据处理质量的秘密所在。</div>
+            <div class="card-text">内置十大技能：ppt（Deck 语法、设计规范、主题、自检清单，任何 PPT 任务开始前先加载）；svg（SVG 绘制规范与「生成→预览→修正」工作流，图标/流程图/信息图配方）；data（数据管道的完整语法与清洗、提取、互转配方）；docx（Word 的 Doc JSON 语法与排版规范，任何 Word 任务先加载）；xlsx（Excel 的 Workbook JSON 语法、公式优先与数字格式规范，任何表格任务先加载）；以及五位专家智能体技能：paper（论文改写）、law（法律意见书）、research（深度调研）、sift（时效信息筛滤）、llm-eval（大模型评测）——需要专家级处理时说明用哪一位，即按该专家的完整方法论执行。</div>
+            <div class="card-text">加载是渐进式的：先读技能正文，需要细节再读参考分册。技能正文优先于模型自己的默认做法——这保证了产出稳定符合规范，也是 PPT、生图、Office 文档与专家任务质量的秘密所在。</div>
+          </div>
+        </div>
+
+        <!-- 25 设备内执行代码 -->
+        <div class="card">
+          <div class="card-body">
+            <div class="card-title">设备内执行代码（run_js）</div>
+            <div class="card-text">run_js 补上了工作模式最后一块拼图：在没有终端、不能安装软件的环境里，它也能「写几行代码算一下」。典型场景——把格式凌乱的文本按正则清洗、统计一组数据的分布、按规则从已有文件重组出结构化数据、批量生成接下来要成文的表格；凡是「写段代码处理」比「读进对话再写」更划算的活，都可以交给它。</div>
+            <div class="card-text">它是设备本机上的独立 JS 引擎沙箱：每次执行都是全新实例，不联网、不能读写文件系统、也不能加载外部模块。文件进出由工作区显式桥接——在 files 参数里列出的工作区文件会以只读方式预载给脚本，脚本里用 write 声明的产出会在执行成功后落入工作区（路径同样受工作区边界校验）。</div>
+            <div class="card-text">执行跑在后台线程，界面不会卡住；单次执行有默认 10 秒上限，内存与输出体积也都有上限。唯一无法兜底的是死循环——JS 引擎没有中断接口，遇到这种情况系统会放弃等待、把错误交回，让你改写代码（连续超时后本会话会暂时停用该工具，重启应用即恢复），而不是让界面一直转圈。</div>
+            <div class="card-text">与 transform_file 的分工：规则固定、批量清洗转换用 transform_file（内置管道，数据不进对话）；需要现写逻辑、做计算或程序化拼数据时用 run_js。最顺手的接力是 run_js 产出 JSON，再交给 write_docx / write_xlsx / write_pptx 成文。</div>
           </div>
         </div>
 

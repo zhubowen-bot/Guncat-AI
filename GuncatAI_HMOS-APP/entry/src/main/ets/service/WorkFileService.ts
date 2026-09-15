@@ -6,7 +6,7 @@ import { fileIo, picker } from '@kit.CoreFileKit';
 import { common } from '@kit.AbilityKit';
 import { util } from '@kit.ArkTS';
 import { hilog } from '@kit.PerformanceAnalysisKit';
-import { ZipWriter, ZipEntry } from '../export/ZipWriter';
+import { ZipWriter, ZipEntry } from '../export/ZipWriterTs';
 import { PickedFile } from './FileService';
 import { OfficeReader } from './OfficeReader';
 import { PdfTextExtractor } from './PdfTextExtractor';
@@ -386,7 +386,7 @@ export class WorkFileService {
   static isReadOnlyTool(name: string): boolean {
     return name === 'list_files' || name === 'read_file' || name === 'parse_document' ||
       name === 'search_files' || name === 'search_pdf' || name === 'view_image' ||
-      name === 'read_ppt' || name === 'list_skills' || name === 'load_skill' ||
+      name === 'read_ppt' || name === 'read_docx' || name === 'read_xlsx' || name === 'list_skills' || name === 'load_skill' ||
       HarnessTools.isReadOnly(name);
   }
 
@@ -394,7 +394,8 @@ export class WorkFileService {
   static isMutatingTool(name: string): boolean {
     return name === 'write_file' || name === 'append_file' || name === 'delete_file' ||
       name === 'create_dir' || name === 'move_file' ||
-      name === 'write_docx' || name === 'write_xlsx' || name === 'write_pptx' ||
+      name === 'write_docx' || name === 'edit_docx' || name === 'write_xlsx' || name === 'edit_xlsx' ||
+      name === 'write_pptx' ||
       name === 'edit_ppt' || name === 'write_csv' || name === 'download_file' ||
       name === 'write_svg' || name === 'todo_write' || name === 'record_search' ||
       name === 'search_web' ||
@@ -1261,17 +1262,47 @@ export class WorkFileService {
         'width', WorkFileService.strProp('可选: 预览 PNG 的宽度(px), 默认 512, 高度按 viewBox 比例自动计算')),
       ['path', 'svg']));
     defs.push(WorkFileService.makeTool('write_docx',
-      '把 Markdown 内容生成 Word 文档(.docx)写入工作区。markdown 支持 标题/粗体斜体/列表/表格/引用/图片(data URL)。',
-      WorkFileService.props2(
+      '把结构化 Doc JSON 或 Markdown 生成 Word 文档(.docx)写入工作区。正式文档用 doc(Doc JSON 结构化源: 封面/目录/分级标题/正文/列表/表格/图片/引用/代码块, 图片 src 支持工作区相对路径, 排版规范)或 doc_file(工作区中 Doc JSON 文件路径, 长文档先 write_file/append_file 分块写好再导出); 简单内容可直接传 markdown(与旧版一致, 图片同样支持工作区路径)。title 可选文档标题, style 可选样式预设 default/academic/minimal。做正式 Word 文档前必须先 load_skill("docx") 获取 Doc 语法与排版规范。',
+      WorkFileService.props6(
         'path', WorkFileService.strProp('目标文件相对路径(建议以 .docx 结尾)'),
-        'markdown', WorkFileService.strProp('完整的 Markdown 文档内容')),
-      ['path', 'markdown']));
-    defs.push(WorkFileService.makeTool('write_xlsx',
-      '把表格数据生成 Excel 文件(.xlsx)写入工作区, 首行为表头。table 支持 Markdown 表格(| 分隔)或 CSV(逗号)/TSV(制表符)文本。',
+        'doc', WorkFileService.strProp('可选: Doc JSON 结构化源(与 doc_file/markdown 三选一)'),
+        'doc_file', WorkFileService.strProp('可选: 工作区中 Doc JSON 文件的相对路径(三选一)'),
+        'markdown', WorkFileService.strProp('可选: Markdown 内容(三选一; 标题/列表/表格/引用/图片均支持)'),
+        'title', WorkFileService.strProp('可选: 文档标题(默认取 doc.title 或文件名)'),
+        'style', WorkFileService.strProp('可选: 样式预设 default/academic/minimal')),
+      ['path']));
+    defs.push(WorkFileService.makeTool('read_docx',
+      '读回 Word 文档的 Doc JSON 源。本应用生成的 .docx 无损还原(含内嵌源); 外来 docx 为近似导入(标题/正文/列表/表格还原, 图片抽取到 docx_images/<文件名>/ 供查看与再次引用, 版式细节不保留)。编辑或仿制 Word 文档前先读它。',
+      WorkFileService.props1(
+        'path', WorkFileService.strProp('要读取的 .docx 文件相对路径')),
+      ['path']));
+    defs.push(WorkFileService.makeTool('edit_docx',
+      '对已有 .docx 应用结构化操作后保存(外来 docx 会先自动备份原文件为 *_原版备份.docx)。ops 为 JSON 数组: set_title{title}/set_subtitle/set_author/set_style{style}/set_cover{cover}/set_toc{toc}/add_block{index?,block}/delete_block{index}/update_block{index,block 部分字段}/move_block{from,to}/replace_text{find,replace}；index 从 1 起。改单块用 update_block, 全局改词用 replace_text, 换样式用 set_style。',
       WorkFileService.props2(
+        'path', WorkFileService.strProp('要编辑的 .docx 文件相对路径'),
+        'ops', WorkFileService.strProp('操作 JSON 数组, 如 [{"op":"update_block","index":2,"block":{"text":"新标题"}}]')),
+      ['path', 'ops']));
+    defs.push(WorkFileService.makeTool('write_xlsx',
+      '把结构化 Workbook JSON 或表格文本生成 Excel 文件(.xlsx)写入工作区。正式表格用 workbook(Workbook JSON 结构化源: 多工作表/表头加粗/公式(单元格值以 = 开头, 如 "=SUM(B2:B9)")/数字格式(formats 列格式: money/int/percent/year/date/number/text)/列宽(colWidths)/冻结窗格(freeze))或 workbook_file(工作区中 Workbook JSON 文件路径, 长表先 write_file/append_file 分块写好再导出); 简单表格直接传 table(Markdown 表格/CSV/TSV, 首行作表头)。name 可选工作簿名, style 可选样式预设 default/academic/minimal。做正式 Excel 前必须先 load_skill("xlsx") 获取 Workbook 语法与表格规范(公式优先/数字格式/负数与零值显示)。',
+      WorkFileService.props6(
         'path', WorkFileService.strProp('目标文件相对路径(建议以 .xlsx 结尾)'),
-        'table', WorkFileService.strProp('表格数据文本: Markdown 表格、CSV 或 TSV')),
-      ['path', 'table']));
+        'workbook', WorkFileService.strProp('可选: Workbook JSON 结构化源(与 workbook_file/table 三选一)'),
+        'workbook_file', WorkFileService.strProp('可选: 工作区中 Workbook JSON 文件的相对路径(三选一)'),
+        'table', WorkFileService.strProp('可选: Markdown 表格/CSV/TSV 文本(三选一; 首行作表头)'),
+        'name', WorkFileService.strProp('可选: 工作簿名(默认取 workbook.name 或"Guncat 工作簿")'),
+        'style', WorkFileService.strProp('可选: 样式预设 default/academic/minimal')),
+      ['path']));
+    defs.push(WorkFileService.makeTool('read_xlsx',
+      '读回 Excel 工作簿的 Workbook JSON 源。本应用生成的 .xlsx 无损还原(含内嵌源); 外来 xlsx 为近似导入(各工作表数值/文本/公式还原, 样式/合并等细节不保留)。编辑或仿制 Excel 文件前先读它。',
+      WorkFileService.props1(
+        'path', WorkFileService.strProp('要读取的 .xlsx 文件相对路径')),
+      ['path']));
+    defs.push(WorkFileService.makeTool('edit_xlsx',
+      '对已有 .xlsx 应用结构化操作后保存(外来 xlsx 会先自动备份原文件为 *_原版备份.xlsx)。ops 为 JSON 数组: set_name{name}/set_style{style}/set_sheet_name{sheet,name}/add_sheet{sheet,index?}/delete_sheet{sheet}/move_sheet{sheet,to}/add_row{sheet,row,index?}/delete_row{sheet,index}/update_row{sheet,index,row}/set_cell{sheet,row,col,value}/set_header{sheet,col,value}/replace_text{find,replace}；sheet 用工作表名, row/index 按数据行从 1 起算(不含表头, 与 read_xlsx 的 rows 一一对应), col 从 1 起(1=A)；改表头单元格用 set_header。改单元格用 set_cell, 加行用 add_row, 全局改词用 replace_text。',
+      WorkFileService.props2(
+        'path', WorkFileService.strProp('要编辑的 .xlsx 文件相对路径'),
+        'ops', WorkFileService.strProp('操作 JSON 数组, 如 [{"op":"set_cell","sheet":"收入","row":2,"col":2,"value":999}]')),
+      ['path', 'ops']));
     let tfProps: Record<string, Object> = {};
     tfProps['input'] = WorkFileService.strProp('要转换的工作区数据文件相对路径(csv/tsv/markdown 表格/json/jsonl/纯文本行)');
     tfProps['steps'] = WorkFileService.strProp('转换步骤 JSON 数组, 如 [{"op":"filter","expr":"col(\'年龄\') >= 18"},{"op":"derive","name":"全名","expr":"trim(col(\'姓\')) + \' \' + col(\'名\')}"]; 完整语法先 load_skill("data")');
@@ -1387,6 +1418,51 @@ export class WorkFileService {
     properties[name1] = p1;
     properties[name2] = p2;
     properties[name3] = p3;
+    return properties;
+  }
+
+  // 四参数 properties 构造
+  private static props4(name1: string, p1: Record<string, Object>,
+    name2: string, p2: Record<string, Object>,
+    name3: string, p3: Record<string, Object>,
+    name4: string, p4: Record<string, Object>): Record<string, Object> {
+    let properties: Record<string, Object> = {};
+    properties[name1] = p1;
+    properties[name2] = p2;
+    properties[name3] = p3;
+    properties[name4] = p4;
+    return properties;
+  }
+
+  // 五参数 properties 构造
+  private static props5(name1: string, p1: Record<string, Object>,
+    name2: string, p2: Record<string, Object>,
+    name3: string, p3: Record<string, Object>,
+    name4: string, p4: Record<string, Object>,
+    name5: string, p5: Record<string, Object>): Record<string, Object> {
+    let properties: Record<string, Object> = {};
+    properties[name1] = p1;
+    properties[name2] = p2;
+    properties[name3] = p3;
+    properties[name4] = p4;
+    properties[name5] = p5;
+    return properties;
+  }
+
+  // 六参数 properties 构造
+  private static props6(name1: string, p1: Record<string, Object>,
+    name2: string, p2: Record<string, Object>,
+    name3: string, p3: Record<string, Object>,
+    name4: string, p4: Record<string, Object>,
+    name5: string, p5: Record<string, Object>,
+    name6: string, p6: Record<string, Object>): Record<string, Object> {
+    let properties: Record<string, Object> = {};
+    properties[name1] = p1;
+    properties[name2] = p2;
+    properties[name3] = p3;
+    properties[name4] = p4;
+    properties[name5] = p5;
+    properties[name6] = p6;
     return properties;
   }
 

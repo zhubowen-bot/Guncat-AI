@@ -34,6 +34,26 @@ function port(relSrc, relDst, replaces) {
 port('export/DeckModel.ets', 'DeckModel.ts', []);
 port('export/PptxThemes.ets', 'PptxThemes.ts', []);
 port('export/PptxCharts.ets', 'PptxCharts.ts', []);
+// Word 管线(供 check-setup 类型检查 WorkToolRunner 使用)
+port('export/DocModel.ets', 'DocModel.ts', [
+  ["from '../common/Constants'", "from './Constants'"]
+]);
+port('export/DocxBuilder.ets', 'DocxBuilder.ts', [
+  ["from '../common/Constants'", "from './Constants'"]
+]);
+port('export/MarkdownParser.ets', 'MarkdownParser.ts', []);
+port('export/OmmlConverter.ets', 'OmmlConverter.ts', []);
+// Excel 管线(供 check-setup 类型检查 WorkToolRunner 使用)
+port('export/XlsxModel.ets', 'XlsxModel.ts', [
+  ["from '../common/Constants'", "from './Constants'"],
+  ["from '../common/CsvParser'", "from './CsvParser'"]
+]);
+port('export/XlsxBuilder.ets', 'XlsxBuilder.ts', [
+  ["from '../common/Constants'", "from './Constants'"]
+]);
+port('export/XlsxImporter.ets', 'XlsxImporter.ts', [
+  ["from '../common/Constants'", "from './Constants'"]
+]);
 port('export/CsvWriter.ts', 'CsvWriter.ts', [
   ["from '@kit.ArkTS'", "from './arkts-shim'"]
 ]);
@@ -44,10 +64,13 @@ port('export/PptxBuilder.ets', 'PptxBuilder.ts', [
   ["from '../common/Constants'", "from './Constants'"]
 ]);
 port('export/XmlUtil.ets', 'XmlUtil.ts', []);
-port('export/ZipWriter.ts', 'ZipWriter.ts', [
+port('export/ZipWriter.ets', 'ZipWriter.ts', [
   ["from '@kit.ArkTS'", "from './arkts-shim'"]
 ]);
 port('common/Constants.ts', 'Constants.ts', []);
+port('export/DocxImporter.ets', 'DocxImporter.ts', [
+  ["from '../common/Constants'", "from './Constants'"]
+]);
 // shim 同样放入 gen/, 供 gen/ZipWriter.ts 引用
 writeFileSync(join(genDir, 'arkts-shim.ts'), readFileSync(join(here, 'arkts-shim.ts')));
 console.log('done');

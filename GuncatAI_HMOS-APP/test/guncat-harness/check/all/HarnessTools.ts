@@ -1,7 +1,8 @@
 // HarnessTools: Guncat Work 6.1 新增工具集(DeepSeek Harness 移植)
 // glob/grep(纯 TS 正则搜索, 对齐 tool-fs-search) / edit+str_replace_editor(对齐 tool-fs 与
 // str-replace-editor) / web_fetch(对齐 web-fetch-http) / ask_user_question(对齐 ask-user) /
-// schedule_*/goal_*(会话级提醒与目标) / subagent(进程内嵌套代理) / session_search(事件日志检索)。
+// schedule_*/goal_*(会话级提醒与目标) / subagent(进程内嵌套代理) / session_search(事件日志检索) /
+// run_js(JSVM-API 沙箱, 见 JsCodeService —— 无 shell 环境下的"执行代码"能力)。
 // 与 WorkFileService 的既有 25 工具并存; dispatch 由 WorkFileService 兜底转发至此。
 import { fileIo } from '@kit.CoreFileKit';
 import { common } from '@kit.AbilityKit';
@@ -15,6 +16,7 @@ import { ScheduleService, ScheduleItem } from './ScheduleService.ts';
 import { GoalService, GoalItem } from './GoalService.ts';
 import { WebFetchService } from './WebFetchService.ts';
 import { SessionLogService } from './SessionLogService.ts';
+import { JsCodeService } from './JsCodeService.ts';
 import { ToolExecResult, WorkFileService } from './WorkFileService.ts';
 import { Constants } from './Constants.ts';
 
@@ -72,6 +74,9 @@ class DeviceFsAdapter implements FsAdapter {
   }
 }
 
+// web_fetch 工具名(工作模式工具表与聊天模式强制注入共用)
+export const WEB_FETCH_TOOL_NAME: string = 'web_fetch';
+
 export class HarnessTools {
   // ===== 工具分类(与 WorkFileService 的并发调度联动) =====
 
@@ -83,7 +88,8 @@ export class HarnessTools {
   static isMutating(name: string): boolean {
     return name === 'edit' || name === 'str_replace_editor' ||
       name === 'goal_create' || name === 'goal_update' ||
-      name === 'schedule_create' || name === 'schedule_delete';
+      name === 'schedule_create' || name === 'schedule_delete' ||
+      name === 'run_js';
   }
 
   // ===== 分发(由 WorkFileService.dispatchTool 兜底转发) =====
@@ -165,6 +171,9 @@ export class HarnessTools {
     }
     if (name === 'session_search') {
       return HarnessTools.toolSessionSearch(context, convId, args);
+    }
+    if (name === JsCodeService.TOOL_NAME) {
+      return await JsCodeService.run(root, args);
     }
     return HarnessTools.fail('未知工具: ' + name);
   }
@@ -428,7 +437,8 @@ export class HarnessTools {
 
   // ===== web_fetch =====
 
-  private static async toolWebFetch(args: Record<string, Object>): Promise<ToolExecResult> {
+  // 公开给聊天模式工具循环复用(自包含: 只依赖 args, 不触碰工作区)
+  static async toolWebFetch(args: Record<string, Object>): Promise<ToolExecResult> {
     let url: string = HarnessTools.strArg(args, 'url', '');
     if (url === '') {
       return HarnessTools.fail('缺少参数 url');
@@ -562,7 +572,7 @@ export class HarnessTools {
         'path', HarnessTools.strProp('目标文件相对路径'),
         'file_text', HarnessTools.strProp('create 时的完整文件内容; str_replace 时改传 old_string/new_string; insert 时传 insert_line/insert_text')),
       ['command', 'path']));
-    defs.push(HarnessTools.makeTool('web_fetch',
+    defs.push(HarnessTools.makeTool(WEB_FETCH_TOOL_NAME,
       '抓取 http(s) 网页/接口原文: GET 请求(≤2MB), HTML 自动剥离为可读文本, JSON/文本原样返回(超长截断)。用于读服务端联网搜索给出的具体来源、抓公开文档/接口数据。不可达或非 2xx 会明确报错; 需要下载文件到工作区用 download_file。',
       HarnessTools.props2(
         'url', HarnessTools.strProp('要抓取的 http(s) 链接'),
@@ -619,7 +629,28 @@ export class HarnessTools {
         'query', HarnessTools.strProp('检索关键词(子串匹配)'),
         'max_results', HarnessTools.strProp('可选: 返回行数上限, 默认 40')),
       ['query']));
+    defs.push(HarnessTools.makeTool(JsCodeService.TOOL_NAME,
+      '在本机的独立 JS 引擎沙箱里执行一段 JavaScript, 用于"写几行代码算一下"的活: 日期/数值/单位换算、正则清洗、JSON 重塑与合并、统计汇总、算法试算与验证, 以及批量生成结构化数据(先用 JS 拼出完整 JSON 写出文件, 再交给 write_docx/write_xlsx/write_pptx 成文)。' +
+      '沙箱是纯计算环境: 无网络、无文件系统、无模块加载(不支持 import/require), 文件必须显式进出 —— files 里列出的工作区文件会预载为只读的 inputs(键=去掉 "./" 前缀的相对路径, 结果里会列出实际键名), 脚本里用 inputs["路径"] 或 read("路径") 读取(read 对写法宽容: "./a/b.txt"、"a//b.txt" 都会归一化; 未传 files 时调用 read 会直接报错提示补 files); 脚本内 write(path, content) 声明的输出会在执行成功后写入工作区。' +
+      '返回值取脚本最后一条表达式的值(要显式返回就写 (() => { ...; return 结果; })()); console.log/print 的输出随结果一并返回。' +
+      '限制: 代码 ≤128KB, 默认执行上限 10 秒(timeout_ms 可放宽到 30 秒), 死循环无法中断(超时会放弃等待并计入上限), 单次输出 ≤16 个文件且单文件 ≤512KB。' +
+      '常规表格转换仍优先用 transform_file; 大文件读取仍用 read_file/search_files。',
+      HarnessTools.props3(
+        'code', HarnessTools.strProp('要执行的 JS 代码; 文件内容用 inputs["路径"] 或 read("路径") 读取, 产出用 write("路径", 内容) 写出'),
+        'files', HarnessTools.strProp('可选: 要预载为只读输入的工作区文件相对路径(如 "data/in.csv"), 多个用逗号或 JSON 数组分隔(最多 6 个, 单个 ≤512KB); 不传则脚本里没有可读输入, 需要文件内容时必须传'),
+        'timeout_ms', HarnessTools.strProp('可选: 执行超时毫秒数, 默认 10000, 范围 1000~30000')),
+      ['code']));
     return defs;
+  }
+
+  // web_fetch 的协议无关定义(聊天模式强制注入时复用, 保持描述单点维护)
+  static webFetchDef(): Record<string, Object> {
+    return HarnessTools.makeTool(WEB_FETCH_TOOL_NAME,
+      '抓取 http(s) 网页/接口原文: GET 请求(≤2MB), HTML 自动剥离为可读文本, JSON/文本原样返回(超长截断)。用于读取联网搜索结果中的具体来源、用户给出的链接、公开文档与接口数据。不可达或非 2xx 会明确报错。',
+      HarnessTools.props2(
+        'url', HarnessTools.strProp('要抓取的 http(s) 链接'),
+        'max_chars', HarnessTools.strProp('可选: 返回文本字符上限, 默认 24000')),
+      ['url']);
   }
 
   // ===== 底层小工具 =====

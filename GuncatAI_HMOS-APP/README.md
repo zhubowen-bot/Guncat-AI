@@ -4,7 +4,7 @@
 
 Guncat Work 是使用 ArkTS 与 ArkUI 开发的原生 HarmonyOS AI 对话客户端，代替了原有的 WebView 承载主界面的旧方案。
 
-当前应用版本：`6.1.2`
+当前应用版本：`6.2.0`
 
 ## 主要功能
 
@@ -114,8 +114,8 @@ Guncat Work 是使用 ArkTS 与 ArkUI 开发的原生 HarmonyOS AI 对话客户�
 工作模式是**与聊天智能体平行的独立身份**（侧边栏「聊天模式」标题上方的「Agent模式」分组中的 🛠「工作模式」项），进入后进入一个具备本地沙箱工作区与工具调用能力的 Agent 循环，可自主完成多步骤长程任务。完整架构见下文「[工作模式架构与维护指南](#工作模式架构与维护指南)」。
 
 - **沙箱工作区**：每个工作会话对应 `filesDir/workspaces/<convId>/` 目录，支持上传文件、导出 `.zip` 打包、清空；全程应用沙箱内读写 + 系统安全组件选/存文件，无新增权限。
-- **36 个本地工具**：文件 CRUD（list/read/write/append/delete/create_dir/move/search，search_files 支持 glob 文件名过滤）、任务清单（todo_write）、图片查看（view_image，走主模型多模态）、网络下载（download_file，把链接文件拉进工作区）、PDF 解析（parse_document + read_file 自动路由）、Office 生成（write_docx / write_xlsx / write_csv）、数据管道（transform_file，大文件本地清洗/转换/互转，数据不经模型上下文）、PPT 读写编辑（write_pptx / read_ppt / edit_ppt，基于 Deck JSON 中间层）、SVG 生图（write_svg，矢量出图 + PNG 预览）、技能系统（list_skills / load_skill，按需加载领域操作指南）。6.1 新增（DeepSeek Harness 移植）：glob / grep（模式找文件与正则搜索）、edit / str_replace_editor（逐字符精确编辑 + diff 卡片）、web_fetch（抓取网页/接口原文）、ask_user_question（向用户提问并等待作答）、schedule_create/list/delete（会话内定时提醒）、goal_create/get/update（会话自主目标）、subagent（子代理委派）、session_search（会话事件日志检索）。
-- **技能系统**：领域操作指南打包在 `rawfile/skills/<id>/`（SKILL.md + reference/*.md），系统提示词只保留触发提示（保证 KV 缓存前缀稳定），模型通过 `list_skills`/`load_skill` 渐进式加载。内置 `ppt` 技能（Deck JSON 语法、设计规范、主题、自检清单）、`svg` 技能（SVG 绘制规范、"生成→预览→修正"工作流、图标/流程图/信息图配方）与 `data` 技能（transform_file 管道 ops 与表达式完整语法、清洗/提取/互转配方）。
+- **42 个本地工具**：文件 CRUD（list/read/write/append/delete/create_dir/move/search，search_files 支持 glob 文件名过滤）、任务清单（todo_write）、图片查看（view_image，走主模型多模态）、网络下载（download_file，把链接文件拉进工作区）、PDF 解析（parse_document + read_file 自动路由）、Office 生成（write_docx / write_xlsx / write_csv）、数据管道（transform_file，大文件本地清洗/转换/互转，数据不经模型上下文）、PPT 读写编辑（write_pptx / read_ppt / edit_ppt，基于 Deck JSON 中间层）、Word 读写编辑（write_docx / read_docx / edit_docx，基于 Doc JSON 中间层）、Excel 读写编辑（write_xlsx / read_xlsx / edit_xlsx，基于 Workbook JSON 中间层）、SVG 生图（write_svg，矢量出图 + PNG 预览）、技能系统（list_skills / load_skill，按需加载领域操作指南）。6.1 新增（DeepSeek Harness 移植）：glob / grep（模式找文件与正则搜索）、edit / str_replace_editor（逐字符精确编辑 + diff 卡片）、web_fetch（抓取网页/接口原文）、ask_user_question（向用户提问并等待作答）、schedule_create/list/delete（会话内定时提醒）、goal_create/get/update（会话自主目标）、subagent（子代理委派）、session_search（会话事件日志检索）。**run_js（JSVM-API 沙箱）**：无 shell 环境下唯一的"执行代码"能力，详见下文"run_js：设备内 JS 执行沙箱"。
+- **技能系统**：领域操作指南打包在 `rawfile/skills/<id>/`（SKILL.md + reference/*.md），系统提示词只保留触发提示（保证 KV 缓存前缀稳定），模型通过 `list_skills`/`load_skill` 渐进式加载。内置 `ppt` 技能（Deck JSON 语法、设计规范、主题、自检清单）、`docx` 技能（Doc JSON 语法、排版规范）、`xlsx` 技能（Workbook JSON 语法、公式优先与数字格式规范）、`svg` 技能（SVG 绘制规范、"生成→预览→修正"工作流、图标/流程图/信息图配方）与 `data` 技能（transform_file 管道 ops 与表达式完整语法、清洗/提取/互转配方）。
 - **本地解析引擎**：`.docx/.xlsx/.pptx/.pdf` 全部在设备本地抽取文本，不依赖多模态解析 API、不消耗配额。
 - **任务清单纪律**：复杂任务先 `todo_write` 建清单，清单与工作区状态经「运行时上下文」快照注入对话尾部，逐项推进、完成后更新。
 - **Codex 式时间线**：每轮独立消息按「思考 → 工具步骤 → 正文」时序排列，单容器时间线 UI，工具步骤可展开查看参数与结果。
@@ -205,8 +205,14 @@ entry/src/main/ets/
 │   ├── BackgroundReaderService.ets
 │   └── VoiceInputService.ets
 ├── export/
-│   ├── DocxExporter.ets            # Markdown→docx（含工作模式用的 buildDocxBytes）
-│   ├── XlsxExporter.ets            # 表格→xlsx（含 buildXlsxFromRows）
+│   ├── DocModel.ets                # Word 中间层：Doc JSON 解析/校验/MdToDoc/DocOps 编辑算子（纯逻辑）
+│   ├── DocxBuilder.ets             # Doc→.docx 渲染（样式分级 22→12pt、图片嵌入、内嵌 docProps/doc.json 源）
+│   ├── DocxImporter.ets            # .docx→Doc（自家文件内嵌源无损还原；外来近似导入 + word/media 图片抽取）
+│   ├── DocxExporter.ets            # 对话一键导出入口（薄封装 DocxBuilder）
+│   ├── XlsxExporter.ets            # 表格→xlsx（含 buildXlsxFromRows, transform_file 用）
+│   ├── XlsxModel.ets               # Excel 中间层：Workbook JSON 解析/校验/MdToXlsx/XlsxOps 编辑算子（纯逻辑）
+│   ├── XlsxBuilder.ets             # Workbook→.xlsx 渲染（多工作表/表头样式/公式/数字格式/列宽/冻结窗格/内嵌 workbook.json 源）
+│   ├── XlsxImporter.ets            # .xlsx→Workbook（自家文件内嵌源无损还原；外来 XML 近似导入）
 │   ├── CsvWriter.ts                # 行数据→CSV（RFC 4180 转义 + 可选 BOM, 纯逻辑）
 │   ├── DeckModel.ets               # PPT 中间层：Deck JSON 解析/校验/编辑算子（纯逻辑, 无 Kit API）
 │   ├── PptxThemes.ets              # 8 套主题预设 + 语义色解析（纯逻辑）
@@ -229,13 +235,21 @@ entry/src/main/resources/rawfile/
 └── skills/                         # 工作模式技能（AI 按需 load_skill 加载, 见「3.2 技能系统」）
     ├── ppt/
     │   ├── SKILL.md                # PPT 技能正文（工作流/速查/自检清单）
-    │   └── reference/              # deck-dsl.md / design-guide.md / themes.md
+    │   └── reference/              # deck-dsl.md / design-guide.md / themes.md / troubleshooting.md
+    ├── docx/
+    │   ├── SKILL.md                # Word 技能正文（新建/编辑工作流/块速查/排版规则/自检清单）
+    │   └── reference/              # doc-dsl.md / design-guide.md / troubleshooting.md
+    ├── xlsx/
+    │   ├── SKILL.md                # Excel 技能正文（新建/编辑工作流/公式优先/速查/自检清单）
+    │   └── reference/              # workbook-dsl.md / format-guide.md / troubleshooting.md
     └── svg/
         ├── SKILL.md                # SVG 生图技能（生成→预览→修正工作流/自检清单）
         └── reference/              # svg-craft.md / svg-recipes.md
 
 test/
-└── pptx-harness/                   # PPT/CSV 离线验证环境（Node 构建 + python-pptx 校验 + PNG 目检）
+├── pptx-harness/                   # PPT/CSV/Word/Excel 服务层离线验证（Node 构建 + python 校验 + tsc 类型检查）
+├── docx-harness/                   # Word 生成器/导入器离线验证（Node 构建 + python-docx 校验）
+└── xlsx-harness/                   # Excel 生成器/导入器离线验证（Node 构建 + openpyxl 校验）
 ```
 
 项目采用类似 MVVM 的分层方式：
@@ -355,7 +369,7 @@ for step in 1..WORK_MAX_STEPS(200, 防失控保险):
 - **中断**：`stopStreaming()` 同时调用 `ChatService.abort()` 与 `AgentLoopService.abort()`；中断轮若无产出则移除消息，否则追加「⏹ 任务已手动停止」。
 - **步数保险**：`WORK_MAX_STEPS(200)` 仅作为失控保护（防止工具调用死循环持续消耗），正常长任务触不到；触发后在最后一条消息标注「发送“继续”可接着执行」。
 
-### 3. 工具系统（36 个）
+### 3. 工具系统（42 个）
 
 分发链：`ChatViewModel` → `WorkToolRunner.execute()`（.ets 入口）→ Office 生成/parse_document/PPT/transform_file 就地实现，其余委托 `WorkFileService.executeTool()`（.ts），6.1 新增工具由 `HarnessTools.dispatch()`（.ts）兜底。
 
@@ -370,15 +384,19 @@ for step in 1..WORK_MAX_STEPS(200, 防失控保险):
 | `view_image`                                            | WorkFileService.toolViewImage                                       | 图片→dataUrl（≤8MB），由循环注入下一条多模态消息                                                                                                                                                   |
 | `download_file`                                         | WorkToolRunner.toolDownloadFile                                     | http(s) 文件下载进工作区（≤20MB；类型嗅探 + html 告警；自动命名或指定 path）                                                                                                                              |
 | `parse_document`                                        | WorkToolRunner.toolParseDocument                                    | PDF 完整文本（本地，3 倍输出上限）                                                                                                                                                             |
-| `write_docx`                                            | WorkToolRunner.toolWriteDocx → DocxExporter.buildDocxBytes          | Markdown→Word                                                                                                                                                                    |
-| `write_xlsx`                                            | WorkToolRunner.toolWriteXlsx → XlsxExporter.buildXlsxFromRows       | Markdown 表格/CSV/TSV→Excel                                                                                                                                                        |
+| `write_docx`                                            | WorkToolRunner.toolWriteDocx → DocxBuilder.buildFromMarkdown/buildDocxBytes | **Doc JSON / doc 文件 / Markdown → Word**（详见下节；可带 title/style；图片走工作区/data URL/http，svg 自动栅格化） |
+| `read_docx`                                            | WorkToolRunner.toolReadDocx → DocxImporter.import                    | .docx → Doc JSON 源（自家文件无损还原，外来近似导入；word/media 图片抽取到 docx_images/）                                    |
+| `edit_docx`                                            | WorkToolRunner.toolEditDocx → DocxImporter + DocOps + DocxBuilder    | 读回→应用操作（改标题/改样式/增删改移块/全文替换）→重建（外来文件先备份）                                                          |
+| `write_xlsx`                                            | WorkToolRunner.toolWriteXlsx → XlsxBuilder.buildXlsxBytes          | **Workbook JSON / workbook 文件 / Markdown·CSV·TSV → Excel**（详见下节；多工作表/表头/公式/数字格式/列宽/冻结窗格，可带 name/style） |
+| `read_xlsx`                                             | WorkToolRunner.toolReadXlsx → XlsxImporter.import                   | .xlsx → Workbook JSON 源（自家文件无损还原，外来近似导入：数值/文本/公式还原）                                          |
+| `edit_xlsx`                                             | WorkToolRunner.toolEditXlsx → XlsxImporter + XlsxOps + XlsxBuilder  | 读回→应用操作（改名/加删移表/增删改行/改单元格/全文替换）→重建（外来文件先备份）                                                    |
 | `write_csv`                                             | WorkToolRunner.toolWriteCsv → CsvWriter.buildCsvBytes               | Markdown 表格/CSV/TSV→CSV（RFC 4180 转义，默认 UTF-8 BOM；输入解析走 CsvParser，引号字段正确处理）                                                                                                       |
 | `transform_file`                                        | WorkToolRunner.toolTransformFile → DataPipeline                     | **本地数据管道**（数据不经模型上下文）：CSV/TSV/MD/JSON/JSONL/文本行 输入，过滤/派生列/正则提取/拆列/去重/排序 + CSV↔TSV↔JSON↔MD↔XLSX 互转；受限 DSL（ops 白名单 + 表达式求值器，无 I/O），先预览后写盘；语法见 `load_skill("data")`；≤2MB/10 万行/30 步 |
 | `write_pptx`                                            | WorkToolRunner.toolWritePptx → PptxBuilder.buildPptxBytes           | **Deck JSON / deck 文件 / outline 大纲 → PPT**（详见下节）                                                                                                                                 |
 | `read_ppt`                                              | WorkToolRunner.toolReadPpt → PptxImporter.import                    | .pptx → Deck JSON 源（自家文件无损还原，外来近似导入）                                                                                                                                             |
 | `edit_ppt`                                              | WorkToolRunner.toolEditPpt → PptxImporter + DeckOps + PptxBuilder   | 读回→应用操作→重建（外来文件先备份）                                                                                                                                                              |
 | `write_svg`                                             | WorkToolRunner.toolWriteSvg → SvgUtil                               | SVG 源码→工作区 .svg + 栅格化 PNG 预览；xmlns/禁 script 校验，缺 width/height 自动按 viewBox 补齐（实机引擎必需），解码失败报精确诊断                                                                                   |
-| `list_skills` / `load_skill`                            | WorkFileService.dispatchTool → WorkSkillService                     | 技能清单与技能文档按需加载（rawfile/skills/ 下 ppt、svg、data 三个技能）                                                                                                                               |
+| `list_skills` / `load_skill`                            | WorkFileService.dispatchTool → WorkSkillService                     | 技能清单与技能文档按需加载（rawfile/skills/ 下 ppt、docx、xlsx、svg、data 五个技能）                                                                                                                               |
 | `glob`                                                  | HarnessTools.toolGlob → FileSearchCore                              | glob 模式按路径找文件（`**`/`*`/`?`/`{a,b}`/`[...]`，顶层逗号不破坏 `{}` 分支），返回相对路径与大小（≤500 个）                                                                                                    |
 | `grep`                                                  | HarnessTools.toolGrep → FileSearchCore                              | 正则搜索文本文件内容，返回 `文件:行号: 内容`（≤200 命中；支持 glob 文件名过滤与 ignore_case，非法正则明确报错）                                                                                                           |
 | `edit`                                                  | HarnessTools.toolEdit → DiffUtil                                    | 逐字符唯一匹配替换（多处匹配拒绝，`replace_all` 全替）；结果附行级 diff hunks（meta 随会话持久化，UI 渲染 diff 卡片）                                                                                                   |
@@ -389,8 +407,10 @@ for step in 1..WORK_MAX_STEPS(200, 防失控保险):
 | `goal_create` / `goal_get` / `goal_update`              | HarnessTools → GoalService                                          | 会话自主目标（`.goal.json`），随运行时快照注入；`bump_round` 计轮，达轮次上限自动暂停                                                                                                                          |
 | `subagent`                                              | HarnessTools → SubagentService（经 `WorkFileService.subagentHook` 注入） | 进程内子代理：与主任务共享工作区、独立上下文（工具面排除 subagent/ask_user/schedule/goal/todo_write），≤40 步，最终报告作为工具结果交还                                                                                      |
 | `session_search`                                        | HarnessTools.toolSessionSearch → SessionLogService                  | 检索会话事件日志（JSONL），找回被上下文压缩掉的历史细节                                                                                                                                                   |
+| `run_js`                                                | HarnessTools → JsCodeService → 原生 `libguncatjs.so`（JSVM-API）        | **设备内 JS 执行沙箱**：任意小程序化处理（计算/正则/JSON 重塑/统计/程序化生成）＋显式文件进出（`files` 只读预载、`write()` 落盘）；详见下节                                                                                              |
 
 路径安全：所有工具路径经 `resolveSafe()` 校验——拒绝绝对路径、盘符与 `..` 穿越，只能在 `filesDir/workspaces/<convId>/` 内操作。
+`run_js` 的输入/输出同样走 `resolveSafe()`：脚本本身没有文件系统能力，进出只能经由 ArkTS 侧这层校验。
 
 ### 3.1 PPT 生成链路（Deck JSON 中间层）
 
@@ -471,7 +491,98 @@ node check-setup.mjs && npx -y -p typescript@5.5.4 tsc -p check/tsconfig.json   
 
 视觉自检（装了 PowerPoint 的机器）：`export-png.ps1` 导出 PNG 后逐页目检——重点看文字出界、深色页反白、图表标签可读、表格对比度（历史上 3 个视觉 bug 全是这三类）。
 
-### 3.2 技能系统（可复用的领域操作指南）
+### 3.2 Word 生成链路（Doc JSON 中间层）
+
+与 PPT 同构：**AI 可编辑的中间层与导出器分离**。"生成 Word"= 写 Doc JSON → 渲染；"编辑 Word"= 还原 Doc → 应用算子 → 重建。导出器只认识 Doc 结构，不认 prompt，行为确定、可离线测试。
+
+```text
+write_docx ──┐                                   ┌─ write_docx(重建 docx)
+doc JSON ────┼→ DocxBuilder(渲染)→ .docx         │
+             │    └─ 内嵌 docProps/doc.json 源   │
+read_docx ───┤                                  └─ edit_docx(DocOps 应用操作后重建)
+             └─→ DocxImporter(内嵌源无损还原 / 外来 XML 近似导入 + word/media 图片抽取)
+```
+
+#### 模块职责与公开 API（entry/src/main/ets/export/）
+
+| 文件                 | 职责                                                                                          | 关键公开成员                                                                                                                                                                       |
+| ------------------ | ------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `DocModel.ets`     | 中间层模型 + JSON 解析校验 + Markdown 转换 + 编辑算子（**纯逻辑，无 Kit API**）                              | `Doc/DocBlock/DocListItem`、`DOC_STYLES`、`DocStylePalette.of(style)`、`DocParser.parse`、`MdToDoc.convert`、`DocOps.apply` |
+| `DocxBuilder.ets`  | Doc → docx 全部件渲染（两遍式：先解析图片，再逐块渲染；内嵌 doc.json 源）                                        | `DocxBuilder.buildDocxBytes(doc, resolveImage)`、`buildFromMarkdown(md, title, resolveImage)`、`DocxImagePart` |
+| `DocxImporter.ets` | docx → Doc：优先读内嵌 `docProps/doc.json`（无损），否则解析 document.xml（标题/列表/表格/图片，图片抽取到 `docx_images/<base>/`） | `DocxImporter.import(absPath, cacheDir, imageOutDir, imageOutRelBase)` → `DocxImportResult{doc, embedded, blockCount, images}` |
+
+**依赖方向**：`DocModel ← DocxBuilder`；`DocxBuilder/DocxImporter ← WorkToolRunner.ets`；与 PPT 管线互不依赖（共用 MarkdownParser/OmmlConverter/XmlUtil/ZipWriter）。新文件加入前先画这张图。
+
+**排版与图片**：styles.xml 里 H1→H6 为 22→12pt 黑体加粗、按主题配色（default/academic/minimal 三套），正文默认 12pt 宋体、1.5 倍行距；图片块与行内图片都支持工作区路径/data URL/http，svg 自动栅格化，单图 ≤10MB、整篇 ≤40 图（`WORK_DOC_*` 常量）；表格带题注与表头底纹。
+
+#### Doc JSON 契约（改字段必同步的三处）
+
+AI 视角的完整字段文档 = **docx 技能的 `reference/doc-dsl.md`**。Doc 结构的权威实现在 `DocModel.ets`。改动任一字段时，以下三处必须同步：
+
+1. `DocModel.ets`（解析 + 校验：报错文案带块序号、说清缺什么，供 AI 自纠错）；
+2. 技能文档 `rawfile/skills/docx/reference/doc-dsl.md`（字段表）与 `SKILL.md`（速查示例）；
+3. `test/docx-harness/test-build.mjs`（样例覆盖该字段，负例覆盖新校验）。
+
+结构概览：顶层 `{title, subtitle, author, date, style, cover, toc, blocks[]}`；块上限 `WORK_DOC_MAX_BLOCKS(400)`；块类型 `heading(1~6)/paragraph/list(有序无序)/table/image/quote/code/divider/pagebreak`；行内支持 `**加粗** *斜体* \`代码\` [链接](url) $公式$ ![](内联图)`；limits：表格 ≤20 列/500 行、单图 ≤10MB、整篇 ≤40 图。
+
+#### 验证闭环（改完生成器必跑，命令见 test/docx-harness/README.md）
+
+```bash
+python makepng.py > png.b64
+node setup.mjs && node test-build.mjs          # 全块类型/封面目录/markdown 路径/编辑算子/外来导入/负例
+python validate.py gen\out_all.docx …          # zip CRC/全部件 XML/关系一致/样式字号分级/python-docx/图片嵌入
+python deep-check.py gen\out_all.docx …        # 内嵌 doc.json 往返 + 正文/表格/图片/H1 顺序核验
+node check-setup.mjs && npx -y -p typescript@5.5.4 tsc -p check/tsconfig.json   # 服务层类型检查(pptx-harness)
+```
+
+视觉自检（装了 Word/WPS 的机器）：打开 `gen/out_all.docx` 检查封面、标题分级、图片与表格排版。
+
+#### Excel 管线（Workbook JSON 中间层，与 PPT/Word 同构）
+
+设计对齐 PPT/Word：**AI 可编辑的中间层与导出器分离**。AI 永远只面向 Workbook JSON 这一层——"生成 Excel"= 写 Workbook → 渲染；"编辑 Excel"= 还原 Workbook → 应用算子 → 重建。导出器不认识 prompt，只认识 Workbook 结构，行为确定、可离线测试。
+
+```text
+write_xlsx ──┐                                   ┌─ write_xlsx(重建 xlsx)
+workbook JSON ┼→ XlsxBuilder(渲染)→ .xlsx        │
+             │    └─ 内嵌 docProps/workbook.json │
+read_xlsx ───┤                                  └─ edit_xlsx(XlsxOps 应用操作后重建)
+             └─→ XlsxImporter(内嵌源无损还原 / 外来 XML 近似导入)
+```
+
+#### 模块职责与公开 API（entry/src/main/ets/export/）
+
+| 文件                | 职责                                                                                           | 关键公开成员                                                                                                                                                        |
+| ----------------- | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `XlsxModel.ets`   | 中间层模型 + Workbook JSON 解析校验 + Markdown/CSV/TSV 转换 + 编辑算子（**纯逻辑，无 Kit API**）                    | `XlsxWorkbook/XlsxSheet/XlsxCell`、`XLSX_STYLES`、`XlsxStylePalette.of(style)`、`XlsxParser.parse`、`MdToXlsx.convert`、`XlsxOps.apply` |
+| `XlsxBuilder.ets` | Workbook → xlsx 全部件渲染（多工作表/表头加粗底纹三主题/`=公式`/数字格式/列宽/冻结窗格；内嵌 workbook.json 源）                 | `XlsxBuilder.buildXlsxBytes(workbook)`                                                                                                                        |
+| `XlsxImporter.ets` | xlsx → Workbook：优先读内嵌 `docProps/workbook.json`（无损），否则解析 workbook.xml+rels+sharedStrings+各 sheet（数字/文本/公式/列宽/冻结窗格） | `XlsxImporter.import(absPath, cacheDir)` → `XlsxImportResult{workbook, embedded, sheetCount, rowCount}`                                                    |
+
+**依赖方向**：`XlsxModel ← XlsxBuilder`；`XlsxBuilder/XlsxImporter ← WorkToolRunner.ets`；与 PPT/Word 管线互不依赖（共用 XmlUtil/ZipWriter；XlsxModel 复用 CsvParser 做 table 文本解析）。`XlsxExporter.buildXlsxFromRows` 仍由 transform_file 的 XLSX 输出使用，保持单表无格式语义。
+
+**表格能力**：`workbook` 源支持多工作表（≤20）、表头加粗底纹（default/academic/minimal）、公式（单元格值以 `=` 开头，如 `"=SUM(B2:B9)"`，跨表 `"=假设!B2"`）、每列数字格式（`money` ¥千分位两位小数 / `int` / `percent` 0.0% / `year` / `date` / `number` / `text`）、列宽 1~255、冻结窗格（`freeze: "A2"`）；数据行矩形约束（≤1000 行/60 列，`WORK_XLSX_*` 常量）。**公式优先**：派生值（合计/同比/占比）必须写成公式而非硬编码数字——数字格式与负数/零值显示约定（金额负数括号 `(¥1,234.00)`、零值 `-`）吸收自 MiniMax 的 xlsx 参考技能，模型操作指南见 `load_skill("xlsx")`。
+
+#### Workbook JSON 契约（改字段必同步的三处）
+
+AI 视角的完整字段文档 = **xlsx 技能的 `reference/workbook-dsl.md`**。Workbook 结构的权威实现在 `XlsxModel.ets`。改动任一字段时，以下三处必须同步：
+
+1. `XlsxModel.ets`（解析 + 校验：报错文案带表名/行/列号，供 AI 自纠错）；
+2. 技能文档 `rawfile/skills/xlsx/reference/workbook-dsl.md`（字段表）与 `SKILL.md`（速查示例）；
+3. `test/xlsx-harness/test-build.mjs`（样例覆盖该字段，负例覆盖新校验）。
+
+结构概览：顶层 `{name, style, sheets[]}`；每 sheet `{name, headers?, rows, colWidths?, freeze?, formats?}`；单元格值 = 数字 | 字符串 | `"=公式"`。`read_xlsx` 读回：自家文件无损（内嵌源）；外来 xlsx 近似导入（表顺序/数值/文本/公式还原，样式与合并细节丢失），`edit_xlsx` 对外来文件重建前自动备份 `*_原版备份.xlsx`。
+
+#### 验证闭环（改完生成器必跑，命令见 test/xlsx-harness/README.md）
+
+```bash
+node setup.mjs && node test-build.mjs          # 多表/公式/格式/列宽/冻结 + markdown 路径 + 编辑算子 + 外来导入 + 负例
+python validate.py gen\out_all.xlsx …          # zip CRC/全部件 XML/关系一致/openpyxl/表头加粗/公式/数字格式/冻结窗格/列宽
+python deep-check.py gen\out_all.xlsx …        # 内嵌 workbook.json 往返 + 逐格核验(含公式)
+node check-setup.mjs && npx -y -p typescript@5.5.4 tsc -p check/tsconfig.json   # 服务层类型检查(pptx-harness)
+```
+
+视觉自检（装了 Excel/WPS 的机器）：打开 `gen/out_all.xlsx` 检查表头底纹、金额格式、公式联动（改 B2 看 D2 重算）与冻结窗格。
+
+### 3.3 技能系统（可复用的领域操作指南）
 
 技能 = 按 id 组织的**纯 Markdown 领域操作指南**（无代码）。模型接到对应任务时自行加载。解决的核心问题：领域知识（Deck JSON 语法、设计规范……）不能写进系统提示词——系统提示词必须逐字节静态（KV 缓存红线），而技能文档可以随时增改、按需加载、按文件分层，**不动一行提示词代码**。
 
@@ -484,8 +595,21 @@ entry/src/main/resources/rawfile/skills/
 │   └── reference/              ← 深入资料，按需逐文件加载（可选）
 │       ├── deck-dsl.md         # 字段级语法
 │       ├── design-guide.md     # 设计规范
-│       └── themes.md           # 主题清单
-└── svg/                        ← 内置技能 2：SVG 矢量绘图（生图）
+│       ├── themes.md           # 主题清单
+│       └── troubleshooting.md  # 症状→修复排查表
+├── docx/                       ← 内置技能 3：Word 文档制作与编辑
+│   ├── SKILL.md                # 工作流 A/B（新建 / 编辑）、块速查、排版规则、自检清单
+│   └── reference/
+│       ├── doc-dsl.md          # Doc JSON 字段级语法 + edit_docx 算子表
+│       ├── design-guide.md     # 中文文档排版规范
+│       └── troubleshooting.md  # 症状→修复排查表
+├── xlsx/                       ← 内置技能 4：Excel 表格制作与编辑
+│   ├── SKILL.md                # 工作流 A/B（新建 / 编辑）、公式优先、速查、自检清单
+│   └── reference/
+│       ├── workbook-dsl.md     # Workbook JSON 字段级语法 + edit_xlsx 算子表
+│       ├── format-guide.md     # 公式优先/数字格式/财务惯例/编辑完整性
+│       └── troubleshooting.md  # 症状→修复排查表
+└── svg/                        ← 内置技能 5：SVG 矢量绘图（生图）
     ├── SKILL.md                # "生成→预览→修正"工作流 + 工具分界（照片用 download_file）
     └── reference/
         ├── svg-craft.md        # 绘制规范: xmlns/viewBox 硬要求、24 网格、path 优先、文字风险、配色纪律
@@ -547,13 +671,51 @@ description 同时承担两个职责：系统提示词触发提示的展开、`l
 - description 措辞 = 触发行为，改动要当回事（建议在 git 提交说明里单独标注）；
 - 技能文档是**跨 Agent 可复用资产**：frontmatter（name/description）刻意对齐标准 Agent Skills 约定（同 open-kimi-ppt-skill 的 SKILL.md 结构），整目录拷入其他 Agent 框架的技能目录（如 `~/.claude/skills/<id>/`）即可被支持 SKILL.md 的框架识别，无需改写。
 
-### 4. 新增工具的步骤（5 处）
+### 3.4 run_js：设备内 JS 执行沙箱（JSVM-API）
+
+工作模式没有 shell/终端/PTC，确定性加工只能靠固定工具；`run_js` 用 **JSVM-API**（`libjsvm.so`，NDK C 接口，API 11 起可用，syscap `SystemCapability.ArkCompiler.JSVM`）在应用内嵌一个标准 JS 引擎，补上"写几行代码算一下"的通用能力——日期/数值/单位换算、正则清洗、JSON 重塑与合并、统计汇总、算法试算，以及程序化批量生成结构化数据（产出 JSON 再交给 `write_docx`/`write_xlsx`/`write_pptx` 成文）。
+
+**链路**：`HarnessTools.dispatch('run_js')` → `JsCodeService.run()`（.ts）→ 原生 `libguncatjs.so`（`entry/src/main/cpp`）→ JSVM 引擎实例。
+
+- ArkTS 侧（`JsCodeService.ts`）：参数校验、输入文件预载（`resolveSafe` + 文本/二进制判定）、输出落盘、超时放弃、结果渲染。
+- Native 侧（`jsvm_sandbox.cpp` + `napi_init.cpp`）：每次执行新建 VM + 上下文 → 注入沙箱 → 编译执行 → 取完成值 → 逆序销毁；执行跑在 Node-API 异步任务（worker 线程）上。
+
+**沙箱能力**（每次执行都是全新引擎实例，脚本之间无状态残留）：
+
+| JS 侧                              | 说明                                                          |
+| -------------------------------- | ----------------------------------------------------------- |
+| `inputs["路径"]` / `read("路径")`    | 只读输入（`files` 参数预载：≤6 个、单个 ≤512KB、合计 ≤1MB）；键名去掉 `./` 前缀并折叠重复斜杠，结果里会列出实际键名；没传 `files` 时 `read()` 直接报错提示 |
+| `write("路径", 内容)`               | 声明输出；**执行成功才落盘**，且路径再经 `resolveSafe()` 校验                   |
+| `console.log/info/warn/error/debug`、`print`、`log` | 收集为 stdout（≤64KB，单行 ≤8KB）                                   |
+| 返回值                              | 脚本最后一条表达式的完成值（同 eval 语义）；对象/数组以 JSON 返回，字符串原样输出              |
+| 其他内建                             | 标准 V8 内建（JSON/Math/Date/RegExp/Map/Set/Intl…）；**无网络、无文件系统、无模块加载**（JSVM 不支持 ES Module） |
+
+**设计要点**：
+
+- **文件进出必须显式**：原生侧不做任何路径判断，所有路径一律由 ArkTS 侧 `resolveSafe()` 校验后再读写——工作区边界只有一处实现，JS 本身拿不到逃逸能力。
+- **每次新建引擎实例**：脚本之间无状态残留，单个脚本写坏引擎也不影响下一次。
+- **执行放异步任务**：JS 是同步阻塞的，放 UI 线程会直接卡死界面（官方文档明确 `execute` 不可中断、不支持异步）。
+- **超时只能"放弃等待"**：JSVM-API 没有 `TerminateExecution` 一类接口，`while(true)` 无法从外部终止。ArkTS 侧用 `Promise.race` 式等待：超时先把错误交还模型，那段代码仍在后台线程里跑；累计 `WORK_JS_MAX_ABANDONED`(2) 次后本会话停用 `run_js`（宁可在这一步降级，也不能让应用持续满核耗电）。**排查超时先看死循环与循环规模。**
+- **资源上限**：VM 堆 256MB（`JSVM_CreateVMOptions.maxOldGenerationSize`）、源码 ≤128KB、单文件输出 ≤512KB（对齐 `WORK_WRITE_MAX_BYTES`）、输出总量 ≤4MB、≤16 个文件；所有上限在 native 侧再做一次收敛（越界取边界值），参数被滥用也不会突破边界。**堆是硬边界**：一次性生成超大数组/字符串触顶会直接终止进程，脚本要按块处理而不是把整份数据展开成一个巨大结构。
+
+**维护注意（native 部分）**：
+
+- 官方规范必须照做，否则会崩：`OH_JSVM_Init` 全进程只成功一次（重复调用返回 `JSVM_GENERIC_FAILURE`＝"已初始化"，属正常）；Scope 必须逆序关闭（HandleScope → EnvScope → VMScope → DestroyEnv → DestroyVM）；`JSVM_Value` 只能在 HandleScope 内创建、Scope 关闭后不可再用；`JSVM_CallbackStruct` 生命周期必须长于 `JSVM_Env`（本实现用文件级静态对象）；每次 JSVM-API 失败都要清理挂起异常，否则污染后续调用。
+- `JSVM_CreateVMOptions` 的堆参数不被接受时会自动退回默认配置（不让工具因堆设置失败而完全不可用）。
+- 新增 ABI 需同步 `entry/build-profile.json5` 的 `externalNativeOptions.abiFilters`（当前 `arm64-v8a` / `x86_64`，与项目其它原生依赖一致）。
+- `libguncatjs.so` 依赖系统库 `libjsvm.so`（API 11 起随系统提供，不随 HAP 打包）。ArkTS 侧用的是静态 `import`（与官方样例一致），因此**若目标设备缺这个系统库，原生模块加载失败会连带影响工作模式启动**；要彻底隔离可改为在调用点用动态 `import()`。
+- 改动 native 后**必须走实机构建**：`hvigor assembleHap` 会驱动 CMake/Ninja 编译并打包 `libs/<abi>/libguncatjs.so`；Node 侧 `test/guncat-harness` 只能做类型级检查（`libguncatjs.so` 由 `jsvm-shim.ts` 桩替代）。
+- 真机自检：`run_js` 返回 `1+1 → 2`；`write()` 的产出能在工作区看到；语法错误/运行时异常返回可读报错（带 `run_js.js:行号`）；`while(true){}` 在超时后正常报错且界面不卡；`engineStatus()` 返回空串表示引擎可用（不可用时工具会直接给出原因）。
+
+### 4. 新增工具的步骤（6 处）
 
 1. `WorkFileService.toolDefs()`：登记工具 Schema（名称/描述/参数），这是模型看到的定义；`props0`/`props1`/`props2`/`props3` 构造属性表。
 2. `WorkFileService.dispatchTool()`：加入分发分支（需要 `.ets` 能力时改在 `WorkToolRunner.execute()` 分发）。
 3. 实现执行函数：返回 `ToolExecResult`（`ok`/`output`；`imageDataUrl` 仅供 view_image 类工具注入视觉消息）。
-4. `AgentLoopService.buildWorkSystemPrompt()`：补充工具说明与使用纪律（保持逐字节静态；大段领域知识不要写这里——做成技能，见 3.2）。
-5. 若会改变工作区内容，登记 `WorkFileService.isMutatingTool()`；纯只读工具登记 `isReadOnlyTool()`（可参与只读并发）。
+4. `AgentLoopService.buildWorkSystemPrompt()`：补充工具说明与使用纪律（保持逐字节静态；大段领域知识不要写这里——做成技能，见 3.3）。
+5. 若会改变工作区内容，登记 `WorkFileService.isMutatingTool()`；纯只读工具登记 `isReadOnlyTool()`（可参与只读并发）。委托给 `HarnessTools` 的工具在 `HarnessTools.isMutating()/isReadOnly()` 登记。
+6. `ChatBubbleView`：补 `toolIcon()` 与 `displayName()` 的 case（不补则回退通用扳手图标 + 原名）。
+7. 需要原生能力时（如 `run_js`）：新建 `entry/src/main/cpp/{CMakeLists.txt,*.cpp}` + `types/lib<name>/index.d.ts`（+ `oh-package.json5`），在 `entry/build-profile.json5` 的 `externalNativeOptions` 里声明 CMake 路径与 `abiFilters`，ArkTS 侧 `import { … } from 'lib<name>.so'`。
 
 > 涉及"教模型怎么用新工具"的内容（DSL 语法、格式规范、工作流），优先做成技能文档而不是堆进工具 description 或系统提示词——description 一句话说明用途即可，细节让模型 `load_skill` 自取。
 
@@ -703,6 +865,14 @@ hvigorw --mode module -p product=default -p module=entry@default -p buildMode=de
 - 原始附件不会作为永久文件复制到应用数据中。
 - 网络请求使用 HTTPS，实际数据处理政策以所配置的模型服务商为准。
 
+## 6.2.0更新
+- 工作模式新增 **JS 代码执行工具（run_js）**：智能体可在设备本机的独立 JS 引擎沙箱（JSVM-API）里现场写代码做计算——数据清洗、正则提取、统计汇总、程序化生成结构化数据，产出可直接写入工作区，再交给 `write_docx` / `write_xlsx` / `write_pptx` 成文。沙箱不联网、不读写文件系统（文件由宿主显式预载与落盘），执行在后台线程并有超时保护；这是无 shell 环境下补齐「执行代码」能力的关键一环，详见本文档「工作模式架构与维护指南」3.4 节。
+- 工作模式的全套 Office 技能正式上线！现在你可以专业化地处理和生成 PPT、Word、Excel 等办公文档，日常办公琐事一站搞定。
+- 论文转换专家，法律、研究、筛滤检索专家，LLM评估专家，现已打包为 Skill 嵌入工作模式，无需切换聊天引擎，在工作模式中直接使用！
+- 新增本地联网搜索（软件内置，无需手动开关），工作模式、聊天模式都能调用，联网能力不再受制于服务端联网开关！
+- 修复了 Anthropic API 协议中偶发的传入参数错误和文本过长截断问题
+- 新增后缀补全开关，可选择关闭后缀补全功能，以便非标准地址接入。
+
 ## 6.1.2 更新（新增 Guncat 3.1-Flash）
 
 - 新增 **Guncat 3.1-Flash（轻简模式）**：Guncat 系列首个 Flash 独立基座——全新设计、不继承 2.0/2.5/3.0 系列架构，专为日常聊天与轻量信息任务打造；接替 3.0-Mini 成为系列最轻量入口，并置于智能体列表首位。它与效率模式（3.0-Flash）是并列关系而非升级关系：效率模式承担全能任务执行，轻简模式承担日常对话与简单知识查询。
@@ -738,8 +908,9 @@ hvigorw --mode module -p product=default -p module=entry@default -p buildMode=de
 - **25 个本地工具**：文件 CRUD/搜索（`search_files` 支持 glob 文件名过滤）、`view_image`（图片经多模态消息送给主模型视觉）、`parse_document`（本地 PDF）、Office 生成（`write_docx`/`write_xlsx`/`write_csv`）、数据管道（`transform_file`）、PPT 读写编辑三件套（`write_pptx`/`read_ppt`/`edit_ppt`）、网络下载（`download_file`）、SVG 生图（`write_svg`）、技能系统（`list_skills`/`load_skill`）。
 - **数据管道 transform_file**：大文件与非标数据的专用工具——CSV/TSV/Markdown 表格/JSON/JSONL/文本行 输入，过滤/派生列/重算列/正则提取/拆列/去重/排序/替换/数值化 + CSV↔TSV↔JSON↔MD↔XLSX 互转，**数据全程不经过模型上下文**。受限 DSL 设计：ops 走白名单分发、表达式走自研求值器（无 I/O、步数有界、结构上必然终止），"预览前 3 行 → 写盘 → 抽查"工作流对齐 SVG 的"生成→预览→修正"纪律；完整语法在 `data` 技能。新增 `CsvParser`（RFC 4180 解析 + Markdown/TSV/CSV 智能识别，write_csv/write_xlsx 同步受益）与 `DataPipeline` 两个纯 TS 模块，并入 pptx-harness 验证链路（54 项单测）。
 - **素材获取与生图**：`download_file` 把网络图片/文件拉进工作区（类型嗅探、html 告警、≤20MB）；`write_svg` 让模型手写 SVG 生成图标/示意图/信息图——自动校验（xmlns/viewBox/禁 script）并经设备图片引擎栅格化出 PNG 预览，配合 `view_image` 形成"生成→预览→修正"闭环；`write_pptx` 可直接引用 `.svg`（导出时自动栅格化）。`search_files` 新增 `glob` 文件名过滤（`*.md`、`*.png,*.jpg`）。`write_csv` 显式支持 CSV（RFC 4180 转义 + UTF-8 BOM）。
-- **PPT 工具链（Deck JSON 中间层）**：对齐 open-kimi-ppt-skill 的 PPTD 设计——AI 写结构化 Deck 源，`PptxBuilder` 渲染 13 种版式（封面/目录/分节/要点/双栏/图文/图片/全幅大图/表格/图表/引用/结尾/自由版面）、8 套主题 + 自定义色板、图表（柱/折线/面积/饼/环，数据内嵌）、表格、图片（工作区/data URL/http）、演讲备注；导出文件内嵌 `docProps/deck.json` 源，`read_ppt` 无损读回、`edit_ppt` 算子式编辑（外来 pptx 近似导入并在重建前自动备份）；深色背景文字与图表自动反白。新增 `DeckModel/PptxThemes/PptxCharts/PptxImage/PptxImporter` 五个模块并重写 `PptxBuilder`；配套离线验证环境 `test/pptx-harness/`（Node 构建全版式/负例 + python-pptx 结构校验 + PowerPoint 渲染 PNG 目检）。
-- **技能系统**：领域操作指南按 `rawfile/skills/<id>/`（SKILL.md + reference/）组织，`list_skills`/`load_skill` 渐进式加载；系统提示词只保留一行触发提示，KV 缓存前缀保持逐字节稳定。内置 `ppt` 技能（Deck JSON 语法/设计规范/主题/自检清单）、`svg` 技能（绘制规范/"生成→预览→修正"工作流/图标·流程图·信息图配方）与 `data` 技能（管道 ops/表达式语法/清洗·提取·互转配方）；技能格式对齐标准 Agent Skills 约定，可跨 Agent 框架复用；新增技能只需写文档 + `WorkSkillService.registry()` 登记（详见架构指南 3.2）。
+- **PPT 工具链（Deck JSON 中间层）**：对齐 open-kimi-ppt-skill 的 PPTD 设计——AI 写结构化 Deck 源，`PptxBuilder` 渲染 13 种版式（封面/目录/分节/要点/双栏/图文/图片/全幅大图/表格/图表/引用/结尾/自由版面）、8 套主题 + 自定义色板、图表（柱/折线/面积/饼/圆环，数据内嵌）、表格、图片（工作区/data URL/http）、演讲备注；导出文件内嵌 `docProps/deck.json` 源，`read_ppt` 无损读回、`edit_ppt` 算子式编辑（外来 pptx 近似导入并在重建前自动备份）；深色背景文字与图表自动反白。新增 `DeckModel/PptxThemes/PptxCharts/PptxImage/PptxImporter` 五个模块并重写 `PptxBuilder`；配套离线验证环境 `test/pptx-harness/`（Node 构建全版式/负例 + python-pptx 结构校验 + PowerPoint 渲染 PNG 目检）。
+- **Excel 工具链（Workbook JSON 中间层）**：与 PPT/Word 同构的中间层设计——AI 写结构化 Workbook 源（多工作表/表头加粗三主题/`=公式`/数字格式 money·int·percent·year·date·number/列宽/冻结窗格），`XlsxBuilder` 渲染全部件（内嵌 `docProps/workbook.json` 源），`read_xlsx` 无损读回、`edit_xlsx` 算子式编辑（改表名/加删移表/增删改行/改单元格/全文替换；外来 xlsx 近似导入并在重建前自动备份）。**公式优先**与数字格式/负数零值显示约定吸收自 MiniMax 的 xlsx 参考技能，模型操作指南见 `xlsx` 技能。新增 `XlsxModel/XlsxBuilder/XlsxImporter` 三模块；`write_xlsx` 保留 table 文本快路径；配套离线验证环境 `test/xlsx-harness/`（Node 构建 + openpyxl 结构校验 + 内嵌源往返）。
+- **技能系统**：领域操作指南按 `rawfile/skills/<id>/`（SKILL.md + reference/）组织，`list_skills`/`load_skill` 渐进式加载；系统提示词只保留一行触发提示，KV 缓存前缀保持逐字节稳定。内置 `ppt` 技能（Deck JSON 语法/设计规范/主题/自检清单）、`docx` 技能（Doc JSON 语法/排版规范）、`xlsx` 技能（Workbook JSON 语法/公式优先/数字格式/编辑完整性）、`svg` 技能（绘制规范/"生成→预览→修正"工作流/图标·流程图·信息图配方）与 `data` 技能（管道 ops/表达式语法/清洗·提取·互转配方）；技能格式对齐标准 Agent Skills 约定，可跨 Agent 框架复用；新增技能只需写文档 + `WorkSkillService.registry()` 登记（详见架构指南 3.2）。
 - **本地解析引擎**：新增 `OfficeReader`（OOXML 文本抽取，修复 `<w:t` 前缀误匹配导致的 XML 泄漏）、`PdfTextExtractor`（字节层对象表/ObjStm 展开/页面树资源继承/ToUnicode CJK 映射/内容流解析/兜底扫描与诊断）、`Flate`（纯 TS DEFLATE 解压）。不再依赖多模态解析 API。
 - **Codex 式时间线 UI**：单容器时间线（唯一 🛠 标识 + 任务卡 + 逐轮「思考→工具→正文」），工具步骤可展开参数与结果，中间轮隐藏操作按钮；工作区面板支持上传/导出 zip/清空。
 - **稳定性修复**：PDF 解析 OOM（整文件 latin1 拼接改为字节层扫描 + utf-16le 原生转换）；主线程阻塞 appfreeze（解析分阶段 yield、兜底扫描跳过字体/图片/超大流并限量限预检）；`arrayBufferToBase64` 同类 O(n²) 拼接一并修复。

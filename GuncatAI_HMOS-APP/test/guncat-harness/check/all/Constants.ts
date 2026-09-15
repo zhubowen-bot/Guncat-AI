@@ -1,7 +1,7 @@
 export class Constants {
   // App info
   static readonly APP_NAME: string = 'Guncat Work';
-  static readonly APP_VERSION: string = '6.1.0';
+  static readonly APP_VERSION: string = '6.1.2';
 
   // LocalStorage keys (统一存放在 Preferences 中, key 名字符串)
   static readonly LS_KEY_CONVERSATIONS: string = 'guncat_conversations';
@@ -10,6 +10,8 @@ export class Constants {
   static readonly LS_KEY_API_PROFILES: string = 'guncat_api_profiles';
   static readonly LS_KEY_CURRENT_API_PROFILE_ID: string = 'guncat_current_api_profile';
   static readonly LS_KEY_THINKING_ENABLED: string = 'guncat_thinking_enabled';
+  // 本地内置联网搜索配置(JSON: 引擎选择 + 各引擎 API Key/BaseUrl), 与服务端联网搜索开关独立
+  static readonly LS_KEY_LOCAL_SEARCH_CONFIG: string = 'guncat_local_search_config';
   // 推理强度('max' / 'high' / 'low'), 深度思考开启时作为 reasoning 强度参数下发
   static readonly LS_KEY_REASONING_EFFORT: string = 'guncat_reasoning_effort';
   static readonly LS_KEY_WEB_SEARCH_ENABLED: string = 'guncat_web_search_enabled';
@@ -34,6 +36,11 @@ export class Constants {
   static readonly MESSAGES_PATH: string = '/messages';
   static readonly ANTHROPIC_V1_MESSAGES_PATH: string = '/v1/messages';
   static readonly ANTHROPIC_DEEPSEEK_MESSAGES_PATH: string = '/anthropic/v1/messages';
+
+  // 未在设置中填写 Max Tokens 时 Anthropic 协议默认下发的输出上限。
+  // 取 128K 兼容输出上限较低的老模型(如 Qwen3.8-flash 等); 上限更大的模型
+  // 可在设置中手动调高 Max Tokens。思考文本同样计入输出额度, 过低会截断回复。
+  static readonly DEFAULT_MAX_OUTPUT_TOKENS: number = 128000;
 
   // SSE
   static readonly SSE_DONE_TOKEN: string = '[DONE]';
@@ -102,6 +109,9 @@ export class Constants {
   static readonly WORK_STEP_DISPLAY_CHARS: number = 500;
   // LLM 请求自动重试次数(429/5xx/网络传输/空响应), 指数退避 500ms→8s+抖动
   static readonly WORK_LLM_RETRY_MAX: number = 3;
+  // 聊天模式本地联网搜索工具循环的最大搜索轮数(每轮可含多次 search_web 调用)。
+  // 仅作防失控保险, 正常任务触不到; 对齐工作模式的宽松策略
+  static readonly CHAT_SEARCH_MAX_ROUNDS: number = 50;
   // 模型上下文窗口 token 数(DeepSeek V4 系列 1M 级上下文; 超阈值自动压缩历史。
   // 预算优先用 API 返回的真实 prompt tokens 锚定, 无数据时按本会话实测字符→token 比例估算)
   static readonly WORK_CONTEXT_WINDOW_TOKENS: number = 1000000;
@@ -117,6 +127,28 @@ export class Constants {
   static readonly WORK_PPT_IMAGE_MAX_BYTES: number = 10 * 1024 * 1024;
   // PPT(Deck) 整册图片张数上限(去重后)
   static readonly WORK_PPT_MAX_IMAGES: number = 40;
+  // Word(Doc) 单张图片字节上限(工作区文件/data URL/http 下载共用)
+  static readonly WORK_DOC_IMAGE_MAX_BYTES: number = 10 * 1024 * 1024;
+  // Word(Doc) 整篇图片张数上限(去重后)
+  static readonly WORK_DOC_MAX_IMAGES: number = 40;
+  // Word(Doc) 内容块(block)数量上限(含封面/目录占位)
+  static readonly WORK_DOC_MAX_BLOCKS: number = 400;
+  // Word(Doc) 表格列数/行数上限(防畸形表格撑爆内存)
+  static readonly WORK_DOC_TABLE_MAX_COLS: number = 20;
+  static readonly WORK_DOC_TABLE_MAX_ROWS: number = 500;
+  // read_docx 外来文档抽取图片的单张/总数上限
+  static readonly WORK_DOC_IMPORT_MAX_IMAGES: number = 40;
+  // read_docx 导入单文档的解包/解析保护上限(与 Office 抽取同量级)
+  static readonly WORK_DOC_IMPORT_MAX_BYTES: number = 20 * 1024 * 1024;
+  // Excel(Workbook) 工作表数量上限
+  static readonly WORK_XLSX_MAX_SHEETS: number = 20;
+  // Excel(Workbook) 单表行数/列数上限(防畸形表撑爆内存)
+  static readonly WORK_XLSX_MAX_ROWS: number = 1000;
+  static readonly WORK_XLSX_MAX_COLS: number = 60;
+  // read_xlsx/edit_xlsx 外来工作簿导入保护上限
+  static readonly WORK_XLSX_IMPORT_MAX_ROWS: number = 5000;
+  static readonly WORK_XLSX_IMPORT_MAX_COLS: number = 100;
+  static readonly WORK_XLSX_IMPORT_MAX_BYTES: number = 20 * 1024 * 1024;
   // 技能文档单文件送回模型的字符上限
   static readonly WORK_SKILL_MAX_CHARS: number = 20000;
   // download_file 单文件下载字节上限
@@ -157,6 +189,20 @@ export class Constants {
   static readonly WORK_SCHEDULE_MIN_EVERY_SEC: number = 300;
   // subagent: 子代理最大步数 / 工具结果送回字符上限(复用 WORK_RESULT_MAX_CHARS)
   static readonly WORK_SUBAGENT_MAX_STEPS: number = 40;
+  // run_js 工具(JSVM-API 沙箱): 源码/输入文件/超时/输出 上限。
+  // 说明: 沙箱输出文件最终仍走工作区写入, 单文件上限沿用 WORK_WRITE_MAX_BYTES。
+  static readonly WORK_JS_MAX_CODE_BYTES: number = 128 * 1024;
+  static readonly WORK_JS_MAX_INPUT_FILES: number = 6;
+  static readonly WORK_JS_INPUT_FILE_MAX_BYTES: number = 512 * 1024;
+  static readonly WORK_JS_INPUT_TOTAL_MAX_BYTES: number = 1024 * 1024;
+  static readonly WORK_JS_DEFAULT_TIMEOUT_MS: number = 10000;
+  static readonly WORK_JS_MAX_TIMEOUT_MS: number = 30000;
+  static readonly WORK_JS_HEAP_MB: number = 256;
+  static readonly WORK_JS_STDOUT_KB: number = 64;
+  static readonly WORK_JS_MAX_OUTPUT_FILES: number = 16;
+  static readonly WORK_JS_OUTPUT_TOTAL_KB: number = 4096;
+  // 超时被放弃的执行(无法回收的线程)达到该数量后拒绝再执行, 避免持续耗电
+  static readonly WORK_JS_MAX_ABANDONED: number = 2;
   // 工具并发执行的滚动池大小(对齐 dsh 的 maxParallelToolCalls, 只作用于只读并行段)
   static readonly WORK_MAX_PARALLEL_TOOLS: number = 4;
   // 会话事件日志(JSONL)目录(位于应用沙箱 filesDir 下, 与工作区平行)

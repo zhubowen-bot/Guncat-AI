@@ -1,7 +1,7 @@
 export declare namespace fileIo {
   interface Stat { size: number; mtime: number; isDirectory(): boolean; }
   interface File { fd: number; }
-  enum OpenMode { READ_ONLY = 0, READ_WRITE = 1, CREATE = 2, TRUNC = 4 }
+  enum OpenMode { READ_ONLY = 0, READ_WRITE = 1, CREATE = 2, TRUNC = 4, APPEND = 8 }
   function accessSync(path: string): boolean;
   function statSync(path: string): Stat;
   function mkdirSync(path: string, recursion?: boolean): void;
@@ -12,6 +12,7 @@ export declare namespace fileIo {
   function closeSync(fileOrFd: File | number): void;
   function unlinkSync(path: string): void;  function rmdirSync(path: string): void;
   function moveFileSync(src: string, dst: string): void;  function moveDirSync(src: string, dst: string): void;
+  function renameSync(oldPath: string, newPath: string): void;
 }
 export declare namespace picker {
   class DocumentSaveOptions { newFileNames?: string[]; fileSuffixChoices?: string[]; }

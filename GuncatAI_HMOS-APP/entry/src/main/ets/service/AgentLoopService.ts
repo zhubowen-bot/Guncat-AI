@@ -14,6 +14,7 @@ import { StreamAccumulator, getProtocol, resolveEndpointUrl,
 import { ToolCallAccumulator, collectCompletionsToolDelta, collectResponsesToolItem,
   collectAnthropicToolEvent, genToolCallId } from './ToolCallStream';
 import { WorkFileService } from './WorkFileService';
+import { WorkSkillService } from './WorkSkillService';
 import { ApiConfig } from '../model/ApiConfig';
 import { ToolCallRecord } from '../model/ToolCallRecord';
 import { AbortSignal } from '../common/Types';
@@ -1228,9 +1229,14 @@ export class AgentLoopService {
     lines.push('- str_replace_editor(command, path, …)：多命令编辑器。view 分页查看；create 新建；str_replace 唯一匹配替换（同 edit）；insert 在指定行后插入。在指定行插入内容时用它。');
     lines.push('**数据处理**');
     lines.push('- transform_file(input, steps, output?, format?, json_path?, has_header?, delimiter?, bom?, preview?)：对工作区数据文件执行本地转换管道——过滤/派生列/重算列/正则提取/拆列/去重/排序/替换/数值化，以及 CSV↔TSV↔JSON↔Markdown 表格↔XLSX 互转。数据全程不进入对话上下文，是处理大文件与非标格式的专用工具（read_file 读不全的表、要批量清洗/提取/转换的数据都归它）。流程：先省略 output 预览前 3 行 → 调整 steps → 带 output 写盘 → read_file 抽查。steps 完整语法先 load_skill("data")。限制：输入 ≤2MB 文本、≤10 万行、steps ≤30 步；小表格直接 write_file/write_csv 更快，不要滥用。');
+    lines.push('- run_js(code, files?, timeout_ms?)：在本机独立 JS 引擎沙箱里执行一段 JavaScript——"写几行代码算一下"的通用手段。适合：日期/数值/单位换算、正则清洗、JSON 重塑与合并、统计汇总、算法试算与验证，以及批量生成结构化数据（用 JS 拼出完整 JSON 写出文件，再交给 write_docx/write_xlsx/write_pptx 成文）。沙箱是纯计算环境：无网络、无文件系统、无模块加载（不支持 import/require）。文件必须显式进出——files 里列出的工作区文件会预载为只读的 inputs（键=去掉 "./" 前缀的相对路径，结果里会列出实际键名），脚本里用 inputs["路径"] 或 read("路径") 读取（read 对 "./"、重复斜杠等写法会自动归一化；没传 files 时调用 read 会直接报错提示）；脚本内 write("路径", 内容) 声明的输出会在执行成功后写入工作区。返回值取脚本最后一条表达式的值（要显式返回就写 (() => { ...; return 结果; })()）；console.log/print 的输出随结果一并返回。限制：代码 ≤128KB、默认执行上限 10 秒（timeout_ms 最大 30000）、死循环无法中断（超时会放弃等待并计入上限，两次后本会话停用）、单次输出 ≤16 个文件且单文件 ≤512KB。常规表格转换优先用 transform_file，读大文件优先用 read_file/search_files。');
     lines.push('**文档生成**');
-    lines.push('- write_docx(path, markdown)：把 Markdown 生成 Word 文档（.docx）。支持 标题(#~######)/粗体/斜体/有序无序列表/表格/引用/图片(data URL)，图片写法：![说明](data:image/png;base64,…)。可选 title 参数为文档元数据标题。');
-    lines.push('- write_xlsx(path, table)：把表格数据生成 Excel（.xlsx），首行为表头。table 用 Markdown 表格、CSV 或 TSV（自动识别，含 | 时按 Markdown 解析）。');
+    lines.push('- write_docx(path, doc?, doc_file?, markdown?, title?, style?)：生成/重建 Word 文档（.docx）。三种输入三选一：doc（Doc JSON 结构化源——封面/目录/分级标题(H1~H6)/正文/列表/表格/图片/引用/代码块，图片 src 支持工作区相对路径、data URL、http，正式文档一律用它）；doc_file（工作区中 Doc JSON 文件路径——长文档先 write_file/append_file 分块写好再导出，改内容后可重复导出）；markdown（简单内容直接用，标题/列表/表格/引用/图片同样支持，图片写法 ![说明](相对路径) 或 data URL）。title 可选文档标题，style 可选样式预设 default/academic/minimal。做正式 Word 文档前必须先 load_skill("docx") 获取 Doc 语法与排版规范。');
+    lines.push('- read_docx(path)：读回 Word 文档的 Doc JSON 源。本应用生成的 .docx 无损还原；外来 docx 为近似导入（标题/正文/列表/表格还原，图片抽取到 docx_images/<文件名>/ 供 view_image 查看与再次引用，版式细节不保留）。编辑或仿制 Word 文档前先读它。');
+    lines.push('- edit_docx(path, ops)：对已有 .docx 应用结构化操作后保存（外来 docx 会先自动备份原文件为 *_原版备份.docx）。ops 为 JSON 数组：set_title{title}/set_subtitle{subtitle}/set_author{author}/set_style{style}/set_cover{cover}/set_toc{toc}/add_block{index?,block}/delete_block{index}/update_block{index,block 部分字段}/move_block{from,to}/replace_text{find,replace}；index 从 1 起。改单块用 update_block，全局改词用 replace_text，换样式用 set_style。');
+    lines.push('- write_xlsx(path, workbook?, workbook_file?, table?, name?, style?)：生成/重建 Excel 工作簿（.xlsx）。三种输入三选一：workbook（Workbook JSON 结构化源——多工作表/表头加粗/公式（单元格值以 = 开头，如 "=SUM(B2:B9)"）/数字格式（formats 列格式：money/int/percent/year/date/number/text）/列宽（colWidths）/冻结窗格（freeze），正式表格一律用它）；workbook_file（工作区中 Workbook JSON 文件路径——长表先 write_file/append_file 分块写好再导出）；table（简单表格直接用 Markdown 表格/CSV/TSV，首行作表头）。name 可选工作簿名，style 可选样式预设 default/academic/minimal。做正式 Excel 前必须先 load_skill("xlsx") 获取 Workbook 语法与表格规范（公式优先/数字格式/负数零值显示）。');
+    lines.push('- read_xlsx(path)：读回 Excel 工作簿的 Workbook JSON 源。本应用生成的 .xlsx 无损还原；外来 xlsx 为近似导入（各工作表数值/文本/公式还原，样式/合并等细节不保留）。编辑或仿制 Excel 文件前先读它。');
+    lines.push('- edit_xlsx(path, ops)：对已有 .xlsx 应用结构化操作后保存（外来 xlsx 会先自动备份原文件为 *_原版备份.xlsx）。ops 为 JSON 数组：set_name{name}/set_style{style}/set_sheet_name{sheet,name}/add_sheet{sheet,index?}/delete_sheet{sheet}/move_sheet{sheet,to}/add_row{sheet,row,index?}/delete_row{sheet,index}/update_row{sheet,index,row}/set_cell{sheet,row,col,value}/set_header{sheet,col,value}/replace_text{find,replace}；sheet 用工作表名，row/index 按数据行从 1 起算（不含表头，与 read_xlsx 的 rows 一一对应），col 从 1 起（1=A）；改表头单元格用 set_header。改单元格用 set_cell，加行用 add_row，全局改词用 replace_text。');
     lines.push('- write_csv(path, table, bom?)：把表格数据生成 CSV（UTF-8 默认带 BOM，Excel/WPS 打开中文不乱码；RFC 4180 转义）。table 与 write_xlsx 相同的解析。轻量结构化数据、后续还要程序化处理时选 CSV；需要样式/多工作表用 write_xlsx。');
     lines.push('- write_pptx(path, deck?, deck_file?, outline?, theme?, title?)：生成/重建演示文稿（16:9，.pptx）。三种输入二选一：deck（Deck JSON 结构化源——13 种版式、8 套主题、图表/表格/图片/备注，正式 PPT 一律用它）；deck_file（工作区中 Deck JSON 文件路径——长 deck 先 write_file/append_file 分块写好再导出，改内容后可重复导出）；outline（简易大纲："# 页标题"开新页、"## 标题"开分节页、"- 要点"一级要点、缩进"- 要点"二级要点）。做正式 PPT 前必须先 load_skill("ppt") 获取 Deck 语法与设计规范。theme 可选预设：brand-blue/midnight/forest/sunset/violet/graphite/ivory/crimson。');
     lines.push('- read_ppt(path)：读回演示文稿的 Deck JSON 源。本应用生成的 .pptx 无损还原；外来 pptx 为近似导入（文本/表格/版面保留，图片与图表数据不保留）。编辑或仿制前先读它。');
@@ -1250,7 +1256,7 @@ export class AgentLoopService {
     lines.push('');
     lines.push('# 工具调用方法论（四步法）');
     lines.push('1. **明确信息缺口**：先问自己"我还缺什么信息？"，把缺口写成一句话。说不清缺什么的调用，不做。');
-    lines.push('2. **选择工具**：要原文 → read_file/parse_document；要定位 → search_files（文本与 Office）/search_pdf（PDF）/list_files；要看图 → view_image；要清洗/转换/提取大文件数据 → transform_file（先 load_skill）；要产出 → write_* 系列（演示文稿先 load_skill）；要管理进度 → todo_write。');
+    lines.push('2. **选择工具**：要原文 → read_file/parse_document；要定位 → search_files（文本与 Office）/search_pdf（PDF）/list_files；要看图 → view_image；要清洗/转换/提取大文件数据 → transform_file（先 load_skill）；要写代码算/程序化拼数据 → run_js；要产出 → write_* 系列（演示文稿先 load_skill）；要管理进度 → todo_write。');
     lines.push('3. **构造最准确的输入**：目标明确（提取什么、生成什么）、范围限定（哪个文件/目录/章节）、期望输出格式（结构化/原文/表格）。');
     lines.push('4. **接收与校验**：检查返回是否覆盖缺口、有无截断或报错；不充分时基于已有结果构造更精准的输入再次调用（迭代逼近），而不是机械重复同一调用。');
     lines.push('');
@@ -1327,6 +1333,12 @@ export class AgentLoopService {
     lines.push('- [ ] 结论都有工作区内容或工具结果支撑？不确定处已标注？');
     lines.push('- [ ] 全程使用用户的语言？');
     lines.push('');
+    // 技能清单注入在提示词末尾: 静态注册表生成, 逐字节稳定, 不破坏前缀缓存(设计见本文件缓存说明)
+    let skillsSection: string = WorkSkillService.promptSection();
+    if (skillsSection !== '') {
+      lines.push(skillsSection);
+      lines.push('');
+    }
     lines.push('现在开始：收到任务后，先分析复杂度，再按上述流程执行。');
     AgentLoopService.cachedWorkPrompt = lines.join('\n');
     return AgentLoopService.cachedWorkPrompt;

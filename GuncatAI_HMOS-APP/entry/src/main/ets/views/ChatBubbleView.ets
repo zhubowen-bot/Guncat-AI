@@ -124,6 +124,8 @@ export class WorkStepFormat {
         return $r('sys.symbol.list_book');
       case 'bash':
         return $r('sys.symbol.code');
+      case 'run_js':
+        return $r('sys.symbol.code');
       default:
         return $r('sys.symbol.wrench_and_screwdriver');
     }
@@ -198,6 +200,8 @@ export class WorkStepFormat {
         return 'Todo';
       case 'bash':
         return 'Bash';
+      case 'run_js':
+        return 'JS';
       default:
         return toolName;
     }

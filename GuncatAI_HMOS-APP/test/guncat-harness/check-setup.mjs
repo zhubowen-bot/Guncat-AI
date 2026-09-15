@@ -45,7 +45,16 @@ for (const [relSrc, relDst, replaces] of [
   ['common/FileSearchCore.ts', 'FileSearchCore.ts', []],
   ['common/Types.ts', 'Types.ts', []],
   ['common/MarkdownSanitizer.ts', 'MarkdownSanitizer.ts', []],
-  ['export/ZipWriter.ts', 'ZipWriter.ts', [["from '@kit.ArkTS'", "from './arkts-shim'"]]],
+  ['export/ZipWriter.ets', 'ZipWriter.ts', [["from '@kit.ArkTS'", "from './arkts-shim'"]]],
+  ['export/ZipWriterTs.ts', 'ZipWriterTs.ts', []],
+  ['export/MarkdownParser.ets', 'MarkdownParser.ts', []],
+  ['export/OmmlConverter.ets', 'OmmlConverter.ts', []],
+  ['export/DocModel.ets', 'DocModel.ts', []],
+  ['export/DocxBuilder.ets', 'DocxBuilder.ts', []],
+  ['export/DocxImporter.ets', 'DocxImporter.ts', []],
+  ['export/XlsxModel.ets', 'XlsxModel.ts', []],
+  ['export/XlsxBuilder.ets', 'XlsxBuilder.ts', []],
+  ['export/XlsxImporter.ets', 'XlsxImporter.ts', []],
   ['export/XmlUtil.ets', 'XmlUtil.ts', []],
   ['export/CsvWriter.ts', 'CsvWriter.ts', []],
   ['export/SvgUtil.ts', 'SvgUtil.ts', []],
@@ -73,22 +82,25 @@ for (const [relSrc, relDst, replaces] of [
 }
 
 // ===== 服务层(含 6.1 新增) =====
-for (const [relSrc, relDst] of [
-  ['service/ChatService.ts', 'ChatService.ts'],
-  ['service/AgentLoopService.ts', 'AgentLoopService.ts'],
-  ['service/WorkFileService.ts', 'WorkFileService.ts'],
-  ['service/HarnessTools.ts', 'HarnessTools.ts'],
-  ['service/AskUserBridge.ts', 'AskUserBridge.ts'],
-  ['service/SpillStore.ts', 'SpillStore.ts'],
-  ['service/ScheduleService.ts', 'ScheduleService.ts'],
-  ['service/GoalService.ts', 'GoalService.ts'],
-  ['service/WebFetchService.ts', 'WebFetchService.ts'],
-  ['service/SessionLogService.ts', 'SessionLogService.ts'],
-  ['service/SubagentService.ts', 'SubagentService.ts'],
-  ['service/WorkSkillService.ts', 'WorkSkillService.ts'],
-  ['service/WorkToolRunner.ets', 'WorkToolRunner.ts'],
+for (const [relSrc, relDst, replaces] of [
+  ['service/ChatService.ts', 'ChatService.ts', []],
+  ['service/AgentLoopService.ts', 'AgentLoopService.ts', []],
+  ['service/WorkFileService.ts', 'WorkFileService.ts', []],
+  ['service/HarnessTools.ts', 'HarnessTools.ts', []],
+  ['service/AskUserBridge.ts', 'AskUserBridge.ts', []],
+  ['service/SpillStore.ts', 'SpillStore.ts', []],
+  ['service/ScheduleService.ts', 'ScheduleService.ts', []],
+  ['service/GoalService.ts', 'GoalService.ts', []],
+  ['service/WebFetchService.ts', 'WebFetchService.ts', []],
+  ['service/SessionLogService.ts', 'SessionLogService.ts', []],
+  ['service/SubagentService.ts', 'SubagentService.ts', []],
+  ['service/WorkSkillService.ts', 'WorkSkillService.ts', []],
+  ['service/ToolCallStream.ts', 'ToolCallStream.ts', []],
+  ['service/LocalWebSearch.ts', 'LocalWebSearch.ts', []],
+  ['service/JsCodeService.ts', 'JsCodeService.ts', [["from 'libguncatjs.so'", "from './jsvm-shim'"]]],
+  ['service/WorkToolRunner.ets', 'WorkToolRunner.ts', []],
 ]) {
-  port(relSrc, relDst, []);
+  port(relSrc, relDst, replaces);
 }
 
 // ===== 本地依赖桩 =====
@@ -112,6 +124,18 @@ writeFileSync(join(allDir, 'PdfTextExtractor.ts'),
   `  static async searchText(abs: string, query: string, max: number): Promise<PdfSearchHit[]> { return []; }\n` +
   `  static async renderPages(abs: string, page: number, limit: number, outDir: string): Promise<PdfRenderResult> { return new PdfRenderResult(); }\n` +
   `  static async extractText(abs: string, cap: number): Promise<string> { return ''; }\n}\n`);
+// run_js 的原生模块(libguncatjs.so)在 Node 侧无实现, 仅提供类型等价桩
+writeFileSync(join(allDir, 'jsvm-shim.ts'),
+  `export interface JsRunOptions {\n` +
+  `  inputs?: Record<string, string>;\n  resourceName?: string;\n  heapMb?: number;\n` +
+  `  stdoutLimitKb?: number;\n  outputFileLimitKb?: number;\n  outputTotalLimitKb?: number;\n` +
+  `  maxOutputFiles?: number;\n}\n` +
+  `export interface JsRunResult {\n` +
+  `  ok: boolean;\n  hasResult: boolean;\n  stdout: string;\n  result: string;\n  error: string;\n` +
+  `  notice: string;\n  durationMs: number;\n  inputCount: number;\n  inputKeys: string[];\n  outputs: Record<string, string>;\n}\n` +
+  `export function runJs(code: string, options?: JsRunOptions): Promise<JsRunResult> {\n` +
+  `  return Promise.reject(new Error('jsvm-shim: 原生模块仅在设备侧可用'));\n}\n` +
+  `export function engineStatus(): string { return 'jsvm-shim'; }\n`);
 
 // ===== @kit 桩 =====
 writeFileSync(join(stubsDir, '@kit.CoreFileKit.ts'),
@@ -155,6 +179,9 @@ writeFileSync(join(stubsDir, '@kit.NetworkKit.ts'),
   `  enum HttpDataType { STRING = 0, ARRAY_BUFFER = 1 }\n` +
   `  enum HttpProtocol { HTTP1_1 = 0, HTTP2 = 1 }\n` +
   `  interface HttpResponse { responseCode: number; result: Object; header: Object; }\n` +
+  `  interface HttpRequestOptions {\n` +
+  `    method?: RequestMethod;\n    header?: Record<string, string>;\n    extraData?: string;\n` +
+  `    connectTimeout?: number;\n    readTimeout?: number;\n    usingProtocol?: HttpProtocol;\n  }\n` +
   `  interface HttpRequest {\n` +
   `    request(url: string, options: object): Promise<HttpResponse>;\n` +
   `    requestInStream(url: string, options: object): Promise<number>;\n` +

@@ -36,6 +36,8 @@ function port(relSrc, relDst, replaces) {
 // ===== 从 gen/ 复用已移植的纯模块 =====
 for (const f of ['DeckModel.ts', 'PptxThemes.ts', 'PptxCharts.ts', 'PptxBuilder.ts', 'XmlUtil.ts',
   'ZipWriter.ts', 'Constants.ts', 'CsvWriter.ts', 'SvgUtil.ts', 'CsvParser.ts', 'DataPipeline.ts',
+  'DocModel.ts', 'DocxBuilder.ts', 'MarkdownParser.ts', 'OmmlConverter.ts', 'DocxImporter.ts',
+  'XlsxModel.ts', 'XlsxBuilder.ts', 'XlsxImporter.ts',
   'arkts-shim.ts']) {
   writeFileSync(join(allDir, f), readFileSync(join(here, 'gen', f)));
 }
@@ -47,6 +49,24 @@ port('service/WorkToolRunner.ets', 'WorkToolRunner.ts', []);
 port('export/PptxImage.ets', 'PptxImage.ts', []);
 port('export/PptxImporter.ets', 'PptxImporter.ts', []);
 port('common/Utils.ts', 'Utils.ts', []);
+// WorkFileService 的既有依赖(补全类型检查覆盖)
+port('export/ZipWriterTs.ts', 'ZipWriterTs.ts', [
+  ["from '@kit.ArkTS'", "from './arkts-shim'"]
+]);
+port('service/HarnessTools.ts', 'HarnessTools.ts', []);
+port('service/LocalWebSearch.ts', 'LocalWebSearch.ts', []);
+port('service/AskUserBridge.ts', 'AskUserBridge.ts', []);
+port('service/ScheduleService.ts', 'ScheduleService.ts', []);
+port('service/GoalService.ts', 'GoalService.ts', []);
+port('service/WebFetchService.ts', 'WebFetchService.ts', []);
+port('service/SessionLogService.ts', 'SessionLogService.ts', []);
+port('common/PathMatcher.ts', 'PathMatcher.ts', []);
+port('common/FileSearchCore.ts', 'FileSearchCore.ts', []);
+port('common/DiffUtil.ts', 'DiffUtil.ts', []);
+port('common/EditCore.ts', 'EditCore.ts', []);
+port('common/Types.ts', 'Types.ts', []);
+mkdirSync(join(allDir, 'model'), { recursive: true });
+port('model/ToolCallRecord.ts', 'model/ToolCallRecord.ts', []);
 
 // check 专用 shim: namespace 形式(仅类型检查, 不参与 Node 运行时)
 writeFileSync(join(allDir, 'arkts-shim.ts'),
@@ -78,7 +98,7 @@ writeFileSync(join(stubsDir, '@kit.CoreFileKit.ts'),
   `export declare namespace fileIo {\n` +
   `  interface Stat { size: number; mtime: number; isDirectory(): boolean; }\n` +
   `  interface File { fd: number; }\n` +
-  `  enum OpenMode { READ_ONLY = 0, READ_WRITE = 1, CREATE = 2, TRUNC = 4 }\n` +
+  `  enum OpenMode { READ_ONLY = 0, READ_WRITE = 1, CREATE = 2, TRUNC = 4, APPEND = 8 }\n` +
   `  function accessSync(path: string): boolean;\n  function statSync(path: string): Stat;\n` +
   `  function mkdirSync(path: string, recursion?: boolean): void;\n  function listFileSync(path: string): string[];\n` +
   `  function openSync(path: string, mode: number): File;\n` +
@@ -86,7 +106,8 @@ writeFileSync(join(stubsDir, '@kit.CoreFileKit.ts'),
   `  function writeSync(fd: number, buffer: ArrayBuffer): number;\n` +
   `  function closeSync(fileOrFd: File | number): void;\n` +
   `  function unlinkSync(path: string): void;  function rmdirSync(path: string): void;\n` +
-  `  function moveFileSync(src: string, dst: string): void;  function moveDirSync(src: string, dst: string): void;\n}\n` +
+  `  function moveFileSync(src: string, dst: string): void;  function moveDirSync(src: string, dst: string): void;\n` +
+  `  function renameSync(oldPath: string, newPath: string): void;\n}\n` +
   `export declare namespace picker {\n` +
   `  class DocumentSaveOptions { newFileNames?: string[]; fileSuffixChoices?: string[]; }\n` +
   `  class DocumentViewPicker { constructor(context: object); save(options: DocumentSaveOptions): Promise<string[]>; }\n}\n`);
@@ -109,8 +130,12 @@ writeFileSync(join(stubsDir, '@kit.NetworkKit.ts'),
   `export declare namespace http {\n` +
   `  enum RequestMethod { GET = 'GET', POST = 'POST' }\n` +
   `  enum HttpDataType { STRING = 0, ARRAY_BUFFER = 1 }\n` +
+  `  enum HttpProtocol { HTTP1_1 = 'HTTP/1.1', HTTP2 = 'HTTP/2', HTTP3 = 'HTTP/3', NONE = 'NONE' }\n` +
+  `  interface HttpRequestOptions { method?: string; header?: object | string; extraData?: object | string;\n` +
+  `    expectDataType?: number; usingCache?: boolean; usingProtocol?: HttpProtocol;\n` +
+  `    connectTimeout?: number; readTimeout?: number; }\n` +
   `  interface HttpResponse { responseCode: number; result: Object; header: Object; }\n` +
-  `  interface HttpRequest { request(url: string, options: object): Promise<HttpResponse>; destroy(): void; }\n` +
+  `  interface HttpRequest { request(url: string, options: HttpRequestOptions): Promise<HttpResponse>; destroy(): void; }\n` +
   `  function createHttp(): HttpRequest;\n}\n`);
 writeFileSync(join(stubsDir, '@kit.ImageKit.ts'),
   `export declare namespace image {\n` +

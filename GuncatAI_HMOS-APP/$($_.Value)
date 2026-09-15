@@ -1,0 +1,15 @@
+Guncat 2.5-lite _prompt.md = lines
+Guncat 2.5-max _prompt.md = lines
+Guncat 3.0-Flash_prompt_EN.md = lines
+Guncat 3.0-Flash_prompt_ZH_CN.md = lines
+Guncat 3.0-Mini_prompt_EN.md = lines
+Guncat 3.0-Mini_prompt_ZH_CN.md = lines
+Guncat 3.0-Pro_prompt_EN.md = lines
+Guncat 3.0-Pro_prompt_ZH_CN.md = lines
+Guncat 3.1-Flash_prompt_EN.md = lines
+Guncat 3.1-Flash_prompt_ZH_CN.md = lines
+Guncat Cnvt-Paper_prompt.md = lines
+Guncat Eval-LLM_prompt.md = lines
+Guncat Srch-Law V1.0-prompt.md = lines
+Guncat Srch-Research-prompt.md = lines
+Guncat Srch-Sift-prompt.md = lines

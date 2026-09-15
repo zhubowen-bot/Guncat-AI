@@ -265,6 +265,11 @@ body {
   margin-bottom: 4px;
 }
 
+/* 「新功能体验」面板: 与下方「目录」之间留更大的间距 */
+.toc-gap {
+  margin-bottom: 28px;
+}
+
 .toc-header {
   padding: 14px 16px 6px;
   font-size: 16px;

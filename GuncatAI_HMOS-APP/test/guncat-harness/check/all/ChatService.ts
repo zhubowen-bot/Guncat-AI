@@ -7,9 +7,15 @@ import { ApiConfig } from './ApiConfig.ts';
 import { Agent } from './Agent.ts';
 import { Message } from './Message.ts';
 import { Attachment } from './Attachment.ts';
+import { ToolCallRecord } from './ToolCallRecord.ts';
 import { StreamCallbacks, AbortSignal } from './Types.ts';
 import { Constants } from './Constants.ts';
 import { util } from '@kit.ArkTS';
+import { ToolCallAccumulator, collectCompletionsToolDelta, collectResponsesToolItem,
+  collectAnthropicToolEvent, genToolCallId } from './ToolCallStream.ts';
+import { LOCAL_SEARCH_TOOL_NAME, LOCAL_SEARCH_TOOL_DESC_CHAT, LOCAL_SEARCH_TOOL_DESC_CHAT_FALLBACK,
+  LOCAL_SEARCH_QUERY_PROP_DESC } from './LocalWebSearch.ts';
+import { HarnessTools } from './HarnessTools.ts';
 
 export class StreamAccumulator {
   buffer: ArrayBuffer = new ArrayBuffer(0);
@@ -38,6 +44,109 @@ export function getProtocol(provider: string): string {
   return 'completions';
 }
 
+// 单次流式请求的结构化产出(聊天模式本地联网搜索工具循环需要):
+// toolCalls 供调用方执行后回灌下一轮; thinkingSignature/redactedThinking 供
+// Anthropic 协议思考模式下把带 tool_use 的 assistant 消息回传时随思考块携带
+export class ChatStreamResult {
+  toolCalls: ToolCallRecord[] = [];
+  thinkingSignature: string = '';
+  redactedThinking: string = '';
+}
+
+// 本地内置联网搜索 search_web 的 function tool 定义(协议相关形态):
+// 强制注入聊天模式请求体, 与服务端联网搜索(可选开关)并存, 互不影响。
+// serverSearchEnabled=true 时描述切换为"兜底版", 引导模型优先走服务端 web_search。
+export function buildLocalSearchToolDef(protocol: string, serverSearchEnabled: boolean): Record<string, Object> {
+  let schema: Record<string, Object> = {
+    'type': 'object',
+    'properties': {
+      'query': { 'type': 'string', 'description': LOCAL_SEARCH_QUERY_PROP_DESC }
+    },
+    'required': ['query']
+  };
+  let description: string = serverSearchEnabled ?
+    LOCAL_SEARCH_TOOL_DESC_CHAT_FALLBACK : LOCAL_SEARCH_TOOL_DESC_CHAT;
+  if (protocol === 'anthropic') {
+    return {
+      'name': LOCAL_SEARCH_TOOL_NAME,
+      'description': description,
+      'input_schema': schema
+    };
+  }
+  if (protocol === 'responses') {
+    return {
+      'type': 'function',
+      'name': LOCAL_SEARCH_TOOL_NAME,
+      'description': description,
+      'parameters': schema
+    };
+  }
+  return {
+    'type': 'function',
+    'function': {
+      'name': LOCAL_SEARCH_TOOL_NAME,
+      'description': description,
+      'parameters': schema
+    }
+  };
+}
+
+// web_fetch function tool 定义(复用工作模式 HarnessTools 的定义, 按协议映射形态):
+// 与 search_web 一起强制注入聊天模式, 供模型读取搜索来源/用户给的链接
+function buildWebFetchToolDef(protocol: string): Record<string, Object> {
+  let def: Record<string, Object> = HarnessTools.webFetchDef();
+  let name: string = def['name'] as string;
+  let description: string = def['description'] as string;
+  let schema: Record<string, Object> = def['parameters'] as Record<string, Object>;
+  if (protocol === 'anthropic') {
+    return { 'name': name, 'description': description, 'input_schema': schema };
+  }
+  if (protocol === 'responses') {
+    return { 'type': 'function', 'name': name, 'description': description, 'parameters': schema };
+  }
+  return {
+    'type': 'function',
+    'function': { 'name': name, 'description': description, 'parameters': schema }
+  };
+}
+
+// 工具调用参数 JSON → 对象(解析失败回落空对象)
+function parseToolArgsObject(argsJson: string): Record<string, Object> {
+  try {
+    let parsed: Object = JSON.parse(argsJson === '' ? '{}' : argsJson);
+    if (typeof parsed === 'object' && parsed !== null && !(parsed instanceof Array)) {
+      return parsed as Record<string, Object>;
+    }
+  } catch (e) {
+    // ignore
+  }
+  return {};
+}
+
+// 由 Base URL 推导最终请求端点(三协议共用)。
+// autoSuffix=false 时严格使用用户填写的地址(仅去首尾空白), 不做任何协议路径补全——
+// 用于非标准路径的自建网关/代理; 开启时按协议补全标准路径。
+export function resolveEndpointUrl(config: ApiConfig, protocol: string): string {
+  if (!config.autoSuffix) {
+    return config.baseUrl.trim();
+  }
+  let base: string = config.baseUrl.replace(/\/+$/, '');
+  if (protocol === 'responses') {
+    return base + Constants.RESPONSES_PATH;
+  }
+  if (protocol === 'anthropic') {
+    if (base.endsWith('/v1') || base.endsWith('/anthropic/v1')) {
+      return base + Constants.MESSAGES_PATH;
+    }
+    if (base === 'https://api.deepseek.com' || base === 'http://api.deepseek.com') {
+      // 兼容用户直接填 DeepSeek 主域名时自动切到 Anthropic 兼容端点
+      return base + Constants.ANTHROPIC_DEEPSEEK_MESSAGES_PATH;
+    }
+    return base + Constants.ANTHROPIC_V1_MESSAGES_PATH;
+  }
+  return base + Constants.CHAT_COMPLETIONS_PATH;
+}
+
 function buildChatCompletionsBody(config: ApiConfig, agent: Agent | null,
   history: Message[], userText: string,
   thinkingEnabled: boolean, webSearchEnabled: boolean): Record<string, Object> {
@@ -47,7 +156,8 @@ function buildChatCompletionsBody(config: ApiConfig, agent: Agent | null,
   }
   for (let i: number = 0; i < history.length; i++) {
     let m: Message = history[i];
-    if (m.content === '') {
+    // 只带工具调用的 assistant 消息(content 为空)不能跳过, 工具结果回灌依赖它
+    if (m.content === '' && m.toolCalls.length === 0) {
       continue;
     }
     if (m.role !== 'user' && m.role !== 'assistant') {
@@ -95,6 +205,32 @@ function buildChatCompletionsBody(config: ApiConfig, agent: Agent | null,
         continue;
       }
     }
+    if (m.role === 'assistant' && m.toolCalls.length > 0) {
+      // 本地工具循环: assistant(tool_calls) + role:'tool' 结果回传
+      let callArr: Record<string, Object>[] = [];
+      for (let c: number = 0; c < m.toolCalls.length; c++) {
+        let call: ToolCallRecord = m.toolCalls[c];
+        callArr.push({
+          id: call.id,
+          type: 'function',
+          function: { name: call.name, arguments: call.argsJson === '' ? '{}' : call.argsJson }
+        });
+      }
+      messages.push({
+        role: 'assistant',
+        content: m.content === '' ? null : m.content,
+        tool_calls: callArr
+      });
+      for (let c: number = 0; c < m.toolCalls.length; c++) {
+        let call: ToolCallRecord = m.toolCalls[c];
+        messages.push({
+          role: 'tool',
+          tool_call_id: call.id,
+          content: call.result === '' ? '(无结果)' : call.result
+        });
+      }
+      continue;
+    }
     let chatMsg: Record<string, Object> = { role: m.role, content: m.content };
     // 请求携带 tools（联网搜索）时，DeepSeek 要求回传中间 assistant 的 reasoning_content，否则多轮可能 400。
     if (m.role === 'assistant' && webSearchEnabled && m.reasoning !== '') {
@@ -103,8 +239,11 @@ function buildChatCompletionsBody(config: ApiConfig, agent: Agent | null,
     messages.push(chatMsg);
   }
   let lastHistory: Message | null = history.length > 0 ? history[history.length - 1] : null;
-  if (lastHistory === null || lastHistory.role !== 'user' || lastHistory.content !== userText) {
-    messages.push({ role: 'user', content: userText });
+  // 本地搜索工具循环的续轮请求 userText 为空串, 不再追加用户消息
+  if (userText !== '') {
+    if (lastHistory === null || lastHistory.role !== 'user' || lastHistory.content !== userText) {
+      messages.push({ role: 'user', content: userText });
+    }
   }
 
   let body: Record<string, Object> = {
@@ -113,11 +252,16 @@ function buildChatCompletionsBody(config: ApiConfig, agent: Agent | null,
     stream: true
   };
 
+  // 本地内置联网搜索 search_web 强制注入(由模型决定是否调用); 服务端联网搜索按开关并存
+  let chatTools: Record<string, Object>[] = [];
   if (webSearchEnabled) {
     // OpenAI 兼容 Chat Completions 服务若支持服务端搜索，可识别该工具。
-    let tool: Record<string, Object> = { type: 'web_search' };
-    body['tools'] = [tool];
+    chatTools.push({ type: 'web_search' });
   }
+  chatTools.push(buildLocalSearchToolDef('completions', webSearchEnabled));
+  chatTools.push(buildWebFetchToolDef('completions'));
+  body['tools'] = chatTools;
+  body['tool_choice'] = 'auto';
   if (config.temperature !== null) {
     body['temperature'] = config.temperature;
   }
@@ -155,7 +299,8 @@ function buildResponsesBody(config: ApiConfig, agent: Agent | null,
   let input: Record<string, Object>[] = [];
   for (let i: number = 0; i < history.length; i++) {
     let m: Message = history[i];
-    if (m.content === '') {
+    // 只带工具调用的 assistant 消息(content 为空)不能跳过, 工具结果回灌依赖它
+    if (m.content === '' && m.toolCalls.length === 0) {
       continue;
     }
     if (m.role !== 'user' && m.role !== 'assistant') {
@@ -198,13 +343,41 @@ function buildResponsesBody(config: ApiConfig, agent: Agent | null,
         }
       }
       input.push({ role: m.role, content: contentParts });
+    } else if (m.role === 'assistant' && m.toolCalls.length > 0) {
+      // 本地工具循环: function_call + function_call_output 输入项
+      if (m.content !== '') {
+        input.push({
+          role: 'assistant',
+          content: [{ type: 'output_text', text: m.content }]
+        });
+      }
+      for (let c: number = 0; c < m.toolCalls.length; c++) {
+        let call: ToolCallRecord = m.toolCalls[c];
+        input.push({
+          type: 'function_call',
+          call_id: call.id,
+          name: call.name,
+          arguments: call.argsJson === '' ? '{}' : call.argsJson
+        });
+      }
+      for (let c: number = 0; c < m.toolCalls.length; c++) {
+        let call: ToolCallRecord = m.toolCalls[c];
+        input.push({
+          type: 'function_call_output',
+          call_id: call.id,
+          output: call.result === '' ? '(无结果)' : call.result
+        });
+      }
     } else {
       input.push({ role: m.role, content: m.content });
     }
   }
   let lastHistory: Message | null = history.length > 0 ? history[history.length - 1] : null;
-  if (lastHistory === null || lastHistory.role !== 'user' || lastHistory.content !== userText) {
-    input.push({ role: 'user', content: userText });
+  // 本地搜索工具循环的续轮请求 userText 为空串, 不再追加用户消息
+  if (userText !== '') {
+    if (lastHistory === null || lastHistory.role !== 'user' || lastHistory.content !== userText) {
+      input.push({ role: 'user', content: userText });
+    }
   }
 
   let body: Record<string, Object> = {
@@ -217,11 +390,16 @@ function buildResponsesBody(config: ApiConfig, agent: Agent | null,
   if (agent !== null && agent.systemPrompt !== '') {
     body['instructions'] = agent.systemPrompt;
   }
+  // 本地内置联网搜索 search_web 强制注入(由模型决定是否调用); 服务端联网搜索按开关并存
+  let respTools: Record<string, Object>[] = [];
   if (webSearchEnabled) {
     // OpenAI Responses 兼容格式；DeepSeek 与火山方舟均支持该工具。
-    let tool: Record<string, Object> = { type: 'web_search' };
-    body['tools'] = [tool];
+    respTools.push({ type: 'web_search' });
   }
+  respTools.push(buildLocalSearchToolDef('responses', webSearchEnabled));
+  respTools.push(buildWebFetchToolDef('responses'));
+  body['tools'] = respTools;
+  body['tool_choice'] = 'auto';
   if (config.temperature !== null) {
     body['temperature'] = config.temperature;
   }
@@ -291,7 +469,8 @@ function buildAnthropicBody(config: ApiConfig, agent: Agent | null,
   let messages: Record<string, Object>[] = [];
   for (let i: number = 0; i < history.length; i++) {
     let m: Message = history[i];
-    if (m.content === '') {
+    // 只带工具调用的 assistant 消息(content 为空)不能跳过, 工具结果回灌依赖它
+    if (m.content === '' && m.toolCalls.length === 0) {
       continue;
     }
     if (m.role !== 'user' && m.role !== 'assistant') {
@@ -361,14 +540,58 @@ function buildAnthropicBody(config: ApiConfig, agent: Agent | null,
         continue;
       }
     }
-    appendAnthropicMessage(messages, m.role, m.content);
+    if (m.role === 'assistant' && m.toolCalls.length > 0) {
+      // 本地工具循环: assistant(thinking? + text? + tool_use) + user(tool_result)。
+      // 思考模式下带 tool_use 的 assistant 消息必须回传思考块(置于首位, 与工作模式同规则):
+      // 有思考文本即回传, 签名在流式捕获到时随块携带(部分兼容服务不返回签名则省略该字段)
+      let blocks: Object[] = [];
+      if (thinkingEnabled && m.reasoning !== '') {
+        let thinkingBlock: Record<string, Object> = { type: 'thinking', thinking: m.reasoning };
+        if (m.thinkingSignature !== '') {
+          thinkingBlock['signature'] = m.thinkingSignature;
+        }
+        blocks.push(thinkingBlock);
+      }
+      if (m.content !== '') {
+        blocks.push({ type: 'text', text: m.content });
+      }
+      for (let c: number = 0; c < m.toolCalls.length; c++) {
+        let call: ToolCallRecord = m.toolCalls[c];
+        blocks.push({
+          type: 'tool_use',
+          id: call.id,
+          name: call.name,
+          input: parseToolArgsObject(call.argsJson)
+        });
+      }
+      appendAnthropicMessage(messages, 'assistant', blocks);
+      let results: Object[] = [];
+      for (let c: number = 0; c < m.toolCalls.length; c++) {
+        let call: ToolCallRecord = m.toolCalls[c];
+        results.push({
+          type: 'tool_result',
+          tool_use_id: call.id,
+          content: call.result === '' ? '(无结果)' : call.result
+        });
+      }
+      appendAnthropicMessage(messages, 'user', results);
+    } else {
+      appendAnthropicMessage(messages, m.role, m.content);
+    }
   }
   let lastHistory: Message | null = history.length > 0 ? history[history.length - 1] : null;
-  if (lastHistory === null || lastHistory.role !== 'user' || lastHistory.content !== userText) {
-    appendAnthropicMessage(messages, 'user', userText);
+  // 本地搜索工具循环的续轮请求 userText 为空串, 不再追加用户消息
+  if (userText !== '') {
+    if (lastHistory === null || lastHistory.role !== 'user' || lastHistory.content !== userText) {
+      appendAnthropicMessage(messages, 'user', userText);
+    }
   }
 
-  let maxTokens: number = config.maxTokens !== null ? config.maxTokens : 4096;
+  // Anthropic Messages API 必填 max_tokens(其他两种协议可省略由服务端决定)。
+  // 未配置时默认下发 128K(Constants.DEFAULT_MAX_OUTPUT_TOKENS): 额度顶满时服务端
+  // 按 stop_reason=max_tokens 截断输出, 且思考模式的思考文本同样计入该额度。
+  let maxTokens: number = config.maxTokens !== null ?
+    config.maxTokens : Constants.DEFAULT_MAX_OUTPUT_TOKENS;
   let body: Record<string, Object> = {
     model: config.model,
     messages: messages,
@@ -378,14 +601,19 @@ function buildAnthropicBody(config: ApiConfig, agent: Agent | null,
   if (agent !== null && agent.systemPrompt !== '') {
     body['system'] = agent.systemPrompt;
   }
+  // 本地内置联网搜索 search_web 强制注入(由模型决定是否调用); 服务端联网搜索按开关并存
+  let anthroTools: Object[] = [];
   if (webSearchEnabled) {
     let tool: Record<string, Object> = {
       type: 'web_search_20250305',
       name: 'web_search',
       max_uses: 5
     };
-    body['tools'] = [tool];
+    anthroTools.push(tool);
   }
+  anthroTools.push(buildLocalSearchToolDef('anthropic', webSearchEnabled));
+  anthroTools.push(buildWebFetchToolDef('anthropic'));
+  body['tools'] = anthroTools;
   if (config.temperature !== null) {
     body['temperature'] = config.temperature;
   }
@@ -640,6 +868,66 @@ export function extractAnthropicReasoning(sseData: string): string {
   }
 }
 
+// 思考块签名增量: thinking 块结束后由 signature_delta 事件携带, 回传 thinking 块时随块携带
+export function extractAnthropicSignature(sseData: string): string {
+  try {
+    let json: Object = JSON.parse(sseData);
+    if (typeof json !== 'object' || json === null) {
+      return '';
+    }
+    let type: Object = (json as Record<string, Object>)['type'];
+    if (typeof type !== 'string' || type !== 'content_block_delta') {
+      return '';
+    }
+    let delta: Object = (json as Record<string, Object>)['delta'];
+    if (typeof delta !== 'object' || delta === null) {
+      return '';
+    }
+    let deltaType: Object = (delta as Record<string, Object>)['type'];
+    if (typeof deltaType !== 'string' || deltaType !== 'signature_delta') {
+      return '';
+    }
+    let signature: Object = (delta as Record<string, Object>)['signature'];
+    if (typeof signature === 'string') {
+      return signature;
+    }
+    return '';
+  } catch (e) {
+    return '';
+  }
+}
+
+// 加密思考块(redacted_thinking): content_block_start 事件直接携带完整 data 字段,
+// 回传时原样送回(无增量), 否则思考模式下服务端 400
+export function extractAnthropicRedactedThinking(sseData: string): string {
+  try {
+    let json: Object = JSON.parse(sseData);
+    if (typeof json !== 'object' || json === null) {
+      return '';
+    }
+    let type: Object = (json as Record<string, Object>)['type'];
+    if (typeof type !== 'string' || type !== 'content_block_start') {
+      return '';
+    }
+    let block: Object = (json as Record<string, Object>)['content_block'];
+    if (typeof block !== 'object' || block === null) {
+      return '';
+    }
+    let blockRec: Record<string, Object> = block as Record<string, Object>;
+    let blockType: Object = blockRec['type'];
+    if (typeof blockType !== 'string' || (blockType as string) !== 'redacted_thinking') {
+      return '';
+    }
+    let data: Object = blockRec['data'];
+    if (typeof data === 'string') {
+      return data;
+    }
+    return '';
+  } catch (e) {
+    return '';
+  }
+}
+
 // ===== usage 解析 (对齐 web 版本 extractXXXUsage) =====
 
 export function extractChatCompletionsUsage(sseData: string): Record<string, Object> | null {
@@ -779,25 +1067,9 @@ export class ChatService {
     webSearchEnabled: boolean,
     callbacks: StreamCallbacks,
     abortSignal: AbortSignal
-  ): Promise<void> {
+  ): Promise<ChatStreamResult> {
     let protocol: string = getProtocol(config.provider);
-    let path: string;
-    if (protocol === 'responses') {
-      path = Constants.RESPONSES_PATH;
-    } else if (protocol === 'anthropic') {
-      let trimmedBase: string = config.baseUrl.replace(/\/+$/, '');
-      if (trimmedBase.endsWith('/v1') || trimmedBase.endsWith('/anthropic/v1')) {
-        path = Constants.MESSAGES_PATH;
-      } else if (trimmedBase === 'https://api.deepseek.com' || trimmedBase === 'http://api.deepseek.com') {
-        // 兼容用户直接填 DeepSeek 主域名时自动切到 Anthropic 兼容端点
-        path = Constants.ANTHROPIC_DEEPSEEK_MESSAGES_PATH;
-      } else {
-        path = Constants.ANTHROPIC_V1_MESSAGES_PATH;
-      }
-    } else {
-      path = Constants.CHAT_COMPLETIONS_PATH;
-    }
-    let url: string = config.baseUrl.replace(/\/+$/, '') + path;
+    let url: string = resolveEndpointUrl(config, protocol);
 
     let body: Record<string, Object>;
     if (protocol === 'responses') {
@@ -819,8 +1091,101 @@ export class ChatService {
     // 深度思考累积 + 请求起始时间(用于由 usage 派生 token 速度)
     let fullReasoning: string = '';
     let startTime: number = Date.now();
+    // 工具调用累积(本地联网搜索 search_web 等强制注入的 function tool)
+    let callAcc: ToolCallAccumulator = new ToolCallAccumulator();
+    let lastToolSig: string = '';
+    // Anthropic 思考块签名与加密思考块(思考模式下本地工具循环回传所需)
+    let thinkingSignature: string = '';
+    let redactedThinking: string = '';
+    let streamResult: ChatStreamResult = new ChatStreamResult();
     // 对齐 web 版本: SSE 解析出一个 delta 就立即 onToken 全量累积,
     // UI 端 50ms 节流刷新. 不做应用层字符拆分 (避免 setTimeout 队列过长 OOM)
+
+    // 单条 SSE 数据分发(数据流与 dataEnd 兜底共用): 按协议解析文本/思考/工具调用/usage
+    let processSseData = (sseData: string): void => {
+      if (protocol === 'responses') {
+        let fail: string = extractResponsesFailure(sseData);
+        if (fail !== '') {
+          failedMsg = fail;
+          throw new Error(fail);
+        }
+        let delta: string = extractResponsesDelta(sseData);
+        if (delta !== '') {
+          acc.fullContent += delta;
+          callbacks.onToken(delta);
+        }
+        let reasoning: string = extractResponsesReasoning(sseData);
+        if (reasoning !== '') {
+          fullReasoning += reasoning;
+          callbacks.onReasoning(fullReasoning);
+        }
+        collectResponsesToolItem(sseData, callAcc);
+        let usageObj: Record<string, Object> | null = extractResponsesUsage(sseData);
+        if (usageObj !== null) {
+          let stats: number[] = deriveStreamStats(usageObj, Date.now() - startTime);
+          callbacks.onUsage(stats[0], stats[1]);
+        }
+      } else if (protocol === 'anthropic') {
+        let fail: string = extractAnthropicFailure(sseData);
+        if (fail !== '') {
+          failedMsg = fail;
+          throw new Error(fail);
+        }
+        let delta: string = extractAnthropicDelta(sseData);
+        if (delta !== '') {
+          acc.fullContent += delta;
+          callbacks.onToken(delta);
+        }
+        let reasoning: string = extractAnthropicReasoning(sseData);
+        if (reasoning !== '') {
+          fullReasoning += reasoning;
+          callbacks.onReasoning(fullReasoning);
+        }
+        let sig: string = extractAnthropicSignature(sseData);
+        if (sig !== '') {
+          thinkingSignature += sig;
+        }
+        let redacted: string = extractAnthropicRedactedThinking(sseData);
+        if (redacted !== '') {
+          redactedThinking = redacted;
+        }
+        collectAnthropicToolEvent(sseData, callAcc);
+        let usageObj: Record<string, Object> | null = extractAnthropicUsage(sseData);
+        if (usageObj !== null) {
+          let stats: number[] = deriveStreamStats(usageObj, Date.now() - startTime);
+          callbacks.onUsage(stats[0], stats[1]);
+        }
+      } else {
+        let delta: string = extractChatCompletionsDelta(sseData);
+        if (delta !== '') {
+          acc.fullContent += delta;
+          callbacks.onToken(delta);
+        }
+        let reasoning: string = extractChatCompletionsReasoning(sseData);
+        if (reasoning !== '') {
+          fullReasoning += reasoning;
+          callbacks.onReasoning(fullReasoning);
+        }
+        collectCompletionsToolDelta(sseData, callAcc);
+        let usageObj: Record<string, Object> | null = extractChatCompletionsUsage(sseData);
+        if (usageObj !== null) {
+          let stats: number[] = deriveStreamStats(usageObj, Date.now() - startTime);
+          callbacks.onUsage(stats[0], stats[1]);
+        }
+      }
+      // 工具调用流式生成过程中即时上抛(调用数或累计参数量变化时)
+      if (callAcc.calls.length > 0) {
+        let argsLen: number = 0;
+        for (let i: number = 0; i < callAcc.calls.length; i++) {
+          argsLen += callAcc.calls[i].argsJson.length;
+        }
+        let sig: string = callAcc.calls.length.toString() + ':' + argsLen.toString();
+        if (sig !== lastToolSig) {
+          lastToolSig = sig;
+          callbacks.onToolCalls(callAcc.calls);
+        }
+      }
+    };
 
     try {
       await new Promise<void>((resolve: () => void, reject: (e: Error) => void) => {
@@ -832,143 +1197,45 @@ export class ChatService {
             return;
           }
           receivedAnyData = true;
-          let chunk: string = acc.append(data);
-          lineBuffer += chunk;
-          let lines: string[] = lineBuffer.split('\n');
-          if (lineBuffer.endsWith('\n')) {
-            lineBuffer = '';
-          } else {
-            lineBuffer = lines.pop() as string;
-          }
-          for (let i: number = 0; i < lines.length; i++) {
-            let line: string = lines[i];
-            let trimmed: string = line.trim();
-            if (trimmed === '' || trimmed === Constants.SSE_DONE_TOKEN) {
-              continue;
-            }
-            if (!trimmed.startsWith(Constants.SSE_DATA_PREFIX)) {
-              continue;
-            }
-            let sseData: string = trimmed.substring(Constants.SSE_DATA_PREFIX.length);
-            if (protocol === 'responses') {
-              let fail: string = extractResponsesFailure(sseData);
-              if (fail !== '') {
-                failedMsg = fail;
-                reject(new Error(fail));
-                return;
-              }
-              let delta: string = extractResponsesDelta(sseData);
-              if (delta !== '') {
-                acc.fullContent += delta;
-                callbacks.onToken(delta);
-              }
-              let reasoning: string = extractResponsesReasoning(sseData);
-              if (reasoning !== '') {
-                fullReasoning += reasoning;
-                callbacks.onReasoning(fullReasoning);
-              }
-              let usageObj: Record<string, Object> | null = extractResponsesUsage(sseData);
-              if (usageObj !== null) {
-                let stats: number[] = deriveStreamStats(usageObj, Date.now() - startTime);
-                callbacks.onUsage(stats[0], stats[1]);
-              }
-            } else if (protocol === 'anthropic') {
-              let fail: string = extractAnthropicFailure(sseData);
-              if (fail !== '') {
-                failedMsg = fail;
-                reject(new Error(fail));
-                return;
-              }
-              let delta: string = extractAnthropicDelta(sseData);
-              if (delta !== '') {
-                acc.fullContent += delta;
-                callbacks.onToken(delta);
-              }
-              let reasoning: string = extractAnthropicReasoning(sseData);
-              if (reasoning !== '') {
-                fullReasoning += reasoning;
-                callbacks.onReasoning(fullReasoning);
-              }
-              let usageObj: Record<string, Object> | null = extractAnthropicUsage(sseData);
-              if (usageObj !== null) {
-                let stats: number[] = deriveStreamStats(usageObj, Date.now() - startTime);
-                callbacks.onUsage(stats[0], stats[1]);
-              }
+          try {
+            let chunk: string = acc.append(data);
+            lineBuffer += chunk;
+            let lines: string[] = lineBuffer.split('\n');
+            if (lineBuffer.endsWith('\n')) {
+              lineBuffer = '';
             } else {
-              let delta: string = extractChatCompletionsDelta(sseData);
-              if (delta !== '') {
-                acc.fullContent += delta;
-                callbacks.onToken(delta);
-              }
-              let reasoning: string = extractChatCompletionsReasoning(sseData);
-              if (reasoning !== '') {
-                fullReasoning += reasoning;
-                callbacks.onReasoning(fullReasoning);
-              }
-              let usageObj: Record<string, Object> | null = extractChatCompletionsUsage(sseData);
-              if (usageObj !== null) {
-                let stats: number[] = deriveStreamStats(usageObj, Date.now() - startTime);
-                callbacks.onUsage(stats[0], stats[1]);
-              }
+              lineBuffer = lines.pop() as string;
             }
+            for (let i: number = 0; i < lines.length; i++) {
+              let line: string = lines[i];
+              let trimmed: string = line.trim();
+              if (trimmed === '' || trimmed === Constants.SSE_DONE_TOKEN) {
+                continue;
+              }
+              if (!trimmed.startsWith(Constants.SSE_DATA_PREFIX)) {
+                continue;
+              }
+              processSseData(trimmed.substring(Constants.SSE_DATA_PREFIX.length));
+            }
+          } catch (e) {
+            let err: Error = e as Error;
+            reject(err);
           }
         });
 
         httpRequest.on('dataEnd', () => {
           if (lineBuffer !== '') {
             let trimmed: string = lineBuffer.trim();
-            if (trimmed.startsWith(Constants.SSE_DATA_PREFIX)) {
-              let sseData: string = trimmed.substring(Constants.SSE_DATA_PREFIX.length);
-              if (sseData !== Constants.SSE_DONE_TOKEN) {
-                if (protocol === 'responses') {
-                  let delta: string = extractResponsesDelta(sseData);
-                  if (delta !== '') {
-                    acc.fullContent += delta;
-                    callbacks.onToken(delta);
-                  }
-                  let reasoning: string = extractResponsesReasoning(sseData);
-                  if (reasoning !== '') {
-                    fullReasoning += reasoning;
-                    callbacks.onReasoning(fullReasoning);
-                  }
-                  let usageObj: Record<string, Object> | null = extractResponsesUsage(sseData);
-                  if (usageObj !== null) {
-                    let stats: number[] = deriveStreamStats(usageObj, Date.now() - startTime);
-                    callbacks.onUsage(stats[0], stats[1]);
-                  }
-                } else if (protocol === 'anthropic') {
-                  let delta: string = extractAnthropicDelta(sseData);
-                  if (delta !== '') {
-                    acc.fullContent += delta;
-                    callbacks.onToken(delta);
-                  }
-                  let reasoning: string = extractAnthropicReasoning(sseData);
-                  if (reasoning !== '') {
-                    fullReasoning += reasoning;
-                    callbacks.onReasoning(fullReasoning);
-                  }
-                  let usageObj: Record<string, Object> | null = extractAnthropicUsage(sseData);
-                  if (usageObj !== null) {
-                    let stats: number[] = deriveStreamStats(usageObj, Date.now() - startTime);
-                    callbacks.onUsage(stats[0], stats[1]);
-                  }
-                } else {
-                  let delta: string = extractChatCompletionsDelta(sseData);
-                  if (delta !== '') {
-                    acc.fullContent += delta;
-                    callbacks.onToken(delta);
-                  }
-                  let reasoning: string = extractChatCompletionsReasoning(sseData);
-                  if (reasoning !== '') {
-                    fullReasoning += reasoning;
-                    callbacks.onReasoning(fullReasoning);
-                  }
-                  let usageObj: Record<string, Object> | null = extractChatCompletionsUsage(sseData);
-                  if (usageObj !== null) {
-                    let stats: number[] = deriveStreamStats(usageObj, Date.now() - startTime);
-                    callbacks.onUsage(stats[0], stats[1]);
-                  }
+            if (trimmed.startsWith(Constants.SSE_DATA_PREFIX) && trimmed !== Constants.SSE_DONE_TOKEN) {
+              try {
+                processSseData(trimmed.substring(Constants.SSE_DATA_PREFIX.length));
+              } catch (e) {
+                let err: Error = e as Error;
+                if (!settled) {
+                  settled = true;
+                  reject(err);
                 }
+                return;
               }
             }
             lineBuffer = '';
@@ -1056,6 +1323,10 @@ export class ChatService {
           }
         });
       });
+      // 结构化产出: 累积的工具调用/思考块签名随流结束返回给调用方
+      streamResult.toolCalls = ChatService.normalizeChatToolCalls(callAcc.calls);
+      streamResult.thinkingSignature = thinkingSignature;
+      streamResult.redactedThinking = redactedThinking;
     } catch (e) {
       let err: Error = e as Error;
       if (abortSignal.aborted) {
@@ -1085,6 +1356,26 @@ export class ChatService {
         callbacks.onDone(acc.fullContent);
       }
     }
+    return streamResult;
+  }
+
+  // 兜底补全: 缺名字的调用记录不送回(避免协议校验失败), 空 argsJson 填 '{}', 缺 id 补生成
+  private static normalizeChatToolCalls(calls: ToolCallRecord[]): ToolCallRecord[] {
+    let out: ToolCallRecord[] = [];
+    for (let i: number = 0; i < calls.length; i++) {
+      let call: ToolCallRecord = calls[i];
+      if (call.name === '') {
+        continue;
+      }
+      if (call.id === '') {
+        call.id = genToolCallId();
+      }
+      if (call.argsJson.trim() === '') {
+        call.argsJson = '{}';
+      }
+      out.push(call);
+    }
+    return out;
   }
 
   static abort(): void {

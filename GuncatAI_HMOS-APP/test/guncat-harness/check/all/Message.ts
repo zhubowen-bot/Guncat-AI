@@ -19,6 +19,9 @@ export class Message {
   // 由 API 返回的 usage 派生的统计: token 速度(tok/s)与缓存命中率(0..1), -1 表示无返回值
   tokenSpeed: number = -1;
   cacheHitRate: number = -1;
+  // Anthropic 协议思考块的签名(仅内存内有效, 不持久化): 聊天模式本地工具循环中,
+  // 思考模式下带 tool_use 的 assistant 消息回传给下一轮请求时需随思考块携带签名
+  thinkingSignature: string = '';
 
   static ofUser(id: string, content: string, displayContent: string,
     attachments: Attachment[]): Message {

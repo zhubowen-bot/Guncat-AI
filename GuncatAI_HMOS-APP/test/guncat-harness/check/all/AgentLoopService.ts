@@ -5,12 +5,16 @@
 //   anthropic-messages → content_block tool_use / input_json_delta + tool_result 回传
 // 循环驱动(执行工具/步数控制/历史裁剪)在 ChatViewModel.executeWorkLoop 中。
 import { http } from '@kit.NetworkKit';
-import { StreamAccumulator, getProtocol,
+import { StreamAccumulator, getProtocol, resolveEndpointUrl,
   extractChatCompletionsDelta, extractChatCompletionsReasoning, extractChatCompletionsUsage,
   extractResponsesDelta, extractResponsesReasoning, extractResponsesUsage, extractResponsesFailure,
   extractAnthropicDelta, extractAnthropicReasoning, extractAnthropicUsage, extractAnthropicFailure,
+  extractAnthropicSignature, extractAnthropicRedactedThinking,
   deriveStreamStats } from './ChatService.ts';
+import { ToolCallAccumulator, collectCompletionsToolDelta, collectResponsesToolItem,
+  collectAnthropicToolEvent, genToolCallId } from './ToolCallStream.ts';
 import { WorkFileService } from './WorkFileService.ts';
+import { WorkSkillService } from './WorkSkillService.ts';
 import { ApiConfig } from './ApiConfig.ts';
 import { ToolCallRecord } from './ToolCallRecord.ts';
 import { AbortSignal } from './Types.ts';
@@ -52,11 +56,16 @@ export class LoopError extends Error {
 // 与协议无关的循环消息: assistant 消息的工具调用与执行结果都挂在 toolCalls 上
 // (构建协议请求体时再拆分为 assistant(tool_calls) + tool/function_call_output/tool_result 消息)
 // imageDataUrl 仅用于 user 消息携带工作区图片(view_image 工具注入), 不持久化。
+// reasoning/thinkingSignature/redactedThinking 仅在内存循环内使用: Anthropic 协议思考模式下
+// 工具循环的 assistant 消息必须把思考块原样回传(置于消息首位), 否则服务端 400。
 export class LoopMessage {
   role: string = 'user'; // 'system' | 'user' | 'assistant'
   content: string = '';
   toolCalls: ToolCallRecord[] = [];
   imageDataUrl: string = '';
+  reasoning: string = '';
+  thinkingSignature: string = '';
+  redactedThinking: string = '';
 
   static system(content: string): LoopMessage {
     let m: LoopMessage = new LoopMessage();
@@ -89,12 +98,26 @@ export class LoopMessage {
     m.toolCalls = calls;
     return m;
   }
+
+  // 由单轮结果构造 assistant 循环消息: 同时携带思考文本与签名,
+  // 供 Anthropic 协议在下一轮请求中回传 thinking 块(思考模式下必传)
+  static fromTurn(turn: LoopTurnResult): LoopMessage {
+    let m: LoopMessage = LoopMessage.assistant(turn.content, turn.toolCalls);
+    m.reasoning = turn.reasoning;
+    m.thinkingSignature = turn.thinkingSignature;
+    m.redactedThinking = turn.redactedThinking;
+    return m;
+  }
 }
 
 // 单轮模型返回
 export class LoopTurnResult {
   content: string = '';
   reasoning: string = '';
+  // Anthropic 协议: 思考块的签名(signature_delta)与加密思考块(redacted_thinking.data),
+  // 回传 thinking 块时随块携带, 供服务端校验
+  thinkingSignature: string = '';
+  redactedThinking: string = '';
   toolCalls: ToolCallRecord[] = [];
   tokenSpeed: number = -1;
   cacheHitRate: number = -1;
@@ -119,48 +142,18 @@ export class LoopTurnCallbacks {
     (_attempt: number, _reason: string): void => {};
 }
 
-// 流式工具调用累积器: completions/responses/anthropic 三种协议统一汇入
-class ToolCallAccumulator {
-  calls: ToolCallRecord[] = [];
-  // 协议内 index(completions 的 delta.index / anthropic 的 block index) → calls 下标
-  keyMap: number[] = [];
-
-  // 取 key 对应的记录, 不存在则用 maker 创建并登记
-  patch(key: number, maker: () => ToolCallRecord): ToolCallRecord {
-    for (let i: number = 0; i < this.keyMap.length; i++) {
-      if (this.keyMap[i] === key) {
-        return this.calls[i];
-      }
-    }
-    let rec: ToolCallRecord = maker();
-    this.calls.push(rec);
-    this.keyMap.push(key);
-    return rec;
-  }
-
-  // 无显式 index 的协议(responses)直接整块追加
-  append(rec: ToolCallRecord): void {
-    this.calls.push(rec);
-    this.keyMap.push(-1 - this.calls.length);
-  }
-
-  find(key: number): ToolCallRecord | null {
-    for (let i: number = 0; i < this.keyMap.length; i++) {
-      if (this.keyMap[i] === key) {
-        return this.calls[i];
-      }
-    }
-    return null;
-  }
-}
-
+// 流式工具调用累积器: 三种协议统一汇入(共享实现见 ToolCallStream.ts)
 export class AgentLoopService {
   private static activeRequest: http.HttpRequest | null = null;
   private static cachedToolDefs: Record<string, Object>[] = [];
+  private static cachedToolDefsFlag: boolean = false;
 
-  private static getToolDefs(): Record<string, Object>[] {
-    if (AgentLoopService.cachedToolDefs.length === 0) {
-      AgentLoopService.cachedToolDefs = WorkFileService.toolDefs();
+  // 工具表缓存(按服务端联网搜索开关区分: 开关变化时 search_web 描述在"标准/兜底"间切换)
+  private static getToolDefs(webSearchEnabled: boolean): Record<string, Object>[] {
+    if (AgentLoopService.cachedToolDefs.length === 0 ||
+      AgentLoopService.cachedToolDefsFlag !== webSearchEnabled) {
+      AgentLoopService.cachedToolDefs = WorkFileService.toolDefs(webSearchEnabled);
+      AgentLoopService.cachedToolDefsFlag = webSearchEnabled;
     }
     return AgentLoopService.cachedToolDefs;
   }
@@ -174,25 +167,10 @@ export class AgentLoopService {
     includeTools: boolean = true,
     toolOverrides: Record<string, Object>[] | null = null): Promise<LoopTurnResult> {
     let protocol: string = getProtocol(config.provider);
-    let path: string;
-    if (protocol === 'responses') {
-      path = Constants.RESPONSES_PATH;
-    } else if (protocol === 'anthropic') {
-      let trimmedBase: string = config.baseUrl.replace(/\/+$/, '');
-      if (trimmedBase.endsWith('/v1') || trimmedBase.endsWith('/anthropic/v1')) {
-        path = Constants.MESSAGES_PATH;
-      } else if (trimmedBase === 'https://api.deepseek.com' || trimmedBase === 'http://api.deepseek.com') {
-        path = Constants.ANTHROPIC_DEEPSEEK_MESSAGES_PATH;
-      } else {
-        path = Constants.ANTHROPIC_V1_MESSAGES_PATH;
-      }
-    } else {
-      path = Constants.CHAT_COMPLETIONS_PATH;
-    }
-    let url: string = config.baseUrl.replace(/\/+$/, '') + path;
+    let url: string = resolveEndpointUrl(config, protocol);
 
     let tools: Record<string, Object>[] = includeTools ?
-      (toolOverrides !== null ? toolOverrides : AgentLoopService.getToolDefs()) : [];
+      (toolOverrides !== null ? toolOverrides : AgentLoopService.getToolDefs(webSearchEnabled)) : [];
     let body: Record<string, Object>;
     if (protocol === 'responses') {
       body = AgentLoopService.buildResponsesBody(config, messages, tools, thinkingEnabled, reasoningEffort, webSearchEnabled);
@@ -237,7 +215,7 @@ export class AgentLoopService {
           result.reasoning += reasoning;
           callbacks.onReasoning(result.reasoning);
         }
-        AgentLoopService.collectResponsesToolItem(sseData, callAcc);
+        collectResponsesToolItem(sseData, callAcc);
         let usageObj: Record<string, Object> | null = extractResponsesUsage(sseData);
         if (usageObj !== null) {
           let stats: number[] = deriveStreamStats(usageObj, Date.now() - startTime);
@@ -262,7 +240,16 @@ export class AgentLoopService {
           result.reasoning += reasoning;
           callbacks.onReasoning(result.reasoning);
         }
-        AgentLoopService.collectAnthropicToolEvent(sseData, callAcc);
+        // 思考块签名与加密思考块: 回传 thinking 块时随块携带(服务端校验所需)
+        let signature: string = extractAnthropicSignature(sseData);
+        if (signature !== '') {
+          result.thinkingSignature += signature;
+        }
+        let redacted: string = extractAnthropicRedactedThinking(sseData);
+        if (redacted !== '') {
+          result.redactedThinking = redacted;
+        }
+        collectAnthropicToolEvent(sseData, callAcc);
         let usageObj: Record<string, Object> | null = extractAnthropicUsage(sseData);
         if (usageObj !== null) {
           let stats: number[] = deriveStreamStats(usageObj, Date.now() - startTime);
@@ -282,7 +269,7 @@ export class AgentLoopService {
           result.reasoning += reasoning;
           callbacks.onReasoning(result.reasoning);
         }
-        AgentLoopService.collectCompletionsToolDelta(sseData, callAcc);
+        collectCompletionsToolDelta(sseData, callAcc);
         let usageObj: Record<string, Object> | null = extractChatCompletionsUsage(sseData);
         if (usageObj !== null) {
           let stats: number[] = deriveStreamStats(usageObj, Date.now() - startTime);
@@ -739,163 +726,6 @@ export class AgentLoopService {
     }
   }
 
-  // ===== 流式工具调用累积(按协议) =====
-
-  // completions: delta.tool_calls[{index, id?, function?:{name?, arguments?}}]
-  private static collectCompletionsToolDelta(sseData: string, acc: ToolCallAccumulator): void {
-    try {
-      let json: Object = JSON.parse(sseData);
-      if (typeof json !== 'object' || json === null) {
-        return;
-      }
-      let choices: Object = (json as Record<string, Object>)['choices'];
-      if (!(choices instanceof Array) || choices.length === 0) {
-        return;
-      }
-      let first: Object = choices[0];
-      if (typeof first !== 'object' || first === null) {
-        return;
-      }
-      let delta: Object = (first as Record<string, Object>)['delta'];
-      if (typeof delta !== 'object' || delta === null) {
-        return;
-      }
-      let rawCalls: Object = (delta as Record<string, Object>)['tool_calls'];
-      if (!(rawCalls instanceof Array)) {
-        return;
-      }
-      let arr: Object[] = rawCalls as Object[];
-      for (let i: number = 0; i < arr.length; i++) {
-        let item: Object = arr[i];
-        if (typeof item !== 'object' || item === null) {
-          continue;
-        }
-        let rec: Record<string, Object> = item as Record<string, Object>;
-        let rawIndex: Object = rec['index'];
-        let key: number = acc.calls.length;
-        if (typeof rawIndex === 'number') {
-          key = rawIndex as number;
-        }
-        let call: ToolCallRecord = acc.patch(key, (): ToolCallRecord => {
-          return ToolCallRecord.of('', '', '');
-        });
-        let id: Object = rec['id'];
-        if (typeof id === 'string' && (id as string) !== '') {
-          call.id = id as string;
-        }
-        let fn: Object = rec['function'];
-        if (typeof fn === 'object' && fn !== null) {
-          let fnRec: Record<string, Object> = fn as Record<string, Object>;
-          let name: Object = fnRec['name'];
-          if (typeof name === 'string' && (name as string) !== '') {
-            call.name = name as string;
-          }
-          let args: Object = fnRec['arguments'];
-          if (typeof args === 'string') {
-            call.argsJson += args as string;
-          }
-        }
-      }
-    } catch (e) {
-      // 单条 SSE 解析失败忽略
-    }
-  }
-
-  // responses: response.output_item.done 携带完整 function_call 项
-  private static collectResponsesToolItem(sseData: string, acc: ToolCallAccumulator): void {
-    try {
-      let json: Object = JSON.parse(sseData);
-      if (typeof json !== 'object' || json === null) {
-        return;
-      }
-      let type: Object = (json as Record<string, Object>)['type'];
-      if (typeof type !== 'string' || (type as string) !== 'response.output_item.done') {
-        return;
-      }
-      let item: Object = (json as Record<string, Object>)['item'];
-      if (typeof item !== 'object' || item === null) {
-        return;
-      }
-      let itemRec: Record<string, Object> = item as Record<string, Object>;
-      let itemType: Object = itemRec['type'];
-      if (typeof itemType !== 'string' || (itemType as string) !== 'function_call') {
-        return;
-      }
-      let callId: Object = itemRec['call_id'];
-      let itemId: Object = itemRec['id'];
-      let name: Object = itemRec['name'];
-      let args: Object = itemRec['arguments'];
-      let call: ToolCallRecord = ToolCallRecord.of(
-        typeof callId === 'string' ? callId as string :
-          (typeof itemId === 'string' ? itemId as string : AgentLoopService.genCallId()),
-        typeof name === 'string' ? name as string : '',
-        typeof args === 'string' ? args as string : ''
-      );
-      acc.append(call);
-    } catch (e) {
-      // ignore
-    }
-  }
-
-  // anthropic: content_block_start(tool_use) + input_json_delta 增量
-  private static collectAnthropicToolEvent(sseData: string, acc: ToolCallAccumulator): void {
-    try {
-      let json: Object = JSON.parse(sseData);
-      if (typeof json !== 'object' || json === null) {
-        return;
-      }
-      let type: Object = (json as Record<string, Object>)['type'];
-      if (typeof type !== 'string') {
-        return;
-      }
-      let eventType: string = type as string;
-      if (eventType === 'content_block_start') {
-        let rawIndex: Object = (json as Record<string, Object>)['index'];
-        let block: Object = (json as Record<string, Object>)['content_block'];
-        if (typeof block !== 'object' || block === null) {
-          return;
-        }
-        let blockRec: Record<string, Object> = block as Record<string, Object>;
-        let blockType: Object = blockRec['type'];
-        if (typeof blockType !== 'string' || (blockType as string) !== 'tool_use') {
-          return;
-        }
-        let key: number = acc.calls.length;
-        if (typeof rawIndex === 'number') {
-          key = rawIndex as number;
-        }
-        acc.patch(key, (): ToolCallRecord => {
-          let id: Object = blockRec['id'];
-          let name: Object = blockRec['name'];
-          return ToolCallRecord.of(
-            typeof id === 'string' ? id as string : AgentLoopService.genCallId(),
-            typeof name === 'string' ? name as string : '', '');
-        });
-      } else if (eventType === 'content_block_delta') {
-        let rawIndex: Object = (json as Record<string, Object>)['index'];
-        let delta: Object = (json as Record<string, Object>)['delta'];
-        if (typeof delta !== 'object' || delta === null || typeof rawIndex !== 'number') {
-          return;
-        }
-        let deltaRec: Record<string, Object> = delta as Record<string, Object>;
-        let deltaType: Object = deltaRec['type'];
-        if (typeof deltaType !== 'string' || (deltaType as string) !== 'input_json_delta') {
-          return;
-        }
-        let call: ToolCallRecord | null = acc.find(rawIndex as number);
-        if (call === null) {
-          return;
-        }
-        let partial: Object = deltaRec['partial_json'];
-        if (typeof partial === 'string') {
-          call.argsJson += partial as string;
-        }
-      }
-    } catch (e) {
-      // ignore
-    }
-  }
-
   // 兜底补全: 缺名字的调用记录不送回(避免协议校验失败), 空 argsJson 填 '{}'
   private static normalizeCalls(callAcc: ToolCallRecord[]): ToolCallRecord[] {
     let out: ToolCallRecord[] = [];
@@ -905,7 +735,7 @@ export class AgentLoopService {
         continue;
       }
       if (call.id === '') {
-        call.id = AgentLoopService.genCallId();
+        call.id = genToolCallId();
       }
       if (call.argsJson.trim() === '') {
         call.argsJson = '{}';
@@ -913,10 +743,6 @@ export class AgentLoopService {
       out.push(call);
     }
     return out;
-  }
-
-  private static genCallId(): string {
-    return 'call_' + Date.now().toString() + '_' + Math.floor(Math.random() * 100000).toString();
   }
 
   // ===== 协议请求体构建 =====
@@ -1105,8 +931,11 @@ export class AgentLoopService {
           AgentLoopService.appendAnthropicText(msgs, 'user', m.content);
         }
       } else if (m.role === 'assistant') {
+        // 思考模式下必须把上一轮 assistant 的思考块回传(置于消息首位), 否则服务端 400;
+        // 思考文本与签名仅内存循环内的消息携带(fromTurn), 历史重建的消息不回传
+        let thinking: Object[] = AgentLoopService.anthropicThinkingBlocks(m, thinkingEnabled);
         if (m.toolCalls.length > 0) {
-          let blocks: Object[] = [];
+          let blocks: Object[] = thinking.slice();
           if (m.content !== '') {
             blocks.push({ type: 'text', text: m.content });
           }
@@ -1131,11 +960,19 @@ export class AgentLoopService {
           }
           AgentLoopService.appendAnthropicBlocks(msgs, 'user', results);
         } else if (m.content !== '') {
-          AgentLoopService.appendAnthropicText(msgs, 'assistant', m.content);
+          if (thinking.length > 0) {
+            let blocks: Object[] = thinking.slice();
+            blocks.push({ type: 'text', text: m.content });
+            AgentLoopService.appendAnthropicBlocks(msgs, 'assistant', blocks);
+          } else {
+            AgentLoopService.appendAnthropicText(msgs, 'assistant', m.content);
+          }
         }
       }
     }
-    let maxTokens: number = config.maxTokens !== null ? config.maxTokens : 8192;
+    // 未配置时默认 128K(与聊天模式一致); 顶满由粘性收尾提示续跑
+    let maxTokens: number = config.maxTokens !== null ?
+      config.maxTokens : Constants.DEFAULT_MAX_OUTPUT_TOKENS;
     let finalTools: Record<string, Object>[] = AgentLoopService.anthropicTools(tools);
     if (webSearchEnabled) {
       let searchTool: Record<string, Object> = {
@@ -1213,6 +1050,27 @@ export class AgentLoopService {
       });
     }
     return out;
+  }
+
+  // Anthropic 思考回传块(assistant 消息的首位块): 思考模式开启且本轮确有思考内容时生成。
+  // 签名仅在流式捕获到时携带(官方 API 校验签名; 部分兼容服务不返回签名则省略该字段)。
+  private static anthropicThinkingBlocks(m: LoopMessage, thinkingEnabled: boolean): Object[] {
+    let blocks: Object[] = [];
+    if (!thinkingEnabled) {
+      return blocks;
+    }
+    if (m.redactedThinking !== '') {
+      blocks.push({ type: 'redacted_thinking', data: m.redactedThinking });
+      return blocks;
+    }
+    if (m.reasoning !== '') {
+      let block: Record<string, Object> = { type: 'thinking', thinking: m.reasoning };
+      if (m.thinkingSignature !== '') {
+        block['signature'] = m.thinkingSignature;
+      }
+      blocks.push(block);
+    }
+    return blocks;
   }
 
   // data:image/png;base64,XXXX → ['image/png', 'XXXX']
@@ -1371,9 +1229,14 @@ export class AgentLoopService {
     lines.push('- str_replace_editor(command, path, …)：多命令编辑器。view 分页查看；create 新建；str_replace 唯一匹配替换（同 edit）；insert 在指定行后插入。在指定行插入内容时用它。');
     lines.push('**数据处理**');
     lines.push('- transform_file(input, steps, output?, format?, json_path?, has_header?, delimiter?, bom?, preview?)：对工作区数据文件执行本地转换管道——过滤/派生列/重算列/正则提取/拆列/去重/排序/替换/数值化，以及 CSV↔TSV↔JSON↔Markdown 表格↔XLSX 互转。数据全程不进入对话上下文，是处理大文件与非标格式的专用工具（read_file 读不全的表、要批量清洗/提取/转换的数据都归它）。流程：先省略 output 预览前 3 行 → 调整 steps → 带 output 写盘 → read_file 抽查。steps 完整语法先 load_skill("data")。限制：输入 ≤2MB 文本、≤10 万行、steps ≤30 步；小表格直接 write_file/write_csv 更快，不要滥用。');
+    lines.push('- run_js(code, files?, timeout_ms?)：在本机独立 JS 引擎沙箱里执行一段 JavaScript——"写几行代码算一下"的通用手段。适合：日期/数值/单位换算、正则清洗、JSON 重塑与合并、统计汇总、算法试算与验证，以及批量生成结构化数据（用 JS 拼出完整 JSON 写出文件，再交给 write_docx/write_xlsx/write_pptx 成文）。沙箱是纯计算环境：无网络、无文件系统、无模块加载（不支持 import/require）。文件必须显式进出——files 里列出的工作区文件会预载为只读的 inputs（键=去掉 "./" 前缀的相对路径，结果里会列出实际键名），脚本里用 inputs["路径"] 或 read("路径") 读取（read 对 "./"、重复斜杠等写法会自动归一化；没传 files 时调用 read 会直接报错提示）；脚本内 write("路径", 内容) 声明的输出会在执行成功后写入工作区。返回值取脚本最后一条表达式的值（要显式返回就写 (() => { ...; return 结果; })()）；console.log/print 的输出随结果一并返回。限制：代码 ≤128KB、默认执行上限 10 秒（timeout_ms 最大 30000）、死循环无法中断（超时会放弃等待并计入上限，两次后本会话停用）、单次输出 ≤16 个文件且单文件 ≤512KB。常规表格转换优先用 transform_file，读大文件优先用 read_file/search_files。');
     lines.push('**文档生成**');
-    lines.push('- write_docx(path, markdown)：把 Markdown 生成 Word 文档（.docx）。支持 标题(#~######)/粗体/斜体/有序无序列表/表格/引用/图片(data URL)，图片写法：![说明](data:image/png;base64,…)。可选 title 参数为文档元数据标题。');
-    lines.push('- write_xlsx(path, table)：把表格数据生成 Excel（.xlsx），首行为表头。table 用 Markdown 表格、CSV 或 TSV（自动识别，含 | 时按 Markdown 解析）。');
+    lines.push('- write_docx(path, doc?, doc_file?, markdown?, title?, style?)：生成/重建 Word 文档（.docx）。三种输入三选一：doc（Doc JSON 结构化源——封面/目录/分级标题(H1~H6)/正文/列表/表格/图片/引用/代码块，图片 src 支持工作区相对路径、data URL、http，正式文档一律用它）；doc_file（工作区中 Doc JSON 文件路径——长文档先 write_file/append_file 分块写好再导出，改内容后可重复导出）；markdown（简单内容直接用，标题/列表/表格/引用/图片同样支持，图片写法 ![说明](相对路径) 或 data URL）。title 可选文档标题，style 可选样式预设 default/academic/minimal。做正式 Word 文档前必须先 load_skill("docx") 获取 Doc 语法与排版规范。');
+    lines.push('- read_docx(path)：读回 Word 文档的 Doc JSON 源。本应用生成的 .docx 无损还原；外来 docx 为近似导入（标题/正文/列表/表格还原，图片抽取到 docx_images/<文件名>/ 供 view_image 查看与再次引用，版式细节不保留）。编辑或仿制 Word 文档前先读它。');
+    lines.push('- edit_docx(path, ops)：对已有 .docx 应用结构化操作后保存（外来 docx 会先自动备份原文件为 *_原版备份.docx）。ops 为 JSON 数组：set_title{title}/set_subtitle{subtitle}/set_author{author}/set_style{style}/set_cover{cover}/set_toc{toc}/add_block{index?,block}/delete_block{index}/update_block{index,block 部分字段}/move_block{from,to}/replace_text{find,replace}；index 从 1 起。改单块用 update_block，全局改词用 replace_text，换样式用 set_style。');
+    lines.push('- write_xlsx(path, workbook?, workbook_file?, table?, name?, style?)：生成/重建 Excel 工作簿（.xlsx）。三种输入三选一：workbook（Workbook JSON 结构化源——多工作表/表头加粗/公式（单元格值以 = 开头，如 "=SUM(B2:B9)"）/数字格式（formats 列格式：money/int/percent/year/date/number/text）/列宽（colWidths）/冻结窗格（freeze），正式表格一律用它）；workbook_file（工作区中 Workbook JSON 文件路径——长表先 write_file/append_file 分块写好再导出）；table（简单表格直接用 Markdown 表格/CSV/TSV，首行作表头）。name 可选工作簿名，style 可选样式预设 default/academic/minimal。做正式 Excel 前必须先 load_skill("xlsx") 获取 Workbook 语法与表格规范（公式优先/数字格式/负数零值显示）。');
+    lines.push('- read_xlsx(path)：读回 Excel 工作簿的 Workbook JSON 源。本应用生成的 .xlsx 无损还原；外来 xlsx 为近似导入（各工作表数值/文本/公式还原，样式/合并等细节不保留）。编辑或仿制 Excel 文件前先读它。');
+    lines.push('- edit_xlsx(path, ops)：对已有 .xlsx 应用结构化操作后保存（外来 xlsx 会先自动备份原文件为 *_原版备份.xlsx）。ops 为 JSON 数组：set_name{name}/set_style{style}/set_sheet_name{sheet,name}/add_sheet{sheet,index?}/delete_sheet{sheet}/move_sheet{sheet,to}/add_row{sheet,row,index?}/delete_row{sheet,index}/update_row{sheet,index,row}/set_cell{sheet,row,col,value}/set_header{sheet,col,value}/replace_text{find,replace}；sheet 用工作表名，row/index 按数据行从 1 起算（不含表头，与 read_xlsx 的 rows 一一对应），col 从 1 起（1=A）；改表头单元格用 set_header。改单元格用 set_cell，加行用 add_row，全局改词用 replace_text。');
     lines.push('- write_csv(path, table, bom?)：把表格数据生成 CSV（UTF-8 默认带 BOM，Excel/WPS 打开中文不乱码；RFC 4180 转义）。table 与 write_xlsx 相同的解析。轻量结构化数据、后续还要程序化处理时选 CSV；需要样式/多工作表用 write_xlsx。');
     lines.push('- write_pptx(path, deck?, deck_file?, outline?, theme?, title?)：生成/重建演示文稿（16:9，.pptx）。三种输入二选一：deck（Deck JSON 结构化源——13 种版式、8 套主题、图表/表格/图片/备注，正式 PPT 一律用它）；deck_file（工作区中 Deck JSON 文件路径——长 deck 先 write_file/append_file 分块写好再导出，改内容后可重复导出）；outline（简易大纲："# 页标题"开新页、"## 标题"开分节页、"- 要点"一级要点、缩进"- 要点"二级要点）。做正式 PPT 前必须先 load_skill("ppt") 获取 Deck 语法与设计规范。theme 可选预设：brand-blue/midnight/forest/sunset/violet/graphite/ivory/crimson。');
     lines.push('- read_ppt(path)：读回演示文稿的 Deck JSON 源。本应用生成的 .pptx 无损还原；外来 pptx 为近似导入（文本/表格/版面保留，图片与图表数据不保留）。编辑或仿制前先读它。');
@@ -1393,7 +1256,7 @@ export class AgentLoopService {
     lines.push('');
     lines.push('# 工具调用方法论（四步法）');
     lines.push('1. **明确信息缺口**：先问自己"我还缺什么信息？"，把缺口写成一句话。说不清缺什么的调用，不做。');
-    lines.push('2. **选择工具**：要原文 → read_file/parse_document；要定位 → search_files（文本与 Office）/search_pdf（PDF）/list_files；要看图 → view_image；要清洗/转换/提取大文件数据 → transform_file（先 load_skill）；要产出 → write_* 系列（演示文稿先 load_skill）；要管理进度 → todo_write。');
+    lines.push('2. **选择工具**：要原文 → read_file/parse_document；要定位 → search_files（文本与 Office）/search_pdf（PDF）/list_files；要看图 → view_image；要清洗/转换/提取大文件数据 → transform_file（先 load_skill）；要写代码算/程序化拼数据 → run_js；要产出 → write_* 系列（演示文稿先 load_skill）；要管理进度 → todo_write。');
     lines.push('3. **构造最准确的输入**：目标明确（提取什么、生成什么）、范围限定（哪个文件/目录/章节）、期望输出格式（结构化/原文/表格）。');
     lines.push('4. **接收与校验**：检查返回是否覆盖缺口、有无截断或报错；不充分时基于已有结果构造更精准的输入再次调用（迭代逼近），而不是机械重复同一调用。');
     lines.push('');
@@ -1429,6 +1292,18 @@ export class AgentLoopService {
     lines.push('- **交付格式可读优先**：面向用户阅读的最终交付物（报告、方案、纪要、总结等文档）生成 .docx，表格数据生成 .xlsx，演示生成 .pptx——这些是手机上可直接打开的格式，不要把 .md/.markdown 当作交付格式。若中途已用 .md 写作了内容，交付前用 write_docx 转成 .docx 再交付（原草稿可保留）。代码、配置与机器可读数据（json/csv 等）保持源格式；用户明确要求 .md 或纯文本时按用户要求执行。');
     lines.push('- 全程使用用户的语言。');
     lines.push('');
+    lines.push('# Mermaid 导图（最终总结必附）');
+    lines.push('- **最终总结末尾必须附上 mermaid 导图**：把任务目标、关键执行路径与产出文件浓缩成一张竖屏可读的总览图（图前配一行小标题，如 **任务导图**），方便用户一眼回顾全貌。导图是总结的标配部分，漏掉视为交付不完整；唯一例外是无任何工具调用的单轮极简回复。');
+    lines.push('- Mermaid 输出规范（渲染目标设备：手机竖屏，严格遵守）：');
+    lines.push('1. 只使用 flowchart TD（自上而下）或 sequenceDiagram；禁止 mindmap、pie、quadrantChart、gantt、graph LR。即使内容天然像脑图，也必须转写成 flowchart TD——竖屏上脑图径向铺开成宽图，缩到屏宽后文字不可读。');
+    lines.push('2. 每张 flowchart 节点总数 ≤ 8；同一层并行分支 ≤ 3；宁可加深层级，不加宽分支。流程更长时拆成多张图，每张图前配一行小标题。');
+    lines.push('3. 节点内文字尽量短：中文 ≤ 10 字，英文 ≤ 3 个短词；只允许汉字、字母、数字与空格，禁止任何标点——尤其不得出现英文双引号，标签内多一个引号就会解析失败；解释性内容写在图外正文，禁止塞进节点。');
+    lines.push('4. 禁止 subgraph 嵌套，最多允许一层 subgraph。');
+    lines.push('5. 连线保持单向自上而下，避免回环箭头与交叉线；需要表达循环时用正文文字补充说明。每行只写一条连线，不把多条边挤在同一行。');
+    lines.push('6. 节点 id 用单字母（A、B、C…），显示文本写在带引号的方括号内，如 A["第一步"]。');
+    lines.push('7. 每张图首行添加布局参数：flowchart 用 %%{init: {"flowchart": {"nodeSpacing": 40, "rankSpacing": 60, "useMaxWidth": true}}}%%；sequenceDiagram 用 %%{init: {"sequence": {"useMaxWidth": true}}}%%。');
+    lines.push('8. 输出前自查（缺一不可）：开始围栏的语言标记精确为 mermaid；首行是 init 布局参数，随后才是 flowchart TD 或 sequenceDiagram；节点数、分支数、字数均未超限；每行恰好一条连线，节点文字内无标点、引号成对；围栏已正确闭合。任何一项不符，重写后再输出。');
+    lines.push('');
     lines.push('# 反幻觉纪律（严格遵守）');
     lines.push('1. **禁止编造**：绝不编造文件内容、数据、工具结果。无法确认的明确标注"[需核实]"。');
     lines.push('2. **禁止臆断**：对不确定的信息，说明不确定性并给出验证方向。');
@@ -1454,9 +1329,16 @@ export class AgentLoopService {
     lines.push('- [ ] 关键内容抽查核对过（read_file / search_files）？');
     lines.push('- [ ] 所有失败的工具调用都已如实报告？');
     lines.push('- [ ] 总结覆盖了每个产出文件的路径与用途？没有"等""略"类省略？');
+    lines.push('- [ ] 最终总结已按规范附上 mermaid 导图（flowchart TD / sequenceDiagram，节点≤8，节点文字无标点无引号，首行 init 参数，围栏闭合）？');
     lines.push('- [ ] 结论都有工作区内容或工具结果支撑？不确定处已标注？');
     lines.push('- [ ] 全程使用用户的语言？');
     lines.push('');
+    // 技能清单注入在提示词末尾: 静态注册表生成, 逐字节稳定, 不破坏前缀缓存(设计见本文件缓存说明)
+    let skillsSection: string = WorkSkillService.promptSection();
+    if (skillsSection !== '') {
+      lines.push(skillsSection);
+      lines.push('');
+    }
     lines.push('现在开始：收到任务后，先分析复杂度，再按上述流程执行。');
     AgentLoopService.cachedWorkPrompt = lines.join('\n');
     return AgentLoopService.cachedWorkPrompt;

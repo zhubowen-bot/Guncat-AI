@@ -4,7 +4,7 @@
 
 Guncat Work is a native HarmonyOS AI chat client built with ArkTS and ArkUI. Its primary interface is not hosted in a WebView.
 
-Current app version: `6.1.2`
+Current app version: `6.2.0`
 
 ## Features
 
@@ -114,8 +114,8 @@ The final read-aloud implementation uses HarmonyOS CoreSpeechKit `textToSpeech`.
 Work mode is an **independent identity parallel to the chat agents** — the 🛠 "Work Mode" entry in its own "Agent Mode" group above the "Chat Mode" section header in the drawer. It opens an Agent loop with a per-conversation local sandbox workspace and tool-calling capability, allowing the agent to autonomously complete multi-step, long-horizon tasks. See "[Work mode architecture & maintenance guide](#work-mode-architecture--maintenance-guide)" below.
 
 - **Sandbox workspace**: each work conversation maps to `filesDir/workspaces/<convId>/`, with upload, `.zip` export, and clear actions. Everything stays inside the app sandbox plus system safe components (document picker) — **no new permissions**.
-- **36 local tools**: file CRUD (list/read/write/append/delete/create_dir/move/search, with `glob` filename filtering on search_files), task checklist (`todo_write`), image viewing (`view_image`, routed to the main model's multimodal vision), web download (`download_file`, pulls linked files into the workspace), PDF parsing (`parse_document` + automatic `read_file` routing), Office generation (`write_docx` / `write_xlsx` / `write_csv`), data pipeline (`transform_file`, local cleaning/transformation/conversion of large files without entering model context), PPT read/write/edit (`write_pptx` / `read_ppt` / `edit_ppt`, on a Deck JSON intermediate layer), SVG image generation (`write_svg`, vector output + PNG preview), and the skill system (`list_skills` / `load_skill`, on-demand domain guides). New in 6.1 (DeepSeek Harness port): `glob` / `grep` (pattern-based file lookup and regex content search), `edit` / `str_replace_editor` (exact character-level editing with a diff card), `web_fetch` (fetch page/API source as readable text), `ask_user_question` (ask the user and wait for an answer), `schedule_create/list/delete` (session-local reminders), `goal_create/get/update` (session goal), `subagent` (child-agent delegation), `session_search` (session event-log search).
-- **Skill system**: domain operation guides are packaged under `rawfile/skills/<id>/` (SKILL.md + reference/*.md). The system prompt keeps only a one-line trigger (preserving the byte-stable KV-cache prefix); the model loads skills on demand via `list_skills`/`load_skill`. The bundled `ppt` skill covers the Deck JSON syntax, design guidelines, themes, and self-check lists; the `svg` skill covers SVG authoring rules, the "generate → preview → iterate" workflow, and recipes for icons/flowcharts/infographics.
+- **41 local tools**: file CRUD (list/read/write/append/delete/create_dir/move/search, with `glob` filename filtering on search_files), task checklist (`todo_write`), image viewing (`view_image`, routed to the main model's multimodal vision), web download (`download_file`, pulls linked files into the workspace), PDF parsing (`parse_document` + automatic `read_file` routing), Office generation (`write_docx` / `write_xlsx` / `write_csv`), data pipeline (`transform_file`, local cleaning/transformation/conversion of large files without entering model context), PPT read/write/edit (`write_pptx` / `read_ppt` / `edit_ppt`, on a Deck JSON intermediate layer), Word read/write/edit (`write_docx` / `read_docx` / `edit_docx`, on a Doc JSON intermediate layer), Excel read/write/edit (`write_xlsx` / `read_xlsx` / `edit_xlsx`, on a Workbook JSON intermediate layer), SVG image generation (`write_svg`, vector output + PNG preview), and the skill system (`list_skills` / `load_skill`, on-demand domain guides). New in 6.1 (DeepSeek Harness port): `glob` / `grep` (pattern-based file lookup and regex content search), `edit` / `str_replace_editor` (exact character-level editing with a diff card), `web_fetch` (fetch page/API source as readable text), `ask_user_question` (ask the user and wait for an answer), `schedule_create/list/delete` (session-local reminders), `goal_create/get/update` (session goal), `subagent` (child-agent delegation), `session_search` (session event-log search).
+- **Skill system**: domain operation guides are packaged under `rawfile/skills/<id>/` (SKILL.md + reference/*.md). The system prompt keeps only a one-line trigger (preserving the byte-stable KV-cache prefix); the model loads skills on demand via `list_skills`/`load_skill`. The bundled `ppt` skill covers the Deck JSON syntax, design guidelines, themes, and self-check lists; the `docx` skill covers the Doc JSON syntax and Chinese typography rules; the `xlsx` skill covers the Workbook JSON syntax and formula-first / number-format conventions; the `svg` skill covers SVG authoring rules, the "generate → preview → iterate" workflow, and recipes for icons/flowcharts/infographics.
 - **Local parsing engine**: `.docx/.xlsx/.pptx/.pdf` text is extracted entirely on-device — no multimodal parsing API and no quota consumption.
 - **Task checklist discipline**: complex tasks start with a `todo_write` checklist; checklist and workspace state reach the model through a "runtime context" snapshot appended to the tail of the conversation. Progress is updated item by item.
 - **Codex-style timeline**: each turn is its own message, laid out chronologically as "thinking → tool steps → answer" inside a single-container timeline; tool steps expand to show arguments and results.
@@ -206,7 +206,13 @@ entry/src/main/ets/
 │   └── VoiceInputService.ets
 ├── export/
 │   ├── DocxExporter.ets            # Markdown→docx (includes buildDocxBytes for work mode)
-│   ├── XlsxExporter.ets            # Table→xlsx (includes buildXlsxFromRows)
+│   ├── DocModel.ets                # Word intermediate layer: Doc JSON parse/validate/MdToDoc/DocOps (pure logic)
+│   ├── DocxBuilder.ets             # Doc→.docx renderer (heading sizes, images, embedded docProps/doc.json source)
+│   ├── DocxImporter.ets            # .docx→Doc (lossless from embedded source / XML import + word/media extraction)
+│   ├── XlsxExporter.ets            # Table→xlsx (includes buildXlsxFromRows for transform_file)
+│   ├── XlsxModel.ets               # Excel intermediate layer: Workbook JSON parse/validate/MdToXlsx/XlsxOps (pure logic)
+│   ├── XlsxBuilder.ets             # Workbook→.xlsx renderer (multi-sheet/header style/formulas/numFmt/colWidth/freeze/embedded source)
+│   ├── XlsxImporter.ets            # .xlsx→Workbook (lossless from embedded source / XML import)
 │   ├── CsvWriter.ts                # Rows→CSV (RFC 4180 escaping + optional BOM, pure logic)
 │   ├── DeckModel.ets               # PPT intermediate layer: Deck JSON parse/validate/edit ops (pure logic, no Kit API)
 │   ├── PptxThemes.ets              # 8 theme presets + semantic-color resolution (pure logic)
@@ -229,13 +235,21 @@ entry/src/main/resources/rawfile/
 └── skills/                         # Work-mode skills (loaded on demand via load_skill, see "3.2 Skill system")
     ├── ppt/
     │   ├── SKILL.md                # PPT skill body (workflows / quick reference / self-check list)
-    │   └── reference/              # deck-dsl.md / design-guide.md / themes.md
+    │   └── reference/              # deck-dsl.md / design-guide.md / themes.md / troubleshooting.md
+    ├── docx/
+    │   ├── SKILL.md                # Word skill body (create/edit workflows / block quick reference / typography rules)
+    │   └── reference/              # doc-dsl.md / design-guide.md / troubleshooting.md
+    ├── xlsx/
+    │   ├── SKILL.md                # Excel skill body (create/edit workflows / formula-first / quick reference)
+    │   └── reference/              # workbook-dsl.md / format-guide.md / troubleshooting.md
     └── svg/
         ├── SKILL.md                # SVG image-generation skill (generate→preview→iterate workflow / self-check)
         └── reference/              # svg-craft.md / svg-recipes.md
 
 test/
-└── pptx-harness/                   # Offline verification harness for PPT/CSV (Node build + python-pptx checks + PNG review)
+├── pptx-harness/                   # Offline verification for PPT/CSV/Word/Excel services (Node build + python checks + tsc)
+├── docx-harness/                   # Word generator/importer harness (Node build + python-docx checks)
+└── xlsx-harness/                   # Excel generator/importer harness (Node build + openpyxl checks)
 ```
 
 The project follows an MVVM-like separation:
@@ -313,9 +327,9 @@ User task → ChatViewModel.executeWorkLoop
 Work mode is a standalone agent execution environment: a virtual agent + a per-conversation sandbox workspace + a multi-turn tool-calling loop. This section targets maintainers and covers module responsibilities, data flow, and extension recipes.
 
 > **Maintenance doc map** (which doc to read for which change):
-> - This section (README) — architecture, plus the design and extension recipes for the three systems: tools, skills, and the PPT pipeline.
+> - This section (README) — architecture, plus the design and extension recipes for the four systems: tools, skills, and the PPT/Word/Excel pipelines.
 > - `test/pptx-harness/README.md` — the offline verification harness for the PPT pipeline and CSV writer (Node build + python-pptx checks + PNG review). Mandatory after touching anything under `export/`.
-> - `entry/src/main/resources/rawfile/skills/` — the **model-facing** operation guides (`ppt`: deck-dsl syntax / design guidelines / themes; `svg`: authoring rules / image-generation recipes). They evolve in lockstep with the tools and double as reusable assets portable to other agent frameworks.
+> - `entry/src/main/resources/rawfile/skills/` — the **model-facing** operation guides (`ppt`: deck-dsl syntax / design guidelines / themes; `docx`: doc-dsl syntax / typography; `xlsx`: workbook-dsl syntax / formula & number-format conventions; `svg`: authoring rules / image-generation recipes). They evolve in lockstep with the tools and double as reusable assets portable to other agent frameworks.
 
 ### 1. Identity and conversation model
 
@@ -350,7 +364,7 @@ for step in 1..WORK_MAX_STEPS(200, runaway safeguard):
 - **Cancellation**: `stopStreaming()` calls both `ChatService.abort()` and `AgentLoopService.abort()`; an interrupted turn with no output is removed, otherwise a "⏹ Task stopped" note is appended.
 - **Step safeguard**: `WORK_MAX_STEPS(200)` exists purely as a runaway guard (preventing endless tool-call loops from burning tokens); normal long tasks never reach it — when triggered, a "send 'continue' to proceed" note is appended to the last message.
 
-### 3. Tool system (36 tools)
+### 3. Tool system (41 tools)
 
 Dispatch chain: `ChatViewModel` → `WorkToolRunner.execute()` (.ets entry) → Office generation/parse_document/PPT/transform_file implemented locally, everything else delegated to `WorkFileService.executeTool()` (.ts); the 6.1 tools fall through to `HarnessTools.dispatch()` (.ts).
 
@@ -365,15 +379,19 @@ Dispatch chain: `ChatViewModel` → `WorkToolRunner.execute()` (.ets entry) → 
 | `view_image` | WorkFileService.toolViewImage | Image→dataUrl (≤8MB); the loop injects it as the next multimodal message |
 | `download_file` | WorkToolRunner.toolDownloadFile | Downloads an http(s) file into the workspace (≤20MB; type sniffing + html warning; auto or explicit naming) |
 | `parse_document` | WorkToolRunner.toolParseDocument | Full PDF text (local, 3× output cap) |
-| `write_docx` | toolWriteDocx → DocxExporter.buildDocxBytes | Markdown→Word |
-| `write_xlsx` | toolWriteXlsx → XlsxExporter.buildXlsxFromRows | Markdown table/CSV/TSV→Excel |
+| `write_docx` | toolWriteDocx → DocxBuilder.buildFromMarkdown/buildDocxBytes | **Doc JSON / doc file / Markdown → Word** (see the next section; optional title/style; images from workspace/data URL/http, svg rasterized automatically) |
+| `read_docx` | toolReadDocx → DocxImporter.import | .docx → Doc JSON source (lossless restore for app-generated files, approximate import otherwise; word/media images extracted to `docx_images/`) |
+| `edit_docx` | toolEditDocx → DocxImporter + DocOps + DocxBuilder | Read back → apply ops (title/style/block CRUD/move/replace-text) → rebuild (foreign files backed up first) |
+| `write_xlsx` | toolWriteXlsx → XlsxBuilder.buildXlsxBytes | **Workbook JSON / workbook file / Markdown·CSV·TSV → Excel** (see the next section; multi-sheet/headers/formulas/numFmt/colWidth/freeze; optional name/style) |
+| `read_xlsx` | toolReadXlsx → XlsxImporter.import | .xlsx → Workbook JSON source (lossless restore for app-generated files, approximate import otherwise: numbers/text/formulas restored) |
+| `edit_xlsx` | toolEditXlsx → XlsxImporter + XlsxOps + XlsxBuilder | Read back → apply ops (rename/add/delete/move sheets, row CRUD, set cell, replace text) → rebuild (foreign files backed up first) |
 | `write_csv` | toolWriteCsv → CsvWriter.buildCsvBytes | Markdown table/CSV/TSV→CSV (RFC 4180 escaping, UTF-8 BOM by default; input parsing goes through CsvParser, quoted fields handled correctly) |
 | `transform_file` | WorkToolRunner.toolTransformFile → DataPipeline | **Local data pipeline** (data never enters model context): CSV/TSV/MD/JSON/JSONL/lines input; filter/derive/regex-extract/split/dedupe/sort plus CSV↔TSV↔JSON↔MD↔XLSX conversion; restricted DSL (whitelisted ops + expression evaluator, no I/O), preview before write; syntax via `load_skill("data")`; ≤2MB/100k rows/30 steps |
 | `write_pptx` | toolWritePptx → PptxBuilder.buildPptxBytes | **Deck JSON / deck file / outline → PPT** (see the next section) |
 | `read_ppt` | toolReadPpt → PptxImporter.import | .pptx → Deck JSON source (lossless restore for app-generated files, approximate import otherwise) |
 | `edit_ppt` | toolEditPpt → PptxImporter + DeckOps + PptxBuilder | Restore → apply ops → rebuild (foreign files are backed up first) |
 | `write_svg` | WorkToolRunner.toolWriteSvg → SvgUtil | SVG source → workspace .svg + rasterized PNG preview; xmlns/no-script validation, missing width/height auto-filled from viewBox (required by the device engine), precise diagnostics on decode failure |
-| `list_skills` / `load_skill` | WorkFileService.dispatchTool → WorkSkillService | Skill list and on-demand skill-doc loading (the ppt, svg, and data skills under rawfile/skills/) |
+| `list_skills` / `load_skill` | WorkFileService.dispatchTool → WorkSkillService | Skill list and on-demand skill-doc loading (the ppt, docx, xlsx, svg, and data skills under rawfile/skills/) |
 | `glob` | HarnessTools.toolGlob → FileSearchCore | Find files by glob pattern (`**`/`*`/`?`/`{a,b}`/`[...]`; top-level commas don't break `{}` branches); returns relative paths with sizes (≤500) |
 | `grep` | HarnessTools.toolGrep → FileSearchCore | Regex search over text files, returning `file:line: text` (≤200 hits; optional `glob` filename filter and `ignore_case`; invalid patterns fail with a clear error) |
 | `edit` | HarnessTools.toolEdit → DiffUtil | Exact character-level replacement (multiple matches rejected; `replace_all` overrides); the result carries line-level diff hunks (meta persisted with the session, rendered as a diff card) |
@@ -465,7 +483,98 @@ node check-setup.mjs && npx -y -p typescript@5.5.4 tsc -p check/tsconfig.json   
 
 Visual review (on machines with PowerPoint): export PNGs with `export-png.ps1` and inspect page by page — focus on text overflow, dark-page lightening, chart label readability, and table contrast (all three historical visual bugs were these categories).
 
-### 3.2 Skill system (reusable domain operation guides)
+### 3.2 Word pipeline (Doc JSON intermediate layer)
+
+Isomorphic to the PPT pipeline: an **AI-editable intermediate layer separated from the renderer**. "Generate Word" = write Doc JSON → render; "Edit Word" = restore Doc → apply ops → rebuild. The renderer only knows the Doc structure, never the prompt, so behavior is deterministic and testable offline.
+
+```text
+write_docx ──┐                                  ┌─ write_docx(rebuild docx)
+doc JSON ────┼→ DocxBuilder(render)→ .docx      │
+             │    └─ embeds docProps/doc.json   │
+read_docx ───┤                                 └─ edit_docx(DocOps applied, then rebuild)
+             └─→ DocxImporter(embedded source restore / foreign XML approximate import + word/media image extraction)
+```
+
+#### Module responsibilities & public API (entry/src/main/ets/export/)
+
+| File | Responsibility | Key public members |
+|---|---|---|
+| `DocModel.ets` | Intermediate model + JSON validation + Markdown conversion + edit ops (**pure logic, no Kit API**) | `Doc/DocBlock/DocListItem`, `DOC_STYLES`, `DocStylePalette.of(style)`, `DocParser.parse`, `MdToDoc.convert`, `DocOps.apply` |
+| `DocxBuilder.ets` | Doc → docx full-part render (two-pass: resolve images first, then render block by block; embeds the doc.json source) | `DocxBuilder.buildDocxBytes(doc, resolveImage)`, `buildFromMarkdown(md, title, resolveImage)`, `DocxImagePart` |
+| `DocxImporter.ets` | docx → Doc: reads embedded `docProps/doc.json` first (lossless), otherwise parses document.xml (headings/lists/tables/images; images extracted to `docx_images/<base>/`) | `DocxImporter.import(absPath, cacheDir, imageOutDir, imageOutRelBase)` → `DocxImportResult{doc, embedded, blockCount, images}` |
+
+**Dependency direction**: `DocModel ← DocxBuilder`; `DocxBuilder/DocxImporter ← WorkToolRunner.ets`; independent of the PPT pipeline (shares MarkdownParser/OmmlConverter/XmlUtil/ZipWriter only). Draw this graph before adding new files.
+
+**Typography & images**: styles.xml sizes headings H1→H6 at 22→12pt bold 黑体 with per-theme palette colors (default/academic/minimal), body defaults to 12pt 宋体 with 1.5 line spacing; both image blocks and inline images accept workspace paths / data URLs / http, svg rasterized automatically, ≤10MB per image and ≤40 images per doc (`WORK_DOC_*` constants); tables support captions and header shading.
+
+#### Doc JSON contract (the three places to sync when changing a field)
+
+The AI-facing field documentation = **the docx skill's `reference/doc-dsl.md`**. The authoritative implementation lives in `DocModel.ets`. Changing any field requires syncing:
+
+1. `DocModel.ets` (parsing + validation: error messages carry the block index and say exactly what is missing, so the AI can self-correct);
+2. Skill docs `rawfile/skills/docx/reference/doc-dsl.md` (field tables) and `SKILL.md` (quick-reference examples);
+3. `test/docx-harness/test-build.mjs` (samples covering the field, negatives covering the new validation).
+
+Structure overview: top-level `{title, subtitle, author, date, style, cover, toc, blocks[]}`; block cap `WORK_DOC_MAX_BLOCKS(400)`; block types `heading(1~6)/paragraph/list(ordered/unordered)/table/image/quote/code/divider/pagebreak`; inline formatting `**bold** *italic* \`code\` [link](url) $math$ ![](inline image)`; limits: tables ≤20 cols/500 rows, ≤10MB per image, ≤40 images per doc.
+
+#### Verification loop (mandatory after touching the generator; commands in test/docx-harness/README.md)
+
+```bash
+python makepng.py > png.b64
+node setup.mjs && node test-build.mjs          # all-block-types/cover-TOC/markdown path/edit ops/foreign import/negatives
+python validate.py gen\out_all.docx …          # zip CRC/all-part XML/relationship consistency/style-size grading/python-docx/image embedding
+python deep-check.py gen\out_all.docx …        # embedded doc.json round-trip + body/table/image/H1-order checks
+node check-setup.mjs && npx -y -p typescript@5.5.4 tsc -p check/tsconfig.json   # service-layer type check (pptx-harness)
+```
+
+Visual review (on machines with Word/WPS): open `gen/out_all.docx` and check the cover page, heading size grading, and image/table layout.
+
+#### Excel pipeline (Workbook JSON intermediate layer, isomorphic with PPT/Word)
+
+The design mirrors PPT/Word: **a model-editable intermediate layer separated from the exporter**. The model only ever talks to Workbook JSON — "generate Excel" = write Workbook → render; "edit Excel" = restore Workbook → apply ops → rebuild. The exporter knows nothing about prompts, only Workbook structure, so its behavior is fully deterministic and testable offline.
+
+```text
+write_xlsx ──┐                                   ┌─ write_xlsx(rebuild xlsx)
+workbook JSON ┼→ XlsxBuilder(render)→ .xlsx      │
+             │    └─ embedded docProps/workbook.json │
+read_xlsx ───┤                                  └─ edit_xlsx(XlsxOps apply → rebuild)
+             └─→ XlsxImporter(lossless from embedded source / foreign XML import)
+```
+
+#### Module responsibilities & public API (entry/src/main/ets/export/)
+
+| File                | Responsibility                                                                                          | Key public members                                                                                                                                                   |
+| ----------------- | --------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `XlsxModel.ets`   | Intermediate model + Workbook JSON parse/validate + Markdown/CSV/TSV conversion + edit ops (**pure logic, no Kit API**) | `XlsxWorkbook/XlsxSheet/XlsxCell`, `XLSX_STYLES`, `XlsxStylePalette.of(style)`, `XlsxParser.parse`, `MdToXlsx.convert`, `XlsxOps.apply` |
+| `XlsxBuilder.ets` | Workbook → xlsx all-part rendering (multi-sheet / bold header fills in 3 themes / `=formulas` / number formats / column widths / freeze panes; embeds workbook.json source) | `XlsxBuilder.buildXlsxBytes(workbook)`                                                                                                                         |
+| `XlsxImporter.ets` | xlsx → Workbook: reads the embedded `docProps/workbook.json` first (lossless), else parses workbook.xml+rels+sharedStrings+sheets (numbers/text/formulas/colWidth/freeze) | `XlsxImporter.import(absPath, cacheDir)` → `XlsxImportResult{workbook, embedded, sheetCount, rowCount}`                                                       |
+
+**Dependency direction**: `XlsxModel ← XlsxBuilder`; `XlsxBuilder/XlsxImporter ← WorkToolRunner.ets`; independent of the PPT/Word pipelines (shares XmlUtil/ZipWriter; XlsxModel reuses CsvParser for table-text parsing). `XlsxExporter.buildXlsxFromRows` still serves transform_file's XLSX output, keeping its single-sheet, no-format semantics.
+
+**Spreadsheet capabilities**: the `workbook` source supports multiple sheets (≤20), bold header fills (default/academic/minimal), formulas (cell values starting with `=`, e.g. `"=SUM(B2:B9)"`, cross-sheet `"=假设!B2"`), per-column number formats (`money` ¥ thousands + 2 decimals / `int` / `percent` 0.0% / `year` / `date` / `number` / `text`), column widths 1–255, and freeze panes (`freeze: "A2"`); data rows are rectangular (≤1000 rows/60 cols, `WORK_XLSX_*` constants). **Formula-first**: derived values (totals/ratios/shares) must be formulas, never hardcoded numbers — the number-format and negative/zero display conventions (amount negatives in parentheses `(¥1,234.00)`, zero as `-`) draw on the MiniMax xlsx reference skill; the model-facing guide is `load_skill("xlsx")`.
+
+#### Workbook JSON contract (three places to sync when changing a field)
+
+The authoritative field doc from the model's perspective = **the xlsx skill's `reference/workbook-dsl.md`**. The authoritative implementation of the Workbook structure lives in `XlsxModel.ets`. Changing any field means syncing:
+
+1. `XlsxModel.ets` (parse + validate: error messages carry sheet/row/col numbers so the model can self-correct);
+2. The skill docs `rawfile/skills/xlsx/reference/workbook-dsl.md` (field tables) and `SKILL.md` (quick-reference examples);
+3. `test/xlsx-harness/test-build.mjs` (samples cover the field; negatives cover the new validation).
+
+Structure overview: top-level `{name, style, sheets[]}`; per sheet `{name, headers?, rows, colWidths?, freeze?, formats?}`; cell values = number | string | `"=formula"`. `read_xlsx` restores app-generated files losslessly (embedded source); foreign xlsx files get an approximate import (sheet order/numbers/text/formulas restored, styles/merges lost); `edit_xlsx` automatically backs up foreign files as `*_原版备份.xlsx` before rebuilding.
+
+#### Verification loop (mandatory after touching the generator; commands in test/xlsx-harness/README.md)
+
+```bash
+node setup.mjs && node test-build.mjs          # multi-sheet/formulas/numFmt/colWidth/freeze + markdown path + edit ops + foreign import + negatives
+python validate.py gen\out_all.xlsx …          # zip CRC/all-part XML/relationship consistency/openpyxl/header bold/formulas/numFmt/freeze/colWidth
+python deep-check.py gen\out_all.xlsx …        # embedded workbook.json round-trip + per-cell checks (incl. formulas)
+node check-setup.mjs && npx -y -p typescript@5.5.4 tsc -p check/tsconfig.json   # service-layer type check (pptx-harness)
+```
+
+Visual review (on machines with Excel/WPS): open `gen/out_all.xlsx` and check header fills, money formats, formula linkage (change B2 and watch D2 recalc), and the freeze pane.
+
+### 3.3 Skill system (reusable domain operation guides)
 
 A skill = an **id-organized, pure-Markdown domain operation guide** (no code) that the model loads on demand when a matching task arrives. The problem it solves: domain knowledge (Deck JSON syntax, design guidelines, …) must not go into the system prompt — the system prompt has to stay byte-stable (the KV-cache red line), while skill docs can be added, changed, and layered at any time **without touching a line of prompt code**.
 
@@ -478,8 +587,21 @@ entry/src/main/resources/rawfile/skills/
 │   └── reference/              ← deep-dive material, loaded file by file (optional)
 │       ├── deck-dsl.md         # field-level syntax
 │       ├── design-guide.md     # design guidelines
-│       └── themes.md           # theme catalog
-└── svg/                        ← built-in skill 2: SVG vector drawing (image generation)
+│       ├── themes.md           # theme catalog
+│       └── troubleshooting.md  # symptom→fix lookup
+├── docx/                       ← built-in skill 3: Word document authoring/editing
+│   ├── SKILL.md                # workflows A/B (new doc / edit), block quick reference, typography rules, self-check
+│   └── reference/
+│       ├── doc-dsl.md          # Doc JSON field-level syntax + edit_docx ops
+│       ├── design-guide.md     # Chinese document typography guidelines
+│       └── troubleshooting.md  # symptom→fix lookup
+├── xlsx/                       ← built-in skill 4: Excel spreadsheet authoring/editing
+│   ├── SKILL.md                # workflows A/B (new / edit), formula-first, quick reference, self-check
+│   └── reference/
+│       ├── workbook-dsl.md     # Workbook JSON field-level syntax + edit_xlsx ops
+│       ├── format-guide.md     # formula-first / number formats / financial conventions / edit integrity
+│       └── troubleshooting.md  # symptom→fix lookup
+└── svg/                        ← built-in skill 5: SVG vector drawing (image generation)
     ├── SKILL.md                # "generate → preview → iterate" workflow + tool boundaries (photos via download_file)
     └── reference/
         ├── svg-craft.md        # authoring rules: xmlns/viewBox requirements, 24 grid, path-first, text risk, color discipline
@@ -698,6 +820,13 @@ You can also select content in Gallery or a file manager and choose Guncat Work 
 - Original attachments are not copied into permanent app storage.
 - Requests use HTTPS. Data-processing policies still depend on the configured model provider.
 
+## Version 6.2.0 (New Skill System)
+- The full set of Office skills for Work Mode is now officially available! You can now professionally process and generate PPT, Word, Excel, and other office documents, handling everyday office tasks all in one place.
+- The Paper Conversion Expert, Legal, Research, and Screening/Retrieval Experts, and LLM Evaluation Expert are now packaged as Skills embedded in Work Mode. No need to switch chat engines—use them directly in Work Mode!
+- Added local web search (built into the software, no manual toggle required). It can be invoked in both Work Mode and Chat Mode, so web access is no longer limited by the server-side web access toggle!
+- Fixed occasional parameter passing errors and text-too-long truncation issues in the Anthropic API protocol.
+- Added a suffix completion toggle. You can now disable suffix completion to allow access via non-standard addresses.
+
 ## Version 6.1.2 (New agent: Guncat 3.1-Flash)
 
 - Added **Guncat 3.1-Flash (Light & Simple Mode)**: Guncat's first Flash-dedicated independent foundation — a brand-new design that inherits no architecture from the 2.0/2.5/3.0 series, purpose-built for everyday conversation and lightweight information tasks; it takes over 3.0-Mini's place as the lightest entry in the family and is listed first in the agent list. It stands parallel to Efficiency Mode (3.0-Flash), not as its upgrade: Efficiency Mode handles all-purpose task execution, while Light & Simple Mode handles everyday conversation and simple knowledge queries.
@@ -734,7 +863,8 @@ Alongside chat mode, this release adds an independent work mode: the 🛠 "Work 
 - **Data pipeline transform_file**: the dedicated tool for large files and non-standard data — CSV/TSV/Markdown-table/JSON/JSONL/lines input, filter/derive/map/regex-extract/split/dedupe/sort/replace/numeric-cast plus CSV↔TSV↔JSON↔MD↔XLSX conversion, **data never enters model context**. Restricted-DSL design: ops go through a whitelist dispatch and expressions through a self-contained evaluator (no I/O, bounded steps, termination guaranteed by construction), with a "preview 3 rows → write → spot-check" workflow mirroring the SVG loop. Full syntax lives in the `data` skill. Two new pure-TS modules — `CsvParser` (RFC 4180 parsing + Markdown/TSV/CSV auto-detection, also benefits write_csv/write_xlsx) and `DataPipeline` — are wired into the pptx-harness verification chain (54 unit tests).
 - **Material acquisition & image generation**: `download_file` pulls network images/files into the workspace (type sniffing, html warning, ≤20MB); `write_svg` lets the model hand-write SVG for icons/diagrams/infographics — validated automatically (xmlns/viewBox/no script) and rasterized to a PNG preview via the device image engine, forming a "generate → preview → iterate" loop with `view_image`; `write_pptx` can reference `.svg` directly (rasterized automatically on export). `search_files` gains a `glob` filename filter (`*.md`, `*.png,*.jpg`). `write_csv` adds explicit CSV support (RFC 4180 escaping + UTF-8 BOM).
 - **PPT pipeline (Deck JSON intermediate layer)**: aligned with open-kimi-ppt-skill's PPTD design — the AI writes a structured Deck source, and `PptxBuilder` renders 13 layouts (cover/TOC/section/bullets/two-column/image-text/image/full-bleed image/table/chart/quote/closing/free-form), 8 themes + custom palettes, charts (bar/line/area/pie/doughnut with embedded data), tables, images (workspace/data URL/http), and speaker notes; exported files embed a `docProps/deck.json` source so `read_ppt` restores them losslessly and `edit_ppt` applies operator-style edits (foreign pptx files are imported approximately and automatically backed up before rebuild); dark backgrounds lighten text and chart labels automatically. Five new modules (`DeckModel/PptxThemes/PptxCharts/PptxImage/PptxImporter`) plus a rewritten `PptxBuilder`; comes with the offline verification harness `test/pptx-harness/` (Node builds of all layouts + negatives, python-pptx structural checks, PowerPoint-rendered PNG reviews).
-- **Skill system**: domain operation guides are organized under `rawfile/skills/<id>/` (SKILL.md + reference/) and loaded progressively via `list_skills`/`load_skill`; the system prompt keeps only a one-line trigger, so the KV-cache prefix stays byte-stable. The bundled `ppt` skill covers Deck JSON syntax / design guidelines / themes / self-check lists, the `svg` skill covers authoring rules / the "generate → preview → iterate" workflow / recipes for icons, flowcharts, and infographics, and the `data` skill covers pipeline ops / expression syntax / cleaning-extraction-conversion recipes; the skill format follows the standard Agent Skills convention and is portable across agent frameworks. Adding a skill = writing docs + registering it in `WorkSkillService.registry()` (see architecture guide 3.2).
+- **Excel pipeline (Workbook JSON intermediate layer)**: an intermediate layer isomorphic to PPT/Word — the AI writes a structured Workbook source (multi-sheet / bold header fills in 3 themes / `=formulas` / number formats money·int·percent·year·date·number / column widths / freeze panes), `XlsxBuilder` renders all parts (embedding a `docProps/workbook.json` source), `read_xlsx` restores losslessly, and `edit_xlsx` applies operator-style edits (rename / add-delete-move sheets, row CRUD, set cell, replace text; foreign xlsx files are imported approximately and automatically backed up before rebuild). **Formula-first** plus the number-format and negative/zero display conventions draw on the MiniMax xlsx reference skill; the model-facing guide is the `xlsx` skill. Three new modules (`XlsxModel/XlsxBuilder/XlsxImporter`); `write_xlsx` keeps the `table` text fast path; comes with the offline verification harness `test/xlsx-harness/` (Node builds + openpyxl structural checks + embedded-source round-trip).
+- **Skill system**: domain operation guides are organized under `rawfile/skills/<id>/` (SKILL.md + reference/) and loaded progressively via `list_skills`/`load_skill`; the system prompt keeps only a one-line trigger, so the KV-cache prefix stays byte-stable. The bundled `ppt` skill covers Deck JSON syntax / design guidelines / themes / self-check lists, the `docx` skill covers Doc JSON syntax / typography rules, the `xlsx` skill covers Workbook JSON syntax / formula-first / number formats / edit integrity, the `svg` skill covers authoring rules / the "generate → preview → iterate" workflow / recipes for icons, flowcharts, and infographics, and the `data` skill covers pipeline ops / expression syntax / cleaning-extraction-conversion recipes; the skill format follows the standard Agent Skills convention and is portable across agent frameworks. Adding a skill = writing docs + registering it in `WorkSkillService.registry()` (see architecture guide 3.2).
 - **Local parsing engine**: new `OfficeReader` (OOXML text extraction, fixing the `<w:t` prefix mismatch that leaked XML), `PdfTextExtractor` (byte-level object table / ObjStm expansion / page-tree resource inheritance / ToUnicode CJK mapping / content-stream parsing / fallback scan with diagnostics), and `Flate` (pure-TS DEFLATE inflate). The multimodal parsing API is no longer required.
 - **Codex-style timeline UI**: a single-container timeline (unique 🛠 header + task cards + per-turn "thinking→tools→answer"); tool steps expand to show arguments and results; intermediate turns hide action buttons; the workspace panel supports upload / zip export / clear.
 - **Stability fixes**: PDF parsing OOM (whole-file latin1 concatenation replaced with byte-level scanning + native utf-16le decoding); main-thread block appfreeze (parsing yields in stages and the fallback scan skips fonts/images/oversized streams with caps and pre-checks); the same O(n²) concatenation in `arrayBufferToBase64` was fixed as well.
