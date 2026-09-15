@@ -1,3 +1,75 @@
+<!-- ══════════════════════════════════════════════════════════════════════════
+     Guncat AI · 项目头部 / Project Header
+     ══════════════════════════════════════════════════════════════════════════ -->
+
+<div align="center">
+
+# Guncat AI
+
+### 新一代大模型智能体框架 · 单体化超级智能体
+
+**New-Generation LLM Agent Framework · Monolithic Super-Agent**
+
+从结构化思维链（2.0 / 2.5）智能体集群，到基于 **Prompt-as-Orchestration** 的 **Guncat 3.0 单体化超级智能体**，再到 **Guncat 3.1-Flash** 日常对话轻量基座；以 **RAR（检索增强推理）** 为反幻觉内核，横跨 Python、Web-for-API、元器、清言、Coze 与鸿蒙原生。
+
+*From structured-CoT agent clusters (2.0 / 2.5) to the **Guncat 3.0 monolithic super-agent** built on Prompt-as-Orchestration, and the all-new **Guncat 3.1-Flash** lightweight foundation for everyday chat — with **RAR (Retrieval-Augmented Reasoning)** as the anti-hallucination kernel, spanning Python, Web-for-API, Yuanqi, Qingyan, Coze, and HarmonyOS native.*
+
+<br/>
+
+<!-- ── 核心技术 / Core Technology ─────────────────────────────────────────── -->
+
+[![Guncat](https://img.shields.io/badge/Guncat-3.1--Flash-2F80ED?style=for-the-badge)][repo]
+[![Python](https://img.shields.io/badge/Python-3.12%2B-3776AB?style=for-the-badge&logo=python&logoColor=white)][python]
+[![Prompt-as-Orchestration](https://img.shields.io/badge/Prompt--as--Orchestration-Single--Model_Agent-7B61FF?style=for-the-badge)][tech2]
+[![RAR](https://img.shields.io/badge/RAR-Retrieval--Augmented_Reasoning-00B894?style=for-the-badge)][tech1]
+[![Agentic RAG](https://img.shields.io/badge/Agentic_RAG-Multi--Round_Retrieval-0984E3?style=for-the-badge)][tech1]
+[![Structured CoT](https://img.shields.io/badge/Structured_CoT-Reasoning_Budget-E17055?style=for-the-badge)][tech2]
+[![Vector DB](https://img.shields.io/badge/Vector_DB-ChromaDB_%2B_bge--m3-FF6B6B?style=for-the-badge)][tech1]
+[![LangGraph](https://img.shields.io/badge/LangGraph-60%2B_Tools-1C3C3C?style=for-the-badge)][pro]
+
+<br/>
+
+<!-- ── 多端与生态 / Cross-Platform & Ecosystem ────────────────────────────── -->
+
+[![Web for API](https://img.shields.io/badge/Web_for_API-RESTful-2496ED?style=for-the-badge)][webapi]
+[![ArkTS](https://img.shields.io/badge/HarmonyOS-ArkTS_Native-007DFF?style=for-the-badge)][harmony]
+[![Tencent Yuanqi](https://img.shields.io/badge/Tencent-Yuanqi-0052D9?style=for-the-badge)][yuanqi]
+[![Zhipu Qingyan](https://img.shields.io/badge/Zhipu-Qingyan-3859FF?style=for-the-badge)][qingyan]
+[![Coze](https://img.shields.io/badge/Coze-Service-4D53E8?style=for-the-badge)][coze]
+
+<br/>
+
+<!-- ── 仓库状态 / Repository Status ───────────────────────────────────────── -->
+
+[![Stars](https://img.shields.io/github/stars/zhubowen-bot/Guncat-AI?style=for-the-badge&label=Stars&color=f5c542&logo=github)][stars]
+[![Forks](https://img.shields.io/github/forks/zhubowen-bot/Guncat-AI?style=for-the-badge&label=Forks&color=orange)][forks]
+[![Issues](https://img.shields.io/github/issues/zhubowen-bot/Guncat-AI?style=for-the-badge&label=Issues&color=red)][issues]
+[![Last Commit](https://img.shields.io/github/last-commit/zhubowen-bot/Guncat-AI?style=for-the-badge&label=Last%20Commit&color=blue)][commits]
+[![Top Language](https://img.shields.io/github/languages/top/zhubowen-bot/Guncat-AI?style=for-the-badge)][repo]
+[![License](https://img.shields.io/badge/License-MIT-3DA639?style=for-the-badge)][license]
+
+</div>
+
+<!-- 链接定义 / Link definitions -->
+
+[repo]: https://github.com/zhubowen-bot/Guncat-AI
+[python]: https://www.python.org/
+[stars]: https://github.com/zhubowen-bot/Guncat-AI/stargazers
+[forks]: https://github.com/zhubowen-bot/Guncat-AI/forks
+[issues]: https://github.com/zhubowen-bot/Guncat-AI/issues
+[commits]: https://github.com/zhubowen-bot/Guncat-AI/commits/main
+[license]: #license
+[tech1]: #core-technology-i--rar-retrieval-augmented-reasoning
+[tech2]: #core-technology-ii--the-30-monolithic-super-agent-architecture-prompt-as-orchestration
+[pro]: #guncat-25-pro--langgraph-code-driven-60-tool-ecosystem
+[webapi]: #3-guncat-web-for-api
+[harmony]: #5-harmonyos-native-app-arkts
+[yuanqi]: #1-tencent-yuanqi
+[qingyan]: #2-zhipu-qingyan
+[coze]: #4-coze-service-guncat-25-pro
+
+---
+
 ## Language
 
 - [English](#english)
