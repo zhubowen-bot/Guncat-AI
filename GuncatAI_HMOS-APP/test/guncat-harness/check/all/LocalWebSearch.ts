@@ -184,6 +184,9 @@ export class LocalSearchOutcome {
   // 送回模型的文本(含引用格式指引, 头部指令随结果走而非系统提示词, 不破坏前缀缓存)
   contentForAI: string = '';
   errorMessage: string = '';
+  // 可观测标记(由护栏兜底结果设置)
+  timeout: boolean = false;
+  cancelled: boolean = false;
 }
 
 // 单次 HTTP 请求结果

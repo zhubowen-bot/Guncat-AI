@@ -51,3 +51,12 @@
 
 - **可能原因**：极少数老 Excel 版本对货币符号处理不同。
 - **修复**：确认列 formats 是 `"money"`；如用户环境异常，改用 `"number"`（无货币符号）并说明。
+
+## 修复已有 xlsx 的标准工作流（参考 qwenwork/workbuddy xlsx 修复类能力）
+
+1. **先读后改**：`read_xlsx(path)` 拿当前 Workbook JSON（表名/行/列/公式/格式）。
+2. **定位问题**：按用户反馈列出具体问题（哪个 sheet、哪一行/列、什么现象：公式错/数字格式错/数据错/需要加行）。
+3. **小改**：用 `edit_xlsx` 改单元格 `set_cell`、改表头 `set_header`、加/删/改行 `add_row`/`delete_row`/`update_row`、加/删/移表 `add_sheet`/`delete_sheet`/`move_sheet`、改表名 `set_sheet_name`、全局改词 `replace_text`。
+4. **公式修复**：`read_xlsx` 看公式原文，核对行列号/表名/SUM 区域；有表头时 `row:1` 对应 Excel 第 2 行，公式引用要 +1。
+5. **结构调整**：没有 `add_column` 时，小表用 `update_row` 逐行补列 + `set_header`；大表重建 Workbook JSON 后重新导出。
+6. **复验**：`read_xlsx` 抽查表名/行数/关键值/公式；外来文件改前确认备份存在。

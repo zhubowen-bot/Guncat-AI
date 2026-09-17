@@ -5,7 +5,7 @@
 //   anthropic-messages → content_block tool_use / input_json_delta + tool_result 回传
 // 循环驱动(执行工具/步数控制/历史裁剪)在 ChatViewModel.executeWorkLoop 中。
 import { http } from '@kit.NetworkKit';
-import { StreamAccumulator, getProtocol, resolveEndpointUrl,
+import { StreamAccumulator,
   extractChatCompletionsDelta, extractChatCompletionsReasoning, extractChatCompletionsUsage,
   extractResponsesDelta, extractResponsesReasoning, extractResponsesUsage, extractResponsesFailure,
   extractAnthropicDelta, extractAnthropicReasoning, extractAnthropicUsage, extractAnthropicFailure,
@@ -13,46 +13,25 @@ import { StreamAccumulator, getProtocol, resolveEndpointUrl,
   deriveStreamStats } from './ChatService';
 import { ToolCallAccumulator, collectCompletionsToolDelta, collectResponsesToolItem,
   collectAnthropicToolEvent, genToolCallId } from './ToolCallStream';
+import { SSEAdapterFactory } from './SSEAdapterFactory';
 import { WorkFileService } from './WorkFileService';
 import { WorkSkillService } from './WorkSkillService';
 import { ApiConfig } from '../model/ApiConfig';
 import { ToolCallRecord } from '../model/ToolCallRecord';
 import { AbortSignal } from '../common/Types';
 import { Constants } from '../common/Constants';
+import { PromptBuilder } from '../common/PromptBuilder';
+import { PromptBudget, PromptBudgetSnapshot } from '../common/PromptBudget';
+import { LLMProtocol } from '../common/LLMProtocol';
+import { ToolDefAdapter } from '../common/ToolDefAdapter';
+import { SSEProtocolAdapter, SSEParseContext } from '../common/SSEProtocolAdapter';
+import { RetryPolicy } from '../common/RetryPolicy';
+import { RetryAfterParser } from '../common/RetryAfterParser';
+import { LoopError } from '../common/LoopError';
+export { LoopError };
 
-// 带分类的循环层错误: kind 用于请求级重试判定(对齐 DeepSeek Harness 的 retry-policy)
-//   rate_limit/server/transport/empty → 可自动重试; auth/http/protocol → 重试无意义, 直接上抛
-export class LoopError extends Error {
-  status: number = 0;
-  kind: string = 'http';
-
-  constructor(message: string, status: number, kind: string) {
-    super(message);
-    this.name = 'LoopError';
-    this.message = message;
-    this.status = status;
-    this.kind = kind;
-  }
-
-  static isRetryable(e: Error): boolean {
-    if (e instanceof LoopError) {
-      let le: LoopError = e as LoopError;
-      return le.kind === 'rate_limit' || le.kind === 'server' ||
-        le.kind === 'transport' || le.kind === 'empty';
-    }
-    return false;
-  }
-
-  // 上下文窗口超限(历史+工具放不进模型上下文): 由调用方压缩历史后重试
-  isContextOverflow(): boolean {
-    if (this.kind !== 'http' && this.kind !== 'protocol') {
-      return false;
-    }
-    let msg: string = this.message !== undefined ? this.message : '';
-    return /context|maximum|length|token|上下文|长度|太长/i.test(msg);
-  }
-}
-
+// 带分类的循环层错误已迁移到 common/LoopError(纯逻辑, 可单测);
+// service 层 re-export 保持 ChatViewModel 旧导入兼容。
 // 与协议无关的循环消息: assistant 消息的工具调用与执行结果都挂在 toolCalls 上
 // (构建协议请求体时再拆分为 assistant(tool_calls) + tool/function_call_output/tool_result 消息)
 // imageDataUrl 仅用于 user 消息携带工作区图片(view_image 工具注入), 不持久化。
@@ -144,7 +123,9 @@ export class LoopTurnCallbacks {
 
 // 流式工具调用累积器: 三种协议统一汇入(共享实现见 ToolCallStream.ts)
 export class AgentLoopService {
-  private static activeRequest: http.HttpRequest | null = null;
+  // 活跃请求注册表: 支持多实例并发请求(主循环 + 子代理/聊天模式可能同时存在),
+  // abort() 统一中断所有活跃请求, 避免单一静态引用在并发时打错目标。
+  private static activeRequests: http.HttpRequest[] = [];
   private static cachedToolDefs: Record<string, Object>[] = [];
   private static cachedToolDefsFlag: boolean = false;
 
@@ -166,8 +147,9 @@ export class AgentLoopService {
     callbacks: LoopTurnCallbacks, abortSignal: AbortSignal,
     includeTools: boolean = true,
     toolOverrides: Record<string, Object>[] | null = null): Promise<LoopTurnResult> {
-    let protocol: string = getProtocol(config.provider);
-    let url: string = resolveEndpointUrl(config, protocol);
+    let protocol: string = LLMProtocol.pick(config.provider);
+    AgentLoopService.lastProtocol = protocol;
+    let url: string = LLMProtocol.resolveEndpoint(config.baseUrl, protocol, config.autoSuffix);
 
     let tools: Record<string, Object>[] = includeTools ?
       (toolOverrides !== null ? toolOverrides : AgentLoopService.getToolDefs(webSearchEnabled)) : [];
@@ -182,7 +164,7 @@ export class AgentLoopService {
     let bodyStr: string = JSON.stringify(body);
 
     let httpRequest: http.HttpRequest = http.createHttp();
-    AgentLoopService.activeRequest = httpRequest;
+    AgentLoopService.activeRequests.push(httpRequest);
     let acc: StreamAccumulator = new StreamAccumulator();
     let lineBuffer: string = '';
     let settled: boolean = false;
@@ -192,97 +174,46 @@ export class AgentLoopService {
     let startTime: number = Date.now();
     let result: LoopTurnResult = new LoopTurnResult();
     let callAcc: ToolCallAccumulator = new ToolCallAccumulator();
+    let sseAdapter: SSEProtocolAdapter = AgentLoopService.buildSseAdapter(protocol, callAcc);
     // 上一次 onToolCalls 通知的签名(调用数:累计参数量), 变化时才再次上抛
     let lastToolSig: string = '';
     // 非成功响应时累积响应体(仅前 8KB), 用于提取服务端错误详情(如上下文超限)
     let errorBody: string = '';
 
-    // 单条 SSE 数据分发: 按协议解析文本/思考/工具调用/usage; 协议失败抛错由外层 reject
+    // 单条 SSE 数据分发: 协议适配器统一回调文本/思考/工具调用/usage; 协议失败抛错由外层 reject
     let handleSseLine = (sseData: string): void => {
-      if (protocol === 'responses') {
-        let fail: string = extractResponsesFailure(sseData);
-        if (fail !== '') {
-          failedMsg = fail;
-          throw new Error(fail);
+      let ctx: SSEParseContext = new SSEParseContext();
+      ctx.onFailure = (msg: string): boolean => {
+        failedMsg = msg;
+        throw new Error(msg);
+      };
+      ctx.onToken = (delta: string): void => {
+        result.content += delta;
+        callbacks.onToken(delta);
+      };
+      ctx.onReasoning = (text: string): void => {
+        result.reasoning += text;
+        callbacks.onReasoning(result.reasoning);
+      };
+      ctx.onSignature = (signature: string): void => {
+        result.thinkingSignature += signature;
+      };
+      ctx.onRedactedThinking = (data: string): void => {
+        result.redactedThinking = data;
+      };
+      ctx.onUsage = (usageObj: Record<string, Object> | null): void => {
+        let stats: number[] = deriveStreamStats(usageObj, Date.now() - startTime);
+        result.tokenSpeed = stats[0];
+        result.cacheHitRate = stats[1];
+        result.promptTokens = AgentLoopService.extractPromptTokens(usageObj);
+        callbacks.onUsage(stats[0], stats[1]);
+      };
+      ctx.onFinishReason = (finish: string): void => {
+        if (result.finishReason === '') {
+          result.finishReason = finish;
         }
-        let delta: string = extractResponsesDelta(sseData);
-        if (delta !== '') {
-          result.content += delta;
-          callbacks.onToken(delta);
-        }
-        let reasoning: string = extractResponsesReasoning(sseData);
-        if (reasoning !== '') {
-          result.reasoning += reasoning;
-          callbacks.onReasoning(result.reasoning);
-        }
-        collectResponsesToolItem(sseData, callAcc);
-        let usageObj: Record<string, Object> | null = extractResponsesUsage(sseData);
-        if (usageObj !== null) {
-          let stats: number[] = deriveStreamStats(usageObj, Date.now() - startTime);
-          result.tokenSpeed = stats[0];
-          result.cacheHitRate = stats[1];
-          result.promptTokens = AgentLoopService.extractPromptTokens(usageObj);
-          callbacks.onUsage(stats[0], stats[1]);
-        }
-      } else if (protocol === 'anthropic') {
-        let fail: string = extractAnthropicFailure(sseData);
-        if (fail !== '') {
-          failedMsg = fail;
-          throw new Error(fail);
-        }
-        let delta: string = extractAnthropicDelta(sseData);
-        if (delta !== '') {
-          result.content += delta;
-          callbacks.onToken(delta);
-        }
-        let reasoning: string = extractAnthropicReasoning(sseData);
-        if (reasoning !== '') {
-          result.reasoning += reasoning;
-          callbacks.onReasoning(result.reasoning);
-        }
-        // 思考块签名与加密思考块: 回传 thinking 块时随块携带(服务端校验所需)
-        let signature: string = extractAnthropicSignature(sseData);
-        if (signature !== '') {
-          result.thinkingSignature += signature;
-        }
-        let redacted: string = extractAnthropicRedactedThinking(sseData);
-        if (redacted !== '') {
-          result.redactedThinking = redacted;
-        }
-        collectAnthropicToolEvent(sseData, callAcc);
-        let usageObj: Record<string, Object> | null = extractAnthropicUsage(sseData);
-        if (usageObj !== null) {
-          let stats: number[] = deriveStreamStats(usageObj, Date.now() - startTime);
-          result.tokenSpeed = stats[0];
-          result.cacheHitRate = stats[1];
-          result.promptTokens = AgentLoopService.extractPromptTokens(usageObj);
-          callbacks.onUsage(stats[0], stats[1]);
-        }
-      } else {
-        let delta: string = extractChatCompletionsDelta(sseData);
-        if (delta !== '') {
-          result.content += delta;
-          callbacks.onToken(delta);
-        }
-        let reasoning: string = extractChatCompletionsReasoning(sseData);
-        if (reasoning !== '') {
-          result.reasoning += reasoning;
-          callbacks.onReasoning(result.reasoning);
-        }
-        collectCompletionsToolDelta(sseData, callAcc);
-        let usageObj: Record<string, Object> | null = extractChatCompletionsUsage(sseData);
-        if (usageObj !== null) {
-          let stats: number[] = deriveStreamStats(usageObj, Date.now() - startTime);
-          result.tokenSpeed = stats[0];
-          result.cacheHitRate = stats[1];
-          result.promptTokens = AgentLoopService.extractPromptTokens(usageObj);
-          callbacks.onUsage(stats[0], stats[1]);
-        }
-      }
-      // 结束原因提取(每条 SSE 行只做一次子串探测, 命中才 JSON.parse, 开销可忽略)
-      if (result.finishReason === '') {
-        result.finishReason = AgentLoopService.extractFinishReason(protocol, sseData);
-      }
+      };
+      sseAdapter.handleLine(sseData, ctx);
       // 三种协议统一收口: 工具调用在流式生成过程中即时上抛(调用数或参数量变化时)
       if (callAcc.calls.length > 0) {
         let argsLen: number = 0;
@@ -367,6 +298,18 @@ export class AgentLoopService {
         } else {
           headers['Authorization'] = 'Bearer ' + config.apiKey;
         }
+        let retryAfterHeader: string = '';
+        try {
+          httpRequest.on('headersReceive', (header: Object) => {
+            let h: Record<string, Object> = header as Record<string, Object>;
+            let ra: Object | undefined = h['retry-after'];
+            if (typeof ra === 'string') {
+              retryAfterHeader = ra as string;
+            }
+          });
+        } catch (e) {
+          // 个别平台不支持 headersReceive 时忽略, Retry-After 降级为默认退避
+        }
         httpRequest.requestInStream(url, {
           method: http.RequestMethod.POST,
           header: headers,
@@ -402,7 +345,8 @@ export class AgentLoopService {
               } else {
                 msg = '请求失败，状态码: ' + code;
               }
-              reject(new LoopError(msg, code, kind));
+              let retryAfterMs: number = RetryAfterParser.parseMs(retryAfterHeader);
+              reject(new LoopError(msg, code, kind, retryAfterMs));
             }
             return;
           }
@@ -439,7 +383,10 @@ export class AgentLoopService {
         throw new LoopError(failedMsg, 0, 'protocol');
       }
     } finally {
-      AgentLoopService.activeRequest = null;
+      let idx: number = AgentLoopService.activeRequests.indexOf(httpRequest);
+      if (idx >= 0) {
+        AgentLoopService.activeRequests.splice(idx, 1);
+      }
       try {
         httpRequest.off('dataReceive');
         httpRequest.off('dataEnd');
@@ -452,17 +399,18 @@ export class AgentLoopService {
     return result;
   }
 
-  // 中断当前轮请求(与 ChatService.abort 同构)
+  // 中断所有活跃请求(与 ChatService.abort 语义对齐; 多请求并存时统一中止)
   static abort(): void {
-    let req: http.HttpRequest | null = AgentLoopService.activeRequest;
-    if (req !== null) {
+    let reqs: http.HttpRequest[] = AgentLoopService.activeRequests;
+    for (let i: number = 0; i < reqs.length; i++) {
+      let req: http.HttpRequest = reqs[i];
       try {
         req.destroy();
       } catch (e) {
         // ignore
       }
-      AgentLoopService.activeRequest = null;
     }
+    AgentLoopService.activeRequests = [];
   }
 
   // 带自动重试的请求执行(对齐 DeepSeek Harness 的 llm-retry):
@@ -475,6 +423,8 @@ export class AgentLoopService {
     maxRetries: number = Constants.WORK_LLM_RETRY_MAX,
     toolOverrides: Record<string, Object>[] | null = null): Promise<LoopTurnResult> {
     let attempt: number = 0;
+    let policy: RetryPolicy = new RetryPolicy(maxRetries, 500, 8000, 0.2,
+      ['rate_limit', 'server', 'transport', 'empty']);
     while (true) {
       let turn: LoopTurnResult | null = null;
       let failed: LoopError | null = null;
@@ -502,23 +452,31 @@ export class AgentLoopService {
       if (failed === null) {
         continue;
       }
-      if (abortSignal.aborted || !LoopError.isRetryable(failed) || attempt >= maxRetries) {
+      if (abortSignal.aborted || !failed.retryable) {
+        throw failed;
+      }
+      let rd = policy.decide(failed.kind, attempt, failed.retryAfterMs, Math.random());
+      if (!rd.shouldRetry) {
         throw failed;
       }
       attempt++;
       callbacks.onRetry(attempt, failed.message);
-      await AgentLoopService.retryBackoff(attempt, abortSignal);
+      await AgentLoopService.retryBackoffMs(rd.delayMs, abortSignal);
       if (abortSignal.aborted) {
         throw failed;
       }
     }
   }
 
-  // 指数退避等待: 500ms * 2^(attempt-1), 封顶 8s, 乘 ±20% 抖动; 分片睡眠以便及时感知中断
+  // @deprecated 退避已迁移到 RetryPolicy + retryBackoffMs, 保留兼容
   private static async retryBackoff(attempt: number, abortSignal: AbortSignal): Promise<void> {
     let base: number = Math.min(500 * Math.pow(2, attempt - 1), 8000);
-    let delay: number = base * (0.8 + 0.4 * Math.random());
-    let deadline: number = Date.now() + delay;
+    await AgentLoopService.retryBackoffMs(base * (0.8 + 0.4 * Math.random()), abortSignal);
+  }
+
+  // 按给定毫秒数分片睡眠以便及时感知中断
+  private static async retryBackoffMs(delayMs: number, abortSignal: AbortSignal): Promise<void> {
+    let deadline: number = Date.now() + delayMs;
     while (Date.now() < deadline) {
       if (abortSignal.aborted) {
         return;
@@ -556,6 +514,11 @@ export class AgentLoopService {
   //   completions: choices[0].finish_reason ('length' → max_tokens)
   //   responses:   response.completed/incomplete 事件(response.status)
   //   anthropic:   message_delta.delta.stop_reason ('max_tokens')
+  // @deprecated 已迁移到 SSEAdapterFactory, 保留兼容
+  private static buildSseAdapter(protocol: string, callAcc: ToolCallAccumulator): SSEProtocolAdapter {
+    return SSEAdapterFactory.build(protocol, callAcc, AgentLoopService.extractFinishReason);
+  }
+
   private static extractFinishReason(protocol: string, sseData: string): string {
     try {
       if (protocol === 'anthropic') {
@@ -800,7 +763,7 @@ export class AgentLoopService {
       messages: msgs,
       stream: true
     };
-    let finalTools: Record<string, Object>[] = AgentLoopService.completionsTools(tools);
+    let finalTools: Record<string, Object>[] = ToolDefAdapter.completionsTools(tools);
     if (webSearchEnabled) {
       // 服务端联网搜索工具与客户端函数工具并存(与 ChatService 行为一致)
       finalTools.push({ type: 'web_search' });
@@ -871,7 +834,7 @@ export class AgentLoopService {
         }
       }
     }
-    let finalTools: Record<string, Object>[] = AgentLoopService.responsesTools(tools);
+    let finalTools: Record<string, Object>[] = ToolDefAdapter.responsesTools(tools);
     if (webSearchEnabled) {
       finalTools.push({ type: 'web_search' });
     }
@@ -973,7 +936,7 @@ export class AgentLoopService {
     // 未配置时默认 128K(与聊天模式一致); 顶满由粘性收尾提示续跑
     let maxTokens: number = config.maxTokens !== null ?
       config.maxTokens : Constants.DEFAULT_MAX_OUTPUT_TOKENS;
-    let finalTools: Record<string, Object>[] = AgentLoopService.anthropicTools(tools);
+    let finalTools: Record<string, Object>[] = ToolDefAdapter.anthropicTools(tools);
     if (webSearchEnabled) {
       let searchTool: Record<string, Object> = {
         type: 'web_search_20250305',
@@ -1009,6 +972,7 @@ export class AgentLoopService {
     return body;
   }
 
+  // @deprecated 工具形态转换已迁移到 ToolDefAdapter, 保留兼容
   private static completionsTools(tools: Record<string, Object>[]): Record<string, Object>[] {
     let out: Record<string, Object>[] = [];
     for (let i: number = 0; i < tools.length; i++) {
@@ -1025,6 +989,7 @@ export class AgentLoopService {
     return out;
   }
 
+  // @deprecated 工具形态转换已迁移到 ToolDefAdapter, 保留兼容
   private static responsesTools(tools: Record<string, Object>[]): Record<string, Object>[] {
     let out: Record<string, Object>[] = [];
     for (let i: number = 0; i < tools.length; i++) {
@@ -1039,6 +1004,7 @@ export class AgentLoopService {
     return out;
   }
 
+  // @deprecated 工具形态转换已迁移到 ToolDefAdapter, 保留兼容
   private static anthropicTools(tools: Record<string, Object>[]): Record<string, Object>[] {
     let out: Record<string, Object>[] = [];
     for (let i: number = 0; i < tools.length; i++) {
@@ -1169,8 +1135,36 @@ export class AgentLoopService {
   // 且仅在内容变化时追加。这样任何一轮之后, 前缀(系统提示词+全部历史)保持逐字节一致,
   // 模型侧 KV 缓存可以直接命中; 只有真正变化的那一小段(新快照)需要重新计算。
   private static cachedWorkPrompt: string = '';
+  // 最近一次 System Prompt 的 token 预算估算(供 turn_start 事件与 A/B 对照)
+  static lastPromptBudget: PromptBudgetSnapshot | null = null;
+  static lastProtocol: string = '';
 
   static buildWorkSystemPrompt(): string {
+    if (AgentLoopService.cachedWorkPrompt !== '') {
+      return AgentLoopService.cachedWorkPrompt;
+    }
+    let skillsSection: string = WorkSkillService.promptSectionWithMode(Constants.WORK_PROMPT_SKILL_DIRECTORY_MODE);
+    // 动态工具目录: 静态手写清单未覆盖的新增/插件工具自动追加, 保证工具面永远对模型可见
+    let defs: Record<string, Object>[] = WorkFileService.toolRegistryDefs();
+    let staticDir: string = PromptBuilder.toolsDirectory();
+    let missing: string[] = PromptBuilder.missingToolNames(staticDir, defs);
+    let extraTools: string = missing.length > 0 ?
+      PromptBuilder.buildToolDirectory(
+        PromptBuilder.defsByNames(defs, missing)) : '';
+    if (Constants.WORK_PROMPT_TOOL_DIRECTORY_MODE === 'dynamic_only') {
+      // A/B: 完全使用自动生成的工具目录(全量), 不携带静态手写目录
+      extraTools = PromptBuilder.buildToolDirectory(defs);
+      AgentLoopService.cachedWorkPrompt = PromptBuilder.buildWithToolDirectoryMode(
+        skillsSection, staticDir, extraTools, 'dynamic_only');
+    } else {
+      AgentLoopService.cachedWorkPrompt = PromptBuilder.build(skillsSection, extraTools);
+    }
+    AgentLoopService.lastPromptBudget = PromptBudget.fromPrompt(AgentLoopService.cachedWorkPrompt);
+    return AgentLoopService.cachedWorkPrompt;
+  }
+
+  // @deprecated 旧实现保留: 提示词已迁移到 PromptBuilder 分块构建; 此方法仅作兼容与回归对照。
+  static buildWorkSystemPromptLegacy(): string {
     if (AgentLoopService.cachedWorkPrompt !== '') {
       return AgentLoopService.cachedWorkPrompt;
     }
@@ -1231,26 +1225,26 @@ export class AgentLoopService {
     lines.push('- transform_file(input, steps, output?, format?, json_path?, has_header?, delimiter?, bom?, preview?)：对工作区数据文件执行本地转换管道——过滤/派生列/重算列/正则提取/拆列/去重/排序/替换/数值化，以及 CSV↔TSV↔JSON↔Markdown 表格↔XLSX 互转。数据全程不进入对话上下文，是处理大文件与非标格式的专用工具（read_file 读不全的表、要批量清洗/提取/转换的数据都归它）。流程：先省略 output 预览前 3 行 → 调整 steps → 带 output 写盘 → read_file 抽查。steps 完整语法先 load_skill("data")。限制：输入 ≤2MB 文本、≤10 万行、steps ≤30 步；小表格直接 write_file/write_csv 更快，不要滥用。');
     lines.push('- run_js(code, files?, timeout_ms?)：在本机独立 JS 引擎沙箱里执行一段 JavaScript——"写几行代码算一下"的通用手段。适合：日期/数值/单位换算、正则清洗、JSON 重塑与合并、统计汇总、算法试算与验证，以及批量生成结构化数据（用 JS 拼出完整 JSON 写出文件，再交给 write_docx/write_xlsx/write_pptx 成文）。沙箱是纯计算环境：无网络、无文件系统、无模块加载（不支持 import/require）。文件必须显式进出——files 里列出的工作区文件会预载为只读的 inputs（键=去掉 "./" 前缀的相对路径，结果里会列出实际键名），脚本里用 inputs["路径"] 或 read("路径") 读取（read 对 "./"、重复斜杠等写法会自动归一化；没传 files 时调用 read 会直接报错提示）；脚本内 write("路径", 内容) 声明的输出会在执行成功后写入工作区。返回值取脚本最后一条表达式的值（要显式返回就写 (() => { ...; return 结果; })()）；console.log/print 的输出随结果一并返回。限制：代码 ≤128KB、默认执行上限 10 秒（timeout_ms 最大 30000）、死循环无法中断（超时会放弃等待并计入上限，两次后本会话停用）、单次输出 ≤16 个文件且单文件 ≤512KB。常规表格转换优先用 transform_file，读大文件优先用 read_file/search_files。');
     lines.push('**文档生成**');
-    lines.push('- write_docx(path, doc?, doc_file?, markdown?, title?, style?)：生成/重建 Word 文档（.docx）。三种输入三选一：doc（Doc JSON 结构化源——封面/目录/分级标题(H1~H6)/正文/列表/表格/图片/引用/代码块，图片 src 支持工作区相对路径、data URL、http，正式文档一律用它）；doc_file（工作区中 Doc JSON 文件路径——长文档先 write_file/append_file 分块写好再导出，改内容后可重复导出）；markdown（简单内容直接用，标题/列表/表格/引用/图片同样支持，图片写法 ![说明](相对路径) 或 data URL）。title 可选文档标题，style 可选样式预设 default/academic/minimal。做正式 Word 文档前必须先 load_skill("docx") 获取 Doc 语法与排版规范。');
+    lines.push('- write_docx(path, doc?, doc_file?, markdown?, title?, style?)：生成/重建 Word 文档（.docx）。三种输入三选一：doc（Doc JSON 结构化源——封面/目录/分级标题(H1~H6)/正文/列表/表格/图片/引用/代码块，图片 src 支持工作区相对路径、data URL、http，正式文档一律用它）；doc_file（工作区中 Doc JSON 文件路径——长文档先 write_file/append_file 分块写好再导出，改内容后可重复导出）；markdown（简单内容直接用，标题/列表/表格/引用/图片同样支持，图片写法 ![说明](相对路径) 或 data URL）。title 可选文档标题，style 可选样式预设 default/academic/minimal。做正式 Word 文档前必须先 load_skill("docx") 全量加载；新建前 ask_user_question 前置提问；交付前写 docx_qa_report.md。');
     lines.push('- read_docx(path)：读回 Word 文档的 Doc JSON 源。本应用生成的 .docx 无损还原；外来 docx 为近似导入（标题/正文/列表/表格还原，图片抽取到 docx_images/<文件名>/ 供 view_image 查看与再次引用，版式细节不保留）。编辑或仿制 Word 文档前先读它。');
     lines.push('- edit_docx(path, ops)：对已有 .docx 应用结构化操作后保存（外来 docx 会先自动备份原文件为 *_原版备份.docx）。ops 为 JSON 数组：set_title{title}/set_subtitle{subtitle}/set_author{author}/set_style{style}/set_cover{cover}/set_toc{toc}/add_block{index?,block}/delete_block{index}/update_block{index,block 部分字段}/move_block{from,to}/replace_text{find,replace}；index 从 1 起。改单块用 update_block，全局改词用 replace_text，换样式用 set_style。');
-    lines.push('- write_xlsx(path, workbook?, workbook_file?, table?, name?, style?)：生成/重建 Excel 工作簿（.xlsx）。三种输入三选一：workbook（Workbook JSON 结构化源——多工作表/表头加粗/公式（单元格值以 = 开头，如 "=SUM(B2:B9)"）/数字格式（formats 列格式：money/int/percent/year/date/number/text）/列宽（colWidths）/冻结窗格（freeze），正式表格一律用它）；workbook_file（工作区中 Workbook JSON 文件路径——长表先 write_file/append_file 分块写好再导出）；table（简单表格直接用 Markdown 表格/CSV/TSV，首行作表头）。name 可选工作簿名，style 可选样式预设 default/academic/minimal。做正式 Excel 前必须先 load_skill("xlsx") 获取 Workbook 语法与表格规范（公式优先/数字格式/负数零值显示）。');
+    lines.push('- write_xlsx(path, workbook?, workbook_file?, table?, name?, style?)：生成/重建 Excel 工作簿（.xlsx）。三种输入三选一：workbook（Workbook JSON 结构化源——多工作表/表头加粗/公式（单元格值以 = 开头，如 "=SUM(B2:B9)"）/数字格式（formats 列格式：money/int/percent/year/date/number/text）/列宽（colWidths）/冻结窗格（freeze），正式表格一律用它）；workbook_file（工作区中 Workbook JSON 文件路径——长表先 write_file/append_file 分块写好再导出）；table（简单表格直接用 Markdown 表格/CSV/TSV，首行作表头）。name 可选工作簿名，style 可选样式预设 default/academic/minimal。做正式 Excel 前必须先 load_skill("xlsx") 全量加载；新建前 ask_user_question 前置提问；交付前写 xlsx_qa_report.md。');
     lines.push('- read_xlsx(path)：读回 Excel 工作簿的 Workbook JSON 源。本应用生成的 .xlsx 无损还原；外来 xlsx 为近似导入（各工作表数值/文本/公式还原，样式/合并等细节不保留）。编辑或仿制 Excel 文件前先读它。');
     lines.push('- edit_xlsx(path, ops)：对已有 .xlsx 应用结构化操作后保存（外来 xlsx 会先自动备份原文件为 *_原版备份.xlsx）。ops 为 JSON 数组：set_name{name}/set_style{style}/set_sheet_name{sheet,name}/add_sheet{sheet,index?}/delete_sheet{sheet}/move_sheet{sheet,to}/add_row{sheet,row,index?}/delete_row{sheet,index}/update_row{sheet,index,row}/set_cell{sheet,row,col,value}/set_header{sheet,col,value}/replace_text{find,replace}；sheet 用工作表名，row/index 按数据行从 1 起算（不含表头，与 read_xlsx 的 rows 一一对应），col 从 1 起（1=A）；改表头单元格用 set_header。改单元格用 set_cell，加行用 add_row，全局改词用 replace_text。');
     lines.push('- write_csv(path, table, bom?)：把表格数据生成 CSV（UTF-8 默认带 BOM，Excel/WPS 打开中文不乱码；RFC 4180 转义）。table 与 write_xlsx 相同的解析。轻量结构化数据、后续还要程序化处理时选 CSV；需要样式/多工作表用 write_xlsx。');
-    lines.push('- write_pptx(path, deck?, deck_file?, outline?, theme?, title?)：生成/重建演示文稿（16:9，.pptx）。三种输入二选一：deck（Deck JSON 结构化源——13 种版式、8 套主题、图表/表格/图片/备注，正式 PPT 一律用它）；deck_file（工作区中 Deck JSON 文件路径——长 deck 先 write_file/append_file 分块写好再导出，改内容后可重复导出）；outline（简易大纲："# 页标题"开新页、"## 标题"开分节页、"- 要点"一级要点、缩进"- 要点"二级要点）。做正式 PPT 前必须先 load_skill("ppt") 获取 Deck 语法与设计规范。theme 可选预设：brand-blue/midnight/forest/sunset/violet/graphite/ivory/crimson。');
+    lines.push('- write_pptx(path, deck?, deck_file?, outline?, theme?, title?)：生成/重建演示文稿（16:9，.pptx）。三种输入二选一：deck（Deck JSON 结构化源——13 种版式、8 套主题、themeOverride 多色混搭、图表/表格/图片/背景装饰/备注，正式 PPT 一律用它）；deck_file（工作区中 Deck JSON 文件路径——长 deck 先 write_file/append_file 分块写好再导出，改内容后可重复导出）；outline（简易大纲："# 页标题"开新页、"## 标题"开分节页、"- 要点"一级要点、缩进"- 要点"二级要点）。做正式 PPT 前必须先 load_skill("ppt") 全量加载（SKILL.md + 全部 reference）；新建前 ask_user_question 前置提问；默认 20 页以上；每页 SVG 装饰。theme 可选预设：brand-blue/midnight/forest/sunset/violet/graphite/ivory/crimson。');
     lines.push('- read_ppt(path)：读回演示文稿的 Deck JSON 源。本应用生成的 .pptx 无损还原；外来 pptx 为近似导入（文本/表格/版面保留，图片与图表数据不保留）。编辑或仿制前先读它。');
     lines.push('- edit_ppt(path, ops)：对已有 .pptx 应用结构化操作后保存（外来 pptx 会先自动备份原文件）。ops 为 JSON 数组：add_slide{slide,index?}/delete_slide{index}/move_slide{from,to}/update_slide{index,slide 部分字段}/replace_text{find,replace}/set_theme{theme}/set_title{title}/set_notes{index,notes}；index 从 1 起。改单页用 update_slide，全局改词用 replace_text，换风格用 set_theme。');
     lines.push('- write_svg(path, svg, width?)：把 SVG 源码保存为矢量文件并自动栅格化出 PNG 预览（<name>_preview.png）。生成图片的主要手段：图标、示意图、流程图、信息图、插画由你手写 SVG 完成——先 load_skill("svg") 按规范生成，生成后必须 view_image 预览确认再交付。write_pptx 可直接引用 .svg（自动栅格化），write_docx 引用预览 PNG。真实照片类素材不要画，用 download_file 下载。');
     lines.push('**任务控制、交互与委派**');
-    lines.push('- ask_user_question(question, options?, multi_select?)：向用户提问并暂停等待回答（用户也可自由输入补充）。仅当存在影响整体方向的关键缺口（目标格式/范围/口径/删除确认等）且无法用合理默认值时使用；问题要一次问全（含全部选项），不要挤牙膏式追问。用户取消回答时基于合理假设继续并在总结中标注。');
+    lines.push('- ask_user_question(question, options?, multi_select?)：向用户提问并暂停等待回答（用户也可自由输入补充）。仅当存在影响整体方向的关键缺口（目标格式/范围/口径/删除确认等）且无法用合理默认值时使用；问题要一次问全（含全部选项），不要挤牙膏式追问。**技能强制要求的前置提问（如 ppt/docx/xlsx 技能新建前必须 ask_user_question 确认目的/篇幅/风格/素材等）优先于本默认**——命中该类技能时按技能规定提问，不因“能默认就不问”而跳过。用户取消回答时基于合理假设继续并在总结中标注。');
     lines.push('- schedule_create(message, after_seconds? | every_seconds?)：创建定时提醒（一次性 after_seconds，或循环 every_seconds≥300 秒），到期自动作为消息唤醒你；schedule_list 列出，schedule_delete(id) 取消。用户要求"稍后/定时提醒我"时用它。');
     lines.push('- goal_create(objective) / goal_get() / goal_update(status, note)：维护本会话的自主目标。长程任务开工前立目标锚定总意图，期间用 goal_update 记录关键进展或受阻原因，防止执行漂移；目标会注入运行时快照。');
     lines.push('- subagent(description, prompt)：派生子代理独立完成子任务（共享工作区、独立上下文、最多 40 步），返回其最终报告。把可外包的大块工作（独立调研、批量检索、成套素材整理）交给子代理，主任务保持轻盈；prompt 必须自包含（背景/要求/验收标准/产出路径），子代理不能向用户提问。');
     lines.push('- session_search(query)：检索本会话事件日志（历史消息/工具调用与结果）。上下文被压缩后要找回早期细节、或核对"之前执行过什么"时用它。');
     lines.push('**技能系统**');
     lines.push('- list_skills()：列出可用技能（领域操作指南）及其触发条件。');
-    lines.push('- load_skill(name, file?)：加载技能文档。省略 file 返回技能正文；file 传技能内参考文件（如 reference/deck-dsl.md）加载深入资料。接到对应任务先加载技能再动手——技能正文优先于你自己的默认做法。');
+    lines.push('- load_skill(name, file?)：加载技能文档。省略 file 返回技能正文（ppt/docx/xlsx 技能返回 SKILL.md + 全部 reference 的全量 bundle，必须一次加载完，禁止挑读）；file 传技能内参考文件（如 reference/deck-dsl.md）加载深入资料。接到对应任务先加载技能再动手——技能正文优先于你自己的默认做法。');
     lines.push('');
     lines.push('所有工具的返回超过约 1.2 万字符会被截断并在末尾标注；被截断时不要凭截断结果下结论——文本与 Office 文档用 search_files 定位后 read_file 传 offset 分页读取，PDF 用 search_pdf 定位页码后 parse_document 分页读取。');
     lines.push('');
@@ -1268,7 +1262,7 @@ export class AgentLoopService {
     lines.push('- **不做机械重复**：若系统提醒指出你以完全相同的参数反复调用同一工具，立即停下分析原因并改变策略——相同调用不会产生新信息。');
     lines.push('');
     lines.push('# 工作流程（严格遵守）');
-    lines.push('1. **需求分析**：理解明确需求，推测潜在需求。存在影响整体方向的关键缺口（目标格式、范围、口径等）且无法用合理默认值时，用 ask_user_question 一次问全再动手；小事不问，用合理默认值并在总结中说明。提问会暂停循环等待用户回复，所以务必一次问完，不要挤牙膏式追问。');
+    lines.push('1. **需求分析**：理解明确需求，推测潜在需求。存在影响整体方向的关键缺口（目标格式、范围、口径等）且无法用合理默认值时，用 ask_user_question 一次问全再动手；小事不问，用合理默认值并在总结中说明。**技能强制前置提问（如 ppt/docx/xlsx 新建）按技能执行，不适用“能默认就不问”**。提问会暂停循环等待用户回复，所以务必一次问完，不要挤牙膏式追问。');
     lines.push('2. **规划**：判断复杂度。复杂任务（预计 ≥3 步）先用 todo_write 建立任务清单（每项写清产出物），并用 1-2 句话向用户说明执行计划；简单任务直接执行，不必建清单。拆解到可执行即可，两步能完成的不拆成五步。');
     lines.push('3. **执行**：按四步法逐项推进，每完成一项立即用 todo_write 更新状态。关键中间结论、重要数据与发现，及时写入工作区文件落盘，不要只留在对话里（文件不参与上下文压缩，永远可查）。');
     lines.push('4. **观察与更新**：每次工具返回后快速评估：覆盖缺口了吗？结果之间一致吗？有缺口就补查，有矛盾就核实，无缺口就推进下一步。需要向用户同步进展时，每条进展独立成段（前后空行或列表项），不要写成整段。');
@@ -1323,8 +1317,9 @@ export class AgentLoopService {
     lines.push('- 老格式 Office（.doc/.xls/.ppt）无法本地解析，请用户转存为新格式（.docx/.xlsx/.pptx）。');
     lines.push('- 加密 PDF 与扫描件（图片型 PDF）无法提取文本，请如实告知用户。');
     lines.push('');
-    lines.push('# 交付前自检清单（内部执行，无需输出）');
+    lines.push('# 交付前自检清单（必须执行，结果必须在最终总结输出为「自检报告」逐项 PASS/FAIL，不能只在内部执行）');
     lines.push('- [ ] 产出物全部存在且非空（list_files 验证过）？');
+    lines.push('- [ ] 最终总结已包含「自检报告」逐项 PASS/FAIL（含发现与修复记录）？');
     lines.push('- [ ] 面向用户阅读的交付物已是手机可读格式（docx/xlsx/pptx，除非用户另有要求）？');
     lines.push('- [ ] 关键内容抽查核对过（read_file / search_files）？');
     lines.push('- [ ] 所有失败的工具调用都已如实报告？');

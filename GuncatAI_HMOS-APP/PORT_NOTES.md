@@ -80,3 +80,15 @@ node check-setup.mjs && npx -y -p typescript@5.5.4 tsc -p check/tsconfig.json
 - 事件日志为轻量补充，会话 UI 状态仍存 Preferences（带 OOM 防护），二者互补。
 - 子代理为前台阻塞式（无后台 job 调度），最多 40 步，报告制收口。
 - bundleName 沿用 `com.bowenapp.guncatai`（沿用现有签名材料）；如需独立身份，改 bundleName 后重新生成签名 profile。
+
+## 四、后续核心层迭代（R13–R42）
+
+6.1.0 移植完成后的核心层迭代记录在 `ITERATION_LOG.md`（R1–R42，逐轮验证）；`BACKLOG.md` 维护当前待办。主要技术方向：
+
+- **决策层纯逻辑化**：`ToolScheduler` / `RepeatDetector` / `LoopDecisions` / `WorkLoopPlanner` / `WorkLoopSimulator` / `WorkLoopDriver` / `WorkLoopStateMachine` 全部抽到 `common/`，ChatViewModel 只做 IO 注入。
+- **三协议统一**：`LLMProtocol`（协议/端点）、`ToolDefAdapter`（工具形态）、`SSEProtocolAdapter` + `SSEAdapterFactory`（SSE 流水线）成为单一事实源，工作/聊天模式共用。
+- **错误/重试**：`RetryPolicy`（指数退避+jitter+retry-after）、`RetryAfterParser`、`ToolRetryPolicy`、`LoopError`（显式 `retryable`/`userMessage`）迁移纯层；`runTurnWithRetry` 先判显式可重试再走策略。
+- **插件/技能体系**：`ToolRegistry` 统一工具+技能元数据；`PluginManifestLoader` 解析 manifest；`PluginHotLoader` 从 rawfile 热加载/reloadAll；`PluginToolExecutor` 声明式工具实现注册；`SkillDirectoryFormatter` 提供技能目录渐进披露 A/B。
+- **可观测**：`LoopMetrics` 增加重试/压缩/max_tokens 计数；`SessionLogAggregator` 支持协议维度、工具延迟 p50/p90/p99、跨会话聚合；日志新增 `tool_latency` 事件。
+- **测试规模**：`test/guncat-harness/test-core.mjs` 从 58 项增长到 **256 项全绿**；每轮均通过类型检查与 DevEco `assembleHap`。
+

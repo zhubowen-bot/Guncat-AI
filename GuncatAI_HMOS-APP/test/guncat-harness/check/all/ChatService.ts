@@ -10,6 +10,9 @@ import { Attachment } from './Attachment.ts';
 import { ToolCallRecord } from './ToolCallRecord.ts';
 import { StreamCallbacks, AbortSignal } from './Types.ts';
 import { Constants } from './Constants.ts';
+import { LLMProtocol } from './LLMProtocol.ts';
+import { SSEProtocolAdapter, SSEParseContext } from './SSEProtocolAdapter.ts';
+import { SSEAdapterFactory } from './SSEAdapterFactory.ts';
 import { util } from '@kit.ArkTS';
 import { ToolCallAccumulator, collectCompletionsToolDelta, collectResponsesToolItem,
   collectAnthropicToolEvent, genToolCallId } from './ToolCallStream.ts';
@@ -35,13 +38,7 @@ export class StreamAccumulator {
 }
 
 export function getProtocol(provider: string): string {
-  if (provider === 'openai-responses') {
-    return 'responses';
-  }
-  if (provider === 'anthropic-messages') {
-    return 'anthropic';
-  }
-  return 'completions';
+  return LLMProtocol.pick(provider);
 }
 
 // 单次流式请求的结构化产出(聊天模式本地联网搜索工具循环需要):
@@ -127,24 +124,7 @@ function parseToolArgsObject(argsJson: string): Record<string, Object> {
 // autoSuffix=false 时严格使用用户填写的地址(仅去首尾空白), 不做任何协议路径补全——
 // 用于非标准路径的自建网关/代理; 开启时按协议补全标准路径。
 export function resolveEndpointUrl(config: ApiConfig, protocol: string): string {
-  if (!config.autoSuffix) {
-    return config.baseUrl.trim();
-  }
-  let base: string = config.baseUrl.replace(/\/+$/, '');
-  if (protocol === 'responses') {
-    return base + Constants.RESPONSES_PATH;
-  }
-  if (protocol === 'anthropic') {
-    if (base.endsWith('/v1') || base.endsWith('/anthropic/v1')) {
-      return base + Constants.MESSAGES_PATH;
-    }
-    if (base === 'https://api.deepseek.com' || base === 'http://api.deepseek.com') {
-      // 兼容用户直接填 DeepSeek 主域名时自动切到 Anthropic 兼容端点
-      return base + Constants.ANTHROPIC_DEEPSEEK_MESSAGES_PATH;
-    }
-    return base + Constants.ANTHROPIC_V1_MESSAGES_PATH;
-  }
-  return base + Constants.CHAT_COMPLETIONS_PATH;
+  return LLMProtocol.resolveEndpoint(config.baseUrl, protocol, config.autoSuffix);
 }
 
 function buildChatCompletionsBody(config: ApiConfig, agent: Agent | null,
@@ -1093,6 +1073,7 @@ export class ChatService {
     let startTime: number = Date.now();
     // 工具调用累积(本地联网搜索 search_web 等强制注入的 function tool)
     let callAcc: ToolCallAccumulator = new ToolCallAccumulator();
+    let sseAdapter: SSEProtocolAdapter = SSEAdapterFactory.build(protocol, callAcc);
     let lastToolSig: string = '';
     // Anthropic 思考块签名与加密思考块(思考模式下本地工具循环回传所需)
     let thinkingSignature: string = '';
@@ -1101,78 +1082,32 @@ export class ChatService {
     // 对齐 web 版本: SSE 解析出一个 delta 就立即 onToken 全量累积,
     // UI 端 50ms 节流刷新. 不做应用层字符拆分 (避免 setTimeout 队列过长 OOM)
 
-    // 单条 SSE 数据分发(数据流与 dataEnd 兜底共用): 按协议解析文本/思考/工具调用/usage
+    // 单条 SSE 数据分发(数据流与 dataEnd 兜底共用): 协议适配器统一解析文本/思考/工具调用/usage
     let processSseData = (sseData: string): void => {
-      if (protocol === 'responses') {
-        let fail: string = extractResponsesFailure(sseData);
-        if (fail !== '') {
-          failedMsg = fail;
-          throw new Error(fail);
-        }
-        let delta: string = extractResponsesDelta(sseData);
-        if (delta !== '') {
-          acc.fullContent += delta;
-          callbacks.onToken(delta);
-        }
-        let reasoning: string = extractResponsesReasoning(sseData);
-        if (reasoning !== '') {
-          fullReasoning += reasoning;
-          callbacks.onReasoning(fullReasoning);
-        }
-        collectResponsesToolItem(sseData, callAcc);
-        let usageObj: Record<string, Object> | null = extractResponsesUsage(sseData);
-        if (usageObj !== null) {
-          let stats: number[] = deriveStreamStats(usageObj, Date.now() - startTime);
-          callbacks.onUsage(stats[0], stats[1]);
-        }
-      } else if (protocol === 'anthropic') {
-        let fail: string = extractAnthropicFailure(sseData);
-        if (fail !== '') {
-          failedMsg = fail;
-          throw new Error(fail);
-        }
-        let delta: string = extractAnthropicDelta(sseData);
-        if (delta !== '') {
-          acc.fullContent += delta;
-          callbacks.onToken(delta);
-        }
-        let reasoning: string = extractAnthropicReasoning(sseData);
-        if (reasoning !== '') {
-          fullReasoning += reasoning;
-          callbacks.onReasoning(fullReasoning);
-        }
-        let sig: string = extractAnthropicSignature(sseData);
-        if (sig !== '') {
-          thinkingSignature += sig;
-        }
-        let redacted: string = extractAnthropicRedactedThinking(sseData);
-        if (redacted !== '') {
-          redactedThinking = redacted;
-        }
-        collectAnthropicToolEvent(sseData, callAcc);
-        let usageObj: Record<string, Object> | null = extractAnthropicUsage(sseData);
-        if (usageObj !== null) {
-          let stats: number[] = deriveStreamStats(usageObj, Date.now() - startTime);
-          callbacks.onUsage(stats[0], stats[1]);
-        }
-      } else {
-        let delta: string = extractChatCompletionsDelta(sseData);
-        if (delta !== '') {
-          acc.fullContent += delta;
-          callbacks.onToken(delta);
-        }
-        let reasoning: string = extractChatCompletionsReasoning(sseData);
-        if (reasoning !== '') {
-          fullReasoning += reasoning;
-          callbacks.onReasoning(fullReasoning);
-        }
-        collectCompletionsToolDelta(sseData, callAcc);
-        let usageObj: Record<string, Object> | null = extractChatCompletionsUsage(sseData);
-        if (usageObj !== null) {
-          let stats: number[] = deriveStreamStats(usageObj, Date.now() - startTime);
-          callbacks.onUsage(stats[0], stats[1]);
-        }
-      }
+      let ctx: SSEParseContext = new SSEParseContext();
+      ctx.onFailure = (msg: string): boolean => {
+        failedMsg = msg;
+        throw new Error(msg);
+      };
+      ctx.onToken = (delta: string): void => {
+        acc.fullContent += delta;
+        callbacks.onToken(delta);
+      };
+      ctx.onReasoning = (text: string): void => {
+        fullReasoning += text;
+        callbacks.onReasoning(fullReasoning);
+      };
+      ctx.onSignature = (signature: string): void => {
+        thinkingSignature += signature;
+      };
+      ctx.onRedactedThinking = (data: string): void => {
+        redactedThinking = data;
+      };
+      ctx.onUsage = (usageObj: Record<string, Object> | null): void => {
+        let stats: number[] = deriveStreamStats(usageObj, Date.now() - startTime);
+        callbacks.onUsage(stats[0], stats[1]);
+      };
+      sseAdapter.handleLine(sseData, ctx);
       // 工具调用流式生成过程中即时上抛(调用数或累计参数量变化时)
       if (callAcc.calls.length > 0) {
         let argsLen: number = 0;

@@ -581,7 +581,7 @@ export class HarnessTools {
         'max_chars', HarnessTools.strProp('可选: 返回文本字符上限, 默认 24000')),
       ['url']));
     defs.push(HarnessTools.makeTool('ask_user_question',
-      '向用户提问并等待回答(会暂停执行)。仅当存在影响整体方向的关键缺口(目标格式/范围/口径/确认删除等)且无法用合理默认值时使用; 问题要一次问全(支持多个选项)。options 为选项字符串数组(可空=自由回答); multi_select=true 允许多选; 用户也可补充文字。用户回答会作为本工具结果返回。',
+      '向用户提问并等待回答(会暂停执行)。仅当存在影响整体方向的关键缺口(目标格式/范围/口径/确认删除等)且无法用合理默认值时使用; 问题要一次问全(支持多个选项)。**技能强制前置提问(如 ppt/docx/xlsx 新建)优先于本默认**。options 为选项字符串数组(可空=自由回答); multi_select=true 允许多选; 用户也可补充文字。用户回答会作为本工具结果返回。',
       HarnessTools.props3(
         'question', HarnessTools.strProp('问题文本(把背景与影响一次说清)'),
         'options', HarnessTools.strProp('可选: 选项 JSON 字符串数组, 如 ["方案A","方案B"]'),

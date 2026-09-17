@@ -25,10 +25,154 @@ import { Deck, DeckParser, DeckOutline, DeckOps } from './DeckModel.ts';
 import { SvgUtil } from './SvgUtil.ts';
 import { XmlUtil } from './XmlUtil.ts';
 import { Constants } from './Constants.ts';
+import { ToolExecutionGuard } from './ToolExecutionGuard.ts';
+import { ToolSchemaValidator } from './ToolSchemaValidator.ts';
+import { ToolRetryPolicy } from './ToolRetryPolicy.ts';
+import { ToolRegistry } from './ToolRegistry.ts';
+import { PluginToolExecutor, PluginToolResult } from './PluginToolExecutor.ts';
+import { AbortSignal } from './Types.ts';
 
 export class WorkToolRunner {
+  // 工具内 HTTP 请求注册表: 供 stopStreaming 深度取消(destroy 底层请求, 而不是只放弃等待)
+  private static toolRequests: http.HttpRequest[] = [];
+  // 统一工具入口: 先套超时/取消护栏, 再进入真正的分发实现; 网络类工具对瞬时失败少量重试。
+  // 插件工具走声明式 PluginToolExecutor; 未注册实现的插件工具返回“插件未实现”。
+  // abortSignal 为可选参数(主循环/子代理传入), 未传时只做超时保护。
   static async execute(context: common.UIAbilityContext, convId: string,
+    name: string, argsJson: string,
+    abortSignal: AbortSignal | null = null): Promise<ToolExecResult> {
+    if (abortSignal !== null && abortSignal.aborted) {
+      return WorkToolRunner.abortedResult(name);
+    }
+    WorkFileService.toolRegistrySynced();
+    let meta = ToolRegistry.findMeta(name);
+    let isPluginTool: boolean = meta !== null && meta.namespace !== 'core';
+    if (isPluginTool && !PluginToolExecutor.has(name)) {
+      return WorkToolRunner.pluginNotImplementedResult(name);
+    }
+    let timeoutMs: number = meta !== null && meta.timeoutMs > 0 ?
+      meta.timeoutMs : Constants.WORK_TOOL_TIMEOUT_MS;
+    let policy: ToolRetryPolicy = new ToolRetryPolicy();
+    if (meta !== null && meta.maxRetries >= 0) {
+      policy.setMaxRetries(name, meta.maxRetries);
+    }
+    let attempt: number = 0;
+    while (true) {
+      let result: ToolExecResult = await ToolExecutionGuard.run(
+        WorkToolRunner.buildTask(context, convId, name, argsJson, abortSignal),
+        timeoutMs,
+        abortSignal,
+        (): ToolExecResult => WorkToolRunner.timeoutResult(name),
+        (): ToolExecResult => WorkToolRunner.abortedResult(name));
+      let d = policy.decide(name, attempt, result.timeout, !result.ok,
+        result.cancelled, result.schemaError);
+      if (!d.shouldRetry) {
+        return result;
+      }
+      attempt++;
+      await WorkToolRunner.sleep(d.delayMs);
+      if (abortSignal !== null && abortSignal.aborted) {
+        return WorkToolRunner.abortedResult(name);
+      }
+    }
+  }
+
+  // 插件工具 → 声明式 handler; 其余走内部分发实现
+  private static async buildTask(context: common.UIAbilityContext, convId: string,
+    name: string, argsJson: string, abortSignal: AbortSignal | null): Promise<ToolExecResult> {
+    if (PluginToolExecutor.has(name)) {
+      return WorkToolRunner.runPluginHandler(context, convId, name, argsJson, abortSignal);
+    }
+    return await WorkToolRunner.executeInner(context, convId, name, argsJson);
+  }
+
+  private static async runPluginHandler(context: common.UIAbilityContext, convId: string,
+    name: string, argsJson: string, abortSignal: AbortSignal | null): Promise<ToolExecResult> {
+    // 插件 handler 同样先做结构化参数校验(与核心工具一致)
+    let def: Record<string, Object> | null = WorkFileService.findToolDef(name);
+    if (def !== null) {
+      let parsed: Record<string, Object> | null = WorkToolRunner.parseArgs(argsJson);
+      if (parsed === null) {
+        return WorkToolRunner.argError();
+      }
+      let schemaErr: string = ToolSchemaValidator.validate(def, parsed);
+      if (schemaErr !== '') {
+        return WorkToolRunner.schemaFailMsg(schemaErr);
+      }
+    }
+    let pr: PluginToolResult | null = await PluginToolExecutor.execute(name, context,
+      convId, argsJson, abortSignal);
+    if (pr === null) {
+      return WorkToolRunner.pluginNotImplementedResult(name);
+    }
+    return WorkToolRunner.toToolResult(pr);
+  }
+
+  private static toToolResult(pr: PluginToolResult): ToolExecResult {
+    let r: ToolExecResult = new ToolExecResult();
+    r.ok = pr.ok;
+    r.output = pr.output;
+    r.imageDataUrl = pr.imageDataUrl;
+    r.meta = pr.meta;
+    r.timeout = pr.timeout;
+    r.cancelled = pr.cancelled;
+    r.schemaError = pr.schemaError;
+    return r;
+  }
+
+  private static pluginNotImplementedResult(name: string): ToolExecResult {
+    let r: ToolExecResult = new ToolExecResult();
+    r.ok = false;
+    r.output = '插件工具未实现: ' + name;
+    return r;
+  }
+
+  private static sleep(ms: number): Promise<void> {
+    return new Promise<void>((resolve: () => void) => {
+      setTimeout(() => {
+        resolve();
+      }, ms);
+    });
+  }
+
+  // 深度取消: 销毁所有由本执行器发起的工具内 HTTP 请求(下载/抓取等)
+  static abortToolRequests(): void {
+    for (let i: number = 0; i < WorkToolRunner.toolRequests.length; i++) {
+      try {
+        WorkToolRunner.toolRequests[i].destroy();
+      } catch (e) {
+        // 已销毁/已结束的请求忽略
+      }
+    }
+    WorkToolRunner.toolRequests = [];
+  }
+
+  private static registerToolRequest(req: http.HttpRequest): void {
+    WorkToolRunner.toolRequests.push(req);
+  }
+
+  private static unregisterToolRequest(req: http.HttpRequest): void {
+    let idx: number = WorkToolRunner.toolRequests.indexOf(req);
+    if (idx >= 0) {
+      WorkToolRunner.toolRequests.splice(idx, 1);
+    }
+  }
+
+  private static async executeInner(context: common.UIAbilityContext, convId: string,
     name: string, argsJson: string): Promise<ToolExecResult> {
+    // 结构化参数校验: 按工具定义的 JSON Schema 校验 required 与宽容类型;
+    // 未知工具无定义则跳过, 交给分发层给出"未知工具"错误
+    let def: Record<string, Object> | null = WorkFileService.findToolDef(name);
+    if (def !== null) {
+      let parsed: Record<string, Object> | null = WorkToolRunner.parseArgs(argsJson);
+      if (parsed === null) {
+        return WorkToolRunner.argError();
+      }
+      let schemaErr: string = ToolSchemaValidator.validate(def, parsed);
+      if (schemaErr !== '') {
+        return WorkToolRunner.schemaFailMsg(schemaErr);
+      }
+    }
     if (name === 'write_docx') {
       return await WorkToolRunner.toolWriteDocx(context, convId, argsJson);
     }
@@ -97,6 +241,7 @@ export class WorkToolRunner {
     let r: ToolExecResult = new ToolExecResult();
     r.ok = false;
     r.output = 'ERROR: 参数不是合法的 JSON 对象';
+    r.schemaError = true;
     return r;
   }
 
@@ -705,6 +850,7 @@ export class WorkToolRunner {
       derived = true;
     }
     let req: http.HttpRequest = http.createHttp();
+    WorkToolRunner.registerToolRequest(req);
     try {
       let headers: Record<string, string> = { 'user-agent': 'Mozilla/5.0 (Linux; HarmonyOS) GuncatWork' };
       let resp: http.HttpResponse = await req.request(url, {
@@ -753,6 +899,7 @@ export class WorkToolRunner {
       return WorkToolRunner.failMsg('下载失败: ' + WorkToolRunner.extractErrMessage(e as Object) +
         '(网络不可达/超时/证书问题)');
     } finally {
+      WorkToolRunner.unregisterToolRequest(req);
       req.destroy();
     }
   }
@@ -1313,6 +1460,26 @@ export class WorkToolRunner {
     let r: ToolExecResult = new ToolExecResult();
     r.ok = false;
     r.output = 'ERROR: ' + output;
+    return r;
+  }
+
+  // schema 校验失败(参数缺失/类型错/JSON 非法): 打上 schemaError 标记供评估
+  private static schemaFailMsg(output: string): ToolExecResult {
+    let r: ToolExecResult = WorkToolRunner.failMsg(output);
+    r.schemaError = true;
+    return r;
+  }
+
+  private static timeoutResult(name: string): ToolExecResult {
+    let r: ToolExecResult = WorkToolRunner.failMsg('工具执行超时(超过 ' +
+      Constants.WORK_TOOL_TIMEOUT_MS.toString() + ' ms): ' + name);
+    r.timeout = true;
+    return r;
+  }
+
+  private static abortedResult(name: string): ToolExecResult {
+    let r: ToolExecResult = WorkToolRunner.failMsg('工具执行已取消: ' + name);
+    r.cancelled = true;
     return r;
   }
 }

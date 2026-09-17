@@ -205,6 +205,18 @@ export class Constants {
   static readonly WORK_JS_MAX_ABANDONED: number = 2;
   // 工具并发执行的滚动池大小(对齐 dsh 的 maxParallelToolCalls, 只作用于只读并行段)
   static readonly WORK_MAX_PARALLEL_TOOLS: number = 4;
+  static readonly WORK_ALLOW_PARALLEL_TOOLS: boolean = true;
+  // 循环主体是否走 WorkLoopDriver 纯驱动(接入桥梁见 service/WorkLoopDriverBridge.ts):
+  // 已切换为 true, 由驱动接管循环级状态机/计划器; 如需回退旧 executeWorkLoop 改回 false 即可
+  static readonly WORK_USE_DRIVER_LOOP: boolean = true;
+  // 单次工具调用的兜底超时(ms): 兜住个别工具自身无超时控制的同步重活(如大 Office/PDF 处理),
+  // 超时后返回 ERROR 结果并继续循环, 不无限期占住 Agent Loop。网络类工具自身超时更短。
+  static readonly WORK_TOOL_TIMEOUT_MS: number = 180000;
+  // System Prompt 工具目录模式(Prompt A/B): 'static_plus_dynamic'=静态手写目录+动态补充(默认);
+  // 'dynamic_only'=完全用 ToolRegistry 自动生成的目录(供 A/B 对比)
+  static readonly WORK_PROMPT_TOOL_DIRECTORY_MODE: string = 'static_plus_dynamic';
+  // 技能目录模式: full_index(完整清单进提示词, 默认) / trigger_only(只留触发提示, 渐进披露)
+  static readonly WORK_PROMPT_SKILL_DIRECTORY_MODE: string = 'full_index';
   // 会话事件日志(JSONL)目录(位于应用沙箱 filesDir 下, 与工作区平行)
   static readonly WORK_SESSIONS_DIR: string = 'sessions';
   // 事件日志中单条思考文本的截断上限(过程性内容)

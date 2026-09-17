@@ -14,6 +14,12 @@ export class ToolCallRecord {
   // 运行态标记(不持久化): true 表示模型还在流式生成调用参数, 尚未开始执行;
   // 区分时间线上的"生成调用中"与"执行中/等待中"状态
   preparing: boolean = false;
+  // 可观测标记(持久化): 由执行护栏设置, 用于审计工具超时率/取消率/schema 错误率
+  timeout: boolean = false;
+  cancelled: boolean = false;
+  schemaError: boolean = false;
+  // 请求级 traceId(持久化): 跨会话归因单次工具调用
+  traceId: string = '';
 
   static of(id: string, name: string, argsJson: string): ToolCallRecord {
     let rec: ToolCallRecord = new ToolCallRecord();
@@ -23,6 +29,10 @@ export class ToolCallRecord {
     rec.result = '';
     rec.isError = false;
     rec.durationMs = -1;
+    rec.timeout = false;
+    rec.cancelled = false;
+    rec.schemaError = false;
+    rec.traceId = '';
     return rec;
   }
 
@@ -35,6 +45,10 @@ export class ToolCallRecord {
     rec.isError = (json['isError'] as boolean) ?? false;
     rec.durationMs = (json['durationMs'] as number) ?? -1;
     rec.meta = (json['meta'] as string) ?? '';
+    rec.timeout = (json['timeout'] as boolean) ?? false;
+    rec.cancelled = (json['cancelled'] as boolean) ?? false;
+    rec.schemaError = (json['schemaError'] as boolean) ?? false;
+    rec.traceId = (json['traceId'] as string) ?? '';
     return rec;
   }
 
@@ -46,7 +60,11 @@ export class ToolCallRecord {
       'result': this.result,
       'isError': this.isError,
       'durationMs': this.durationMs,
-      'meta': this.meta
+      'meta': this.meta,
+      'timeout': this.timeout,
+      'cancelled': this.cancelled,
+      'schemaError': this.schemaError,
+      'traceId': this.traceId
     };
   }
 }

@@ -5,6 +5,8 @@
 import { common } from '@kit.AbilityKit';
 import { util } from '@kit.ArkTS';
 import { Constants } from './Constants.ts';
+import { ToolRegistry, SkillMeta, SkillFileMeta } from './ToolRegistry.ts';
+import { SkillDirectoryFormatter } from './SkillDirectoryFormatter.ts';
 
 // 技能可加载的文件
 export class SkillFileInfo {
@@ -21,14 +23,40 @@ export class SkillInfo {
 }
 
 export class WorkSkillService {
+  // 技能是否已同步进 ToolRegistry(skill 作为首类插件)
+  private static skillsSynced: boolean = false;
+
+  private static ensureToolSkills(): void {
+    if (WorkSkillService.skillsSynced) {
+      return;
+    }
+    let list: SkillInfo[] = WorkSkillService.registry();
+    for (let i: number = 0; i < list.length; i++) {
+      let s: SkillInfo = list[i];
+      let meta: SkillMeta = new SkillMeta();
+      meta.id = s.id;
+      meta.name = s.name;
+      meta.description = s.description;
+      for (let f: number = 0; f < s.files.length; f++) {
+        let fm: SkillFileMeta = new SkillFileMeta();
+        fm.file = s.files[f].file;
+        fm.desc = s.files[f].desc;
+        meta.files.push(fm);
+      }
+      ToolRegistry.registerSkill(meta);
+    }
+    WorkSkillService.skillsSynced = true;
+  }
+
   // ===== 技能注册表(新增技能: 在 rawfile/skills/<id>/ 放文档 + 在此登记) =====
   private static registry(): SkillInfo[] {
     let list: SkillInfo[] = [];
     let ppt: SkillInfo = new SkillInfo();
     ppt.id = 'ppt';
     ppt.name = 'PPT 制作与编辑';
-    ppt.description = '制作/修改/美化演示文稿(.pptx)时加载: Deck JSON 完整语法(13 种版式/图表/表格/图片/备注)、' +
-      '8 套主题、设计规范与自检清单。任何 write_pptx / read_ppt / edit_ppt 任务开始前先加载。';
+    ppt.description = '制作/修改/美化演示文稿(.pptx)时加载，V3 全量加载所有 reference：Deck JSON 完整语法(13 种版式/图表/表格/图片/备注/背景装饰)、' +
+      '8 套主题 + themeOverride 多色混搭、视觉风格目录(科技/古风/简约/杂志/商务/学术/路演)与每页内容配图(流程图/时间轴/架构图/插画/信息图)、设计规范、内容纪律与自检报告。' +
+      '任何 write_pptx / read_ppt / edit_ppt 任务开始前先 load_skill("ppt") 全量加载；新建 PPT 前须 ask_user_question 前置提问；默认 20 页以上；每页装饰 + 内容配图；交付前写 ppt_qa_report.md。';
     let f1: SkillFileInfo = new SkillFileInfo();
     f1.file = 'reference/deck-dsl.md';
     f1.desc = 'Deck JSON 完整字段定义与示例';
@@ -41,16 +69,32 @@ export class WorkSkillService {
     let f4: SkillFileInfo = new SkillFileInfo();
     f4.file = 'reference/troubleshooting.md';
     f4.desc = '常见问题排查（症状→修复）';
+    let f5: SkillFileInfo = new SkillFileInfo();
+    f5.file = 'reference/deck-blueprints.md';
+    f5.desc = '常见演示文稿蓝图：经营复盘/商业计划/技术分享/培训/路演页面节奏';
+    let f6: SkillFileInfo = new SkillFileInfo();
+    f6.file = 'reference/visual-components.md';
+    f6.desc = 'PPT 视觉组件目录：指标区/对比/SWOT/雷达/漏斗/甘特/时间线/飞轮/分层架构';
+    let f7: SkillFileInfo = new SkillFileInfo();
+    f7.file = 'reference/style-guidelines.md';
+    f7.desc = 'ChatGPT 演示文稿风格指南：沟通任务/叙事弧/文案/构图纪律/字号下限';
+    let f8: SkillFileInfo = new SkillFileInfo();
+    f8.file = 'reference/visual-styles.md';
+    f8.desc = '视觉风格目录与装饰配方：科技/古风/简约/杂志/商务/学术/路演 + 纹理/勾边/花色 SVG 骨架';
     ppt.files.push(f1);
     ppt.files.push(f2);
     ppt.files.push(f3);
     ppt.files.push(f4);
+    ppt.files.push(f5);
+    ppt.files.push(f6);
+    ppt.files.push(f7);
+    ppt.files.push(f8);
     list.push(ppt);
     let docx: SkillInfo = new SkillInfo();
     docx.id = 'docx';
     docx.name = 'Word 文档制作与编辑';
-    docx.description = '制作/修改 Word 文档(.docx)时加载: Doc JSON 完整语法(封面/目录/分级标题/正文/列表/表格/图片/引用/代码块)、' +
-      '三种样式预设、中文排版规范与自检清单。任何 write_docx / read_docx / edit_docx 任务开始前先加载。';
+    docx.description = '制作/修改 Word 文档(.docx)时加载，V3 全量加载所有 reference：Doc JSON 完整语法(封面/目录/分级标题/正文/列表/表格/图片/引用/代码块)、' +
+      '三种样式预设、中文排版规范、文档形态选型与表格门禁、专业文书规范、自检报告。任何 write_docx / read_docx / edit_docx 任务开始前先 load_skill("docx") 全量加载；新建文档前须 ask_user_question 前置提问；交付前写 docx_qa_report.md。';
     let d1: SkillFileInfo = new SkillFileInfo();
     d1.file = 'reference/doc-dsl.md';
     d1.desc = 'Doc JSON 完整字段定义与示例';
@@ -60,15 +104,27 @@ export class WorkSkillService {
     let d3: SkillFileInfo = new SkillFileInfo();
     d3.file = 'reference/troubleshooting.md';
     d3.desc = '常见问题排查（症状→修复）';
+    let d4: SkillFileInfo = new SkillFileInfo();
+    d4.file = 'reference/document-blueprints.md';
+    d4.desc = '常见 Word 文档蓝图：商务报告/方案/纪要/论文/操作手册结构';
+    let d5: SkillFileInfo = new SkillFileInfo();
+    d5.file = 'reference/professional-docs.md';
+    d5.desc = '专业文书规范：公文/合同/研究报告/新闻稿/技术交底书结构与 Doc JSON 建议';
+    let d6: SkillFileInfo = new SkillFileInfo();
+    d6.file = 'reference/chatgpt-design-presets.md';
+    d6.desc = 'ChatGPT 官方文档设计预设：memo/RFI/提案/决策备忘/指南的 token 级排版参考';
     docx.files.push(d1);
     docx.files.push(d2);
     docx.files.push(d3);
+    docx.files.push(d4);
+    docx.files.push(d5);
+    docx.files.push(d6);
     list.push(docx);
     let xlsx: SkillInfo = new SkillInfo();
     xlsx.id = 'xlsx';
     xlsx.name = 'Excel 表格制作与编辑';
-    xlsx.description = '制作/修改/分析 Excel 表格(.xlsx)时加载: Workbook JSON 完整语法(多工作表/表头/公式/数字格式/列宽/冻结窗格)、' +
-      '表格规范(公式优先/数字格式矩阵/负数与零值显示/假设区与模型区分离)、编辑完整性规则与自检清单。任何 write_xlsx / read_xlsx / edit_xlsx 任务开始前先加载。';
+    xlsx.description = '制作/修改/分析 Excel 表格(.xlsx)时加载，V3 全量加载所有 reference：Workbook JSON 完整语法(多工作表/表头/公式/数字格式/列宽/冻结窗格)、' +
+      '表格规范(公式优先/数字格式矩阵/负数与零值显示/假设区与模型区分离)、数据分析与报表交付链路、编辑完整性规则与自检报告。任何 write_xlsx / read_xlsx / edit_xlsx 任务开始前先 load_skill("xlsx") 全量加载；新建工作簿前须 ask_user_question 前置提问；交付前写 xlsx_qa_report.md。';
     let x1: SkillFileInfo = new SkillFileInfo();
     x1.file = 'reference/workbook-dsl.md';
     x1.desc = 'Workbook JSON 完整字段定义与示例';
@@ -78,29 +134,41 @@ export class WorkSkillService {
     let x3: SkillFileInfo = new SkillFileInfo();
     x3.file = 'reference/troubleshooting.md';
     x3.desc = '常见问题排查（症状→修复）';
+    let x4: SkillFileInfo = new SkillFileInfo();
+    x4.file = 'reference/report-blueprints.md';
+    x4.desc = '常见 Excel 报表蓝图：经营月报/预算/财务模型/明细汇总/任务跟踪/台账';
+    let x5: SkillFileInfo = new SkillFileInfo();
+    x5.file = 'reference/analysis-playbook.md';
+    x5.desc = '数据分析玩法：趋势/对比/构成/异常归因/敏感性/口径审计';
     xlsx.files.push(x1);
     xlsx.files.push(x2);
     xlsx.files.push(x3);
+    xlsx.files.push(x4);
+    xlsx.files.push(x5);
     list.push(xlsx);
     let svg: SkillInfo = new SkillInfo();
     svg.id = 'svg';
     svg.name = 'SVG 矢量绘图（生图）';
-    svg.description = '需要生成图片——图标、徽标、示意图、流程图、架构图、信息图、插画、装饰图形——或任务要求"画图/生图/出图/配图"而工作区没有现成素材时加载: SVG 绘制规范(视框/描边风格/配色/文字处理)、"生成→预览→修正"工作流、可直接套用的配方。任何 write_svg 任务开始前先加载。';
+    svg.description = '需要生成图片——图标、徽标、示意图、流程图、架构图、信息图、插画、装饰图形——或任务要求"画图/生图/出图/配图"而工作区没有现成素材时加载: SVG 绘制规范(视框/描边风格/配色/文字处理)、"生成→预览→修正"工作流、可视化类型选择、可直接套用的配方。任何 write_svg 任务开始前先加载。';
     let s1: SkillFileInfo = new SkillFileInfo();
     s1.file = 'reference/svg-craft.md';
     s1.desc = '绘制规范: 视框/网格/path优先/文字风险/配色纪律';
     let s2: SkillFileInfo = new SkillFileInfo();
     s2.file = 'reference/svg-recipes.md';
-    s2.desc = '可套用模板: 描边图标/流程图/架构图/信息图卡片/封面装饰';
+    s2.desc = '可套用模板: 描边图标/流程图/架构图/信息图卡片/柱状对比/时间轴/封面装饰';
+    let s3: SkillFileInfo = new SkillFileInfo();
+    s3.file = 'reference/infographic-blueprints.md';
+    s3.desc = '常见信息图蓝图: 对比/流程/时间线/架构/KPI卡/机制因果';
     svg.files.push(s1);
     svg.files.push(s2);
+    svg.files.push(s3);
     list.push(svg);
     let data: SkillInfo = new SkillInfo();
     data.id = 'data';
     data.name = '数据清洗与转换';
-    data.description = '处理表格/结构化数据时加载——CSV/JSON 清洗、去重、拆列、合并、正则提取、' +
+    data.description = '处理表格/结构化数据时加载——CSV/JSON 清洗、去重、拆列、正则提取、' +
       '格式互转(CSV/TSV/JSON/Markdown 表格/XLSX)、大文件本地转换, 或任何 transform_file 任务开始前: ' +
-      '管道 ops 与表达式完整语法、三类场景配方、限额与自检清单。';
+      '管道 ops 与表达式完整语法、场景配方、能力边界(无分组聚合/merge/concat, 替代方案见技能正文)、限额与自检清单。';
     list.push(data);
     // ===== 五个专家智能体的 prompt 注册为技能(prompt 原文在 skills/<id>/SKILL.md) =====
     let paper: SkillInfo = new SkillInfo();
@@ -147,62 +215,38 @@ export class WorkSkillService {
 
   // list_skills 输出: 技能清单(含触发语义与文件索引)
   static listText(): string {
-    let list: SkillInfo[] = WorkSkillService.registry();
-    if (list.length === 0) {
-      return '(当前没有可用技能)';
-    }
-    let out: string = '可用技能(用 load_skill(name) 加载正文, load_skill(name, file) 加载参考文件):\n';
-    for (let i: number = 0; i < list.length; i++) {
-      let s: SkillInfo = list[i];
-      out += '\n- ' + s.id + ' — ' + s.name + '\n  触发: ' + s.description + '\n  文件: SKILL.md(正文)';
-      for (let f: number = 0; f < s.files.length; f++) {
-        out += ', ' + s.files[f].file + '(' + s.files[f].desc + ')';
-      }
-      out += '\n';
-    }
-    return out;
+    WorkSkillService.ensureToolSkills();
+    return SkillDirectoryFormatter.listText(ToolRegistry.skillList());
   }
 
-  // 注入系统提示词末尾的技能清单: 模型未必会主动调 list_skills(不调就不知道有哪些技能,
-  // 会跳过技能直接搜索作答), 所以把 id/名称/触发条件直接暴露在提示词里, 促成"命中即先 load_skill"。
-  // 仅由静态注册表生成、逐字节稳定, 追加在提示词末尾——不破坏前缀 KV 缓存。
+  // @deprecated 请使用 promptSectionWithMode(mode); 保留默认 full_index 兼容
   static promptSection(): string {
-    let list: SkillInfo[] = WorkSkillService.registry();
-    if (list.length === 0) {
-      return '';
-    }
-    let out: string = '# 技能库（命中领域的任务，第一步先加载技能）\n';
-    out += '下面列出全部可用技能及其触发条件。任务命中某技能的触发条件时，**必须先 load_skill 加载该技能再动手**，按其方法论执行；';
-    out += '技能正文优先于你的默认做法，也优先于"直接搜索后凭通用知识作答"——技能规定要检索的信息缺口，再用搜索/读文件工具按技能的要求补足。';
-    out += '技能内的参考文件用 load_skill(name, file) 按需加载。\n';
-    for (let i: number = 0; i < list.length; i++) {
-      let s: SkillInfo = list[i];
-      out += '\n- ' + s.id + ' — ' + s.name + '\n  触发: ' + s.description + '\n';
-    }
-    return out;
+    WorkSkillService.ensureToolSkills();
+    return SkillDirectoryFormatter.format(ToolRegistry.skillList(), SkillDirectoryFormatter.MODE_FULL_INDEX);
+  }
+
+  // 按目录模式生成技能提示词(full_index 完整清单 / trigger_only 渐进披露)
+  static promptSectionWithMode(mode: string): string {
+    WorkSkillService.ensureToolSkills();
+    return SkillDirectoryFormatter.format(ToolRegistry.skillList(), mode);
   }
 
   // load_skill: 读取技能文档; 技能名或文件名不在注册表内时报错(防路径探测)
   static async load(context: common.UIAbilityContext, skillId: string, file: string): Promise<string> {
+    WorkSkillService.ensureToolSkills();
     let id: string = skillId.trim().toLowerCase();
-    let list: SkillInfo[] = WorkSkillService.registry();
-    let skill: SkillInfo | null = null;
-    for (let i: number = 0; i < list.length; i++) {
-      if (list[i].id === id) {
-        skill = list[i];
-        break;
-      }
-    }
+    let skill: SkillMeta | null = ToolRegistry.findSkill(id);
     if (skill === null) {
-      let ids: string[] = [];
-      for (let i: number = 0; i < list.length; i++) {
-        ids.push(list[i].id);
-      }
+      let ids: string[] = ToolRegistry.skillIds();
       return 'ERROR: 未知技能 "' + skillId + '"。可用技能: ' + (ids.length > 0 ? ids.join(' / ') : '(无)');
     }
     let target: string = file.trim();
     if (target === '') {
       target = 'SKILL.md';
+    }
+    // V3: 核心办公技能 load_skill(name) 必须全量返回 SKILL.md + 全部 reference，禁止按需挑读。
+    if ((skill.id === 'ppt' || skill.id === 'docx' || skill.id === 'xlsx') && target === 'SKILL.md') {
+      return await WorkSkillService.loadBundle(context, skill);
     }
     let allowed: boolean = target === 'SKILL.md';
     for (let i: number = 0; i < skill.files.length; i++) {
@@ -234,5 +278,35 @@ export class WorkSkillService {
       let msg: string = e instanceof Error ? (e as Error).message : String(e);
       return 'ERROR: 技能文件加载失败(' + msg + '): ' + rawPath;
     }
+  }
+
+  // V3 全量 bundle：一次返回 SKILL.md + 全部 reference（ppt/docx/xlsx），避免 agent 按需挑读。
+  private static async loadBundle(context: common.UIAbilityContext, skill: SkillMeta): Promise<string> {
+    let parts: string[] = [];
+    let files: string[] = ['SKILL.md'];
+    for (let i: number = 0; i < skill.files.length; i++) {
+      files.push(skill.files[i].file);
+    }
+    for (let i: number = 0; i < files.length; i++) {
+      let target: string = files[i];
+      let rawPath: string = 'skills/' + skill.id + '/' + target;
+      try {
+        let raw: Uint8Array = await context.resourceManager.getRawFileContent(rawPath);
+        let decoder: util.TextDecoder = util.TextDecoder.create('utf-8', { ignoreBOM: true });
+        let text: string = decoder.decodeToString(raw, { stream: false });
+        if (text.trim() === '') {
+          return 'ERROR: 技能文件为空: ' + rawPath;
+        }
+        parts.push('【技能 ' + skill.id + ' · ' + target + '】\n' + text);
+      } catch (e) {
+        let msg: string = e instanceof Error ? (e as Error).message : String(e);
+        return 'ERROR: 技能文件加载失败(' + msg + '): ' + rawPath;
+      }
+    }
+    let bundle: string = parts.join('\n\n');
+    if (bundle.length > Constants.WORK_SKILL_BUNDLE_MAX_CHARS) {
+      bundle = bundle.substring(0, Constants.WORK_SKILL_BUNDLE_MAX_CHARS) + '\n...(过长已截断)';
+    }
+    return bundle;
   }
 }

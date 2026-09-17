@@ -10,11 +10,14 @@ import { ToolCallRecord } from '../model/ToolCallRecord';
 import { ApiConfig } from '../model/ApiConfig';
 import { AbortSignal } from '../common/Types';
 import { Constants } from '../common/Constants';
+import { ToolRegistry } from '../common/ToolRegistry';
 
 export class SubagentService {
-  // 工具执行器(由宿主 ChatViewModel 注入的 .ets 实现, 规避 TS→ArkTS 导入限制)
+  // 工具执行器(由宿主 ChatViewModel 注入的 .ets 实现, 规避 TS→ArkTS 导入限制);
+  // 可选第五参传入子代理自身的取消信号, 由执行器统一套超时/取消护栏
   private static toolExecutor: ((context: common.UIAbilityContext, convId: string,
-    name: string, argsJson: string) => Promise<ToolExecResult>) | null = null;
+    name: string, argsJson: string,
+    abortSignal?: AbortSignal | null) => Promise<ToolExecResult>) | null = null;
   // 运行期配置引用(由宿主注入: API 配置与思考开关与父任务一致)
   private static apiConfig: ApiConfig | null = null;
   private static thinkingRef: boolean = true;
@@ -23,7 +26,8 @@ export class SubagentService {
   // 宿主(ChatViewModel)在 init/每次任务开始时注入运行配置与工具执行器
   static bind(config: ApiConfig, thinkingEnabled: boolean, reasoningEffort: string,
     toolExecutor: (context: common.UIAbilityContext, convId: string,
-      name: string, argsJson: string) => Promise<ToolExecResult>): void {
+      name: string, argsJson: string,
+      abortSignal?: AbortSignal | null) => Promise<ToolExecResult>): void {
     SubagentService.apiConfig = config;
     SubagentService.thinkingRef = thinkingEnabled;
     SubagentService.effortRef = reasoningEffort;
@@ -55,15 +59,15 @@ export class SubagentService {
   }
 
   private static filteredToolDefs(): Record<string, Object>[] {
-    // 子代理不注入服务端联网搜索(false), 本地 search_web 用标准描述
-    let all: Record<string, Object>[] = WorkFileService.toolDefs(false);
+    // 工具面裁剪走 ToolRegistry: 同步后按 excluded 名单取工具名, 再取定义
+    WorkFileService.toolRegistrySynced();
     let excluded: string[] = SubagentService.excludedTools();
+    let names: string[] = ToolRegistry.names(excluded);
     let out: Record<string, Object>[] = [];
-    for (let i: number = 0; i < all.length; i++) {
-      let nameObj: Object = all[i]['name'];
-      let name: string = typeof nameObj === 'string' ? nameObj as string : '';
-      if (excluded.indexOf(name) === -1) {
-        out.push(all[i]);
+    for (let i: number = 0; i < names.length; i++) {
+      let def: Record<string, Object> | null = ToolRegistry.findDef(names[i]);
+      if (def !== null) {
+        out.push(def);
       }
     }
     return out;
@@ -104,13 +108,17 @@ export class SubagentService {
           if (abortSignal.aborted) {
             calls[i].result = '(子代理被中断, 无结果)';
             calls[i].isError = true;
+            calls[i].cancelled = true;
             continue;
           }
           let execStart: number = Date.now();
           let exec: ToolExecResult = await SubagentService.runTool(
-            context, convId, calls[i].name, calls[i].argsJson);
+            context, convId, calls[i].name, calls[i].argsJson, abortSignal);
           calls[i].durationMs = Date.now() - execStart;
           calls[i].isError = !exec.ok;
+          calls[i].timeout = exec.timeout;
+          calls[i].cancelled = exec.cancelled;
+          calls[i].schemaError = exec.schemaError;
           calls[i].result = SubagentService.capResult(context, convId, exec.output,
             calls[i].name, execStart);
         }
@@ -135,14 +143,15 @@ export class SubagentService {
     return out;
   }
 
-  // 工具执行(经宿主注入的执行器; 未注入时全部报错)
+  // 工具执行(经宿主注入的执行器; 未注入时全部报错; 取消信号透传给执行器护栏)
   private static async runTool(context: common.UIAbilityContext, convId: string,
-    name: string, argsJson: string): Promise<ToolExecResult> {
+    name: string, argsJson: string,
+    abortSignal: AbortSignal): Promise<ToolExecResult> {
     let executor = SubagentService.toolExecutor;
     if (executor === null) {
       return SubagentService.failResult('子代理工具执行器尚未注入');
     }
-    return await executor(context, convId, name, argsJson);
+    return await executor(context, convId, name, argsJson, abortSignal);
   }
 
   // 工具结果截断 + 溢出暂存(与主循环 applyToolResult 同策略, 简化为独立实现)

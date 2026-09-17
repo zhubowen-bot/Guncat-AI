@@ -14,6 +14,7 @@ import { PdfTextExtractor } from './PdfTextExtractor';
 import { WorkSkillService } from './WorkSkillService';
 import { HarnessTools } from './HarnessTools';
 import { arrayBufferToBase64 } from '../common/Utils';
+import { ToolRegistry } from '../common/ToolRegistry';
 import { Constants } from '../common/Constants';
 import { LocalWebSearch, LocalSearchOutcome, LOCAL_SEARCH_TOOL_DESC_WORK, LOCAL_SEARCH_TOOL_DESC_WORK_FALLBACK,
   LOCAL_SEARCH_QUERY_PROP_DESC } from './LocalWebSearch';
@@ -30,17 +31,64 @@ export class WorkspaceFileInfo {
 
 // 工具执行结果(ok=false 时 output 为错误说明, 会原样送回模型; imageDataUrl 供 view_image 注入视觉消息)
 // meta: 结构化展示数据(JSON), 如 edit 工具的 diff 卡片; 随会话持久化, UI 重放渲染。
+// timeout/cancelled: 可观测标记(由执行护栏设置), 供审计日志统计超时率/取消率。
 export class ToolExecResult {
   ok: boolean = false;
   output: string = '';
   imageDataUrl: string = '';
   meta: string = '';
+  timeout: boolean = false;
+  cancelled: boolean = false;
+  schemaError: boolean = false;
 }
 
 export class WorkFileService {
   // subagent 工具经此钩子执行(由 SubagentService.bind 注入, 规避循环导入)
   static subagentHook: ((context: common.UIAbilityContext, convId: string,
     description: string, prompt: string) => Promise<ToolExecResult>) | null = null;
+  // @deprecated 工具定义查找已迁移到 ToolRegistry(findToolDef 内部实现), 此字段仅保留兼容。
+  private static toolDefMap: Record<string, Record<string, Object>> | null = null;
+
+  // 按名称取工具定义(供工具执行层做结构化参数校验); 找不到返回 null
+  static findToolDef(name: string): Record<string, Object> | null {
+    WorkFileService.ensureToolRegistry();
+    return ToolRegistry.findDef(name);
+  }
+
+  // 首次访问时把工具定义 + 只读/变更分类同步进注册中心(单例, 后续走 ToolRegistry)
+  private static ensureToolRegistry(): void {
+    let readOnly: string[] = WorkFileService.workReadOnlyNames();
+    readOnly = readOnly.concat(['glob', 'grep', 'web_fetch', 'schedule_list', 'goal_get', 'session_search']);
+    let mutating: string[] = WorkFileService.workMutatingNames();
+    mutating = mutating.concat(['edit', 'str_replace_editor', 'goal_create', 'goal_update',
+      'schedule_create', 'schedule_delete', 'run_js']);
+    ToolRegistry.ensure(WorkFileService.toolDefs(false), readOnly, mutating);
+  }
+
+  // 供外部(SubagentService/插件层)确保注册中心已同步
+  static toolRegistrySynced(): void {
+    WorkFileService.ensureToolRegistry();
+  }
+
+  // 全部工具定义(含已注册插件; 静态核心 + 插件统一走注册中心)
+  static toolRegistryDefs(): Record<string, Object>[] {
+    WorkFileService.ensureToolRegistry();
+    return ToolRegistry.defs('');
+  }
+
+  // 工作区文件类只读工具名(与 ToolRegistry 同步用)
+  private static workReadOnlyNames(): string[] {
+    return ['list_files', 'read_file', 'parse_document', 'search_files', 'search_pdf', 'view_image',
+      'read_ppt', 'read_docx', 'read_xlsx', 'list_skills', 'load_skill'];
+  }
+
+  // 工作区文件类变更工具名(与 ToolRegistry 同步用)
+  private static workMutatingNames(): string[] {
+    return ['write_file', 'append_file', 'delete_file', 'create_dir', 'move_file',
+      'write_docx', 'edit_docx', 'write_xlsx', 'edit_xlsx', 'write_pptx',
+      'edit_ppt', 'write_csv', 'download_file', 'write_svg', 'todo_write', 'record_search',
+      'search_web', 'transform_file'];
+  }
 
   // ===== 路径基础 =====
 
@@ -411,22 +459,14 @@ export class WorkFileService {
 
   // 工具是否只读(无任何工作区写入): 连续只读调用可安全并发执行
   static isReadOnlyTool(name: string): boolean {
-    return name === 'list_files' || name === 'read_file' || name === 'parse_document' ||
-      name === 'search_files' || name === 'search_pdf' || name === 'view_image' ||
-      name === 'read_ppt' || name === 'read_docx' || name === 'read_xlsx' || name === 'list_skills' || name === 'load_skill' ||
-      HarnessTools.isReadOnly(name);
+    WorkFileService.ensureToolRegistry();
+    return ToolRegistry.isReadOnly(name);
   }
 
   // 工具是否改变工作区内容(用于执行后刷新文件列表)
   static isMutatingTool(name: string): boolean {
-    return name === 'write_file' || name === 'append_file' || name === 'delete_file' ||
-      name === 'create_dir' || name === 'move_file' ||
-      name === 'write_docx' || name === 'edit_docx' || name === 'write_xlsx' || name === 'edit_xlsx' ||
-      name === 'write_pptx' ||
-      name === 'edit_ppt' || name === 'write_csv' || name === 'download_file' ||
-      name === 'write_svg' || name === 'todo_write' || name === 'record_search' ||
-      name === 'search_web' ||
-      name === 'transform_file' || HarnessTools.isMutating(name);
+    WorkFileService.ensureToolRegistry();
+    return ToolRegistry.isMutating(name);
   }
 
   // 工具统一入口: 解析参数 JSON 并分发; 任何异常都转为 ERROR 结果送回模型
@@ -1248,7 +1288,7 @@ export class WorkFileService {
     defs.push(WorkFileService.makeTool('list_files',
       '列出工作区中的文件与目录。path 为空时列出整个工作区(含子目录), 否则列出指定目录。返回每项的相对路径与大小。',
       WorkFileService.props1('path', WorkFileService.strProp('要列出的目录相对路径, 留空表示工作区根目录')),
-      ['path']));
+      []));
     defs.push(WorkFileService.makeTool('read_file',
       '读取工作区文件内容, 按行分页(默认从第 1 行返回约 1.2 万字符, 末尾附"未读完"提示与下一次 offset)。.docx/.xlsx/.pptx 自动抽取文字层, 行号与 search_files 一致; .pdf 自动解析文本, 超长请用 parse_document 分页; 二进制文件拒绝读取。修改文件前应先读取确认现状。',
       WorkFileService.props3(
@@ -1310,7 +1350,7 @@ export class WorkFileService {
         'width', WorkFileService.strProp('可选: 预览 PNG 的宽度(px), 默认 512, 高度按 viewBox 比例自动计算')),
       ['path', 'svg']));
     defs.push(WorkFileService.makeTool('write_docx',
-      '把结构化 Doc JSON 或 Markdown 生成 Word 文档(.docx)写入工作区。正式文档用 doc(Doc JSON 结构化源: 封面/目录/分级标题/正文/列表/表格/图片/引用/代码块, 图片 src 支持工作区相对路径, 排版规范)或 doc_file(工作区中 Doc JSON 文件路径, 长文档先 write_file/append_file 分块写好再导出); 简单内容可直接传 markdown(与旧版一致, 图片同样支持工作区路径)。title 可选文档标题, style 可选样式预设 default/academic/minimal。做正式 Word 文档前必须先 load_skill("docx") 获取 Doc 语法与排版规范。',
+      '把结构化 Doc JSON 或 Markdown 生成 Word 文档(.docx)写入工作区。正式文档用 doc(Doc JSON 结构化源: 封面/目录/分级标题/正文/列表/表格/图片/引用/代码块, 图片 src 支持工作区相对路径, 排版规范)或 doc_file(工作区中 Doc JSON 文件路径, 长文档先 write_file/append_file 分块写好再导出); 简单内容可直接传 markdown(与旧版一致, 图片同样支持工作区路径)。title 可选文档标题, style 可选样式预设 default/academic/minimal。做正式 Word 文档前必须先 load_skill("docx") 全量加载；新建前 ask_user_question 前置提问；交付前写 docx_qa_report.md。',
       WorkFileService.props6(
         'path', WorkFileService.strProp('目标文件相对路径(建议以 .docx 结尾)'),
         'doc', WorkFileService.strProp('可选: Doc JSON 结构化源(与 doc_file/markdown 三选一)'),
@@ -1331,7 +1371,7 @@ export class WorkFileService {
         'ops', WorkFileService.strProp('操作 JSON 数组, 如 [{"op":"update_block","index":2,"block":{"text":"新标题"}}]')),
       ['path', 'ops']));
     defs.push(WorkFileService.makeTool('write_xlsx',
-      '把结构化 Workbook JSON 或表格文本生成 Excel 文件(.xlsx)写入工作区。正式表格用 workbook(Workbook JSON 结构化源: 多工作表/表头加粗/公式(单元格值以 = 开头, 如 "=SUM(B2:B9)")/数字格式(formats 列格式: money/int/percent/year/date/number/text)/列宽(colWidths)/冻结窗格(freeze))或 workbook_file(工作区中 Workbook JSON 文件路径, 长表先 write_file/append_file 分块写好再导出); 简单表格直接传 table(Markdown 表格/CSV/TSV, 首行作表头)。name 可选工作簿名, style 可选样式预设 default/academic/minimal。做正式 Excel 前必须先 load_skill("xlsx") 获取 Workbook 语法与表格规范(公式优先/数字格式/负数与零值显示)。',
+      '把结构化 Workbook JSON 或表格文本生成 Excel 文件(.xlsx)写入工作区。正式表格用 workbook(Workbook JSON 结构化源: 多工作表/表头加粗/公式(单元格值以 = 开头, 如 "=SUM(B2:B9)")/数字格式(formats 列格式: money/int/percent/year/date/number/text)/列宽(colWidths)/冻结窗格(freeze))或 workbook_file(工作区中 Workbook JSON 文件路径, 长表先 write_file/append_file 分块写好再导出); 简单表格直接传 table(Markdown 表格/CSV/TSV, 首行作表头)。name 可选工作簿名, style 可选样式预设 default/academic/minimal。做正式 Excel 前必须先 load_skill("xlsx") 全量加载；新建前 ask_user_question 前置提问；交付前写 xlsx_qa_report.md。',
       WorkFileService.props6(
         'path', WorkFileService.strProp('目标文件相对路径(建议以 .xlsx 结尾)'),
         'workbook', WorkFileService.strProp('可选: Workbook JSON 结构化源(与 workbook_file/table 三选一)'),
@@ -1365,7 +1405,7 @@ export class WorkFileService {
       '对工作区文本数据文件执行本地转换管道(数据不经过模型上下文, 是处理大文件与非标格式的专用工具): 过滤/派生列/重算列/正则提取/拆列/去重/排序/替换/数值化, 以及 CSV↔TSV↔JSON↔Markdown表格↔XLSX 互转。流程: 先省略 output 预览前 3 行 → 修改 steps → 带 output 写盘 → read_file 抽查。全部操作与表达式语法见 load_skill("data")。限制: 输入 ≤2MB 文本、≤10 万行、steps ≤30 步。小表格直接 write_file/write_csv 更快, 不要滥用。',
       tfProps, ['input', 'steps']));
     defs.push(WorkFileService.makeTool('write_pptx',
-      '生成/重建 PowerPoint 演示文稿(.pptx, 16:9), 三种输入二选一: (1) deck: Deck JSON 结构化源, 支持 cover/toc/section/content/two-col/image-text/image/image-full/table/chart/quote/end/custom 13 种版式、主题、图表、表格、图片、演讲备注——正式 PPT 用它, 完整语法先 load_skill("ppt"); (2) deck_file: 工作区中 Deck JSON 文件的路径(长 deck 先 write_file/append_file 分块写好再导出, 改内容后可重复导出); (3) outline: 简易大纲("# 页标题"开新页, "## 标题"开分节页, "- 要点"一级要点, 缩进"- 要点"二级要点)。theme 可选主题预设, title 为演示文稿标题。',
+      '生成/重建 PowerPoint 演示文稿(.pptx, 16:9), 三种输入二选一: (1) deck: Deck JSON 结构化源, 支持 cover/toc/section/content/two-col/image-text/image/image-full/table/chart/quote/end/custom 13 种版式、主题、图表、表格、图片、演讲备注、背景装饰——正式 PPT 用它, 完整语法先 load_skill("ppt") 全量加载; (2) deck_file: 工作区中 Deck JSON 文件的路径(长 deck 先 write_file/append_file 分块写好再导出, 改内容后可重复导出); (3) outline: 简易大纲("# 页标题"开新页, "## 标题"开分节页, "- 要点"一级要点, 缩进"- 要点"二级要点)。theme 可选主题预设, title 为演示文稿标题。新建 PPT 前按 ppt 技能要求 ask_user_question 前置提问; 默认 20 页以上; 每页需装饰性 SVG。',
       WorkFileService.props3(
         'path', WorkFileService.strProp('目标文件相对路径(以 .pptx 结尾)'),
         'deck', WorkFileService.strProp('Deck JSON 字符串(结构化源, 与 deck_file/outline 三选一)'),
@@ -1425,10 +1465,10 @@ export class WorkFileService {
       WorkFileService.props0(),
       []));
     defs.push(WorkFileService.makeTool('load_skill',
-      '加载技能文档全文。name 为技能 id(见 list_skills); file 可选, 传技能的参考文件名(如 reference/deck-dsl.md)加载深入资料, 省略时返回技能正文 SKILL.md。',
+      '加载技能文档全文。name 为技能 id(见 list_skills); file 可选, 传技能的参考文件名(如 reference/deck-dsl.md)加载深入资料, 省略时返回技能正文 SKILL.md(ppt/docx/xlsx 技能为全量 bundle: SKILL.md + 全部 reference, 必须一次加载完)。',
       WorkFileService.props2(
         'name', WorkFileService.strProp('技能 id, 如 ppt'),
-        'file', WorkFileService.strProp('可选: 技能内的参考文件相对路径, 省略返回 SKILL.md')),
+        'file', WorkFileService.strProp('可选: 技能内的参考文件相对路径, 省略返回 SKILL.md 或全量 bundle')),
       ['name']));
     let harnessDefs: Record<string, Object>[] = HarnessTools.toolDefs();
     for (let i: number = 0; i < harnessDefs.length; i++) {

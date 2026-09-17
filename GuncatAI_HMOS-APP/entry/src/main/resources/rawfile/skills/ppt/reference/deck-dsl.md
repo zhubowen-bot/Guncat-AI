@@ -13,6 +13,19 @@ Deck = `{"title": 元数据标题, "theme": 主题id, "themeOverride": {…}, "s
 | notes | string | 演讲者备注（写入 pptx 备注页） |
 | background | object | `{color, image, fit, overlay}`；color 为语义色/hex，image 为图片 src，overlay 0~1 深色遮罩 |
 
+## 背景与装饰（V3 每页必用）
+
+- **每页必须有装饰**：`background.image` 接受工作区 SVG（自动栅格化）或图片，作为全页纹理/图案/角标；`fit:"cover"` 铺满，`overlay` 按文字可读性设 0~0.6。
+- 示例：
+  ```json
+  {"layout":"content","title":"结论标题","bullets":["…"],
+   "background":{"image":"assets/ppt-decor/tech-texture.svg","fit":"cover","overlay":0}}
+  ```
+- `custom` 页还可以用 `elements` 中的 image/shape 放装饰元素（见下方 custom 语法）。
+- 装饰 SVG 由 `write_svg` 生成（先 `load_skill("svg")`），透明底、低干扰、全册一套母题；风格配方见 `reference/visual-styles.md`。
+- 不要每页用同一张照片当背景；统一装饰（纹理/角标/母题）可以全册复用，但必须与主题色一致。
+- **内容配图**：每页除装饰外还要有内容性配图（流程图/时间轴/架构图/对比图/插画/信息图）。推荐用 `image-text` 放图文并排，或用 `custom` 的 `elements` 里的 image/shape 自由摆配图；配图 SVG 放 `assets/ppt-diagrams/` 并与主题色一致。
+
 ## 13 种版式与专属字段
 
 **cover** 封面：title（大字）、subtitle。可用 background.image 做图底封面（配 overlay 0.4~0.6）。
@@ -52,6 +65,14 @@ custom 坐标为 **0~1 的画布比例**（x/y 左上原点，w/h 宽高），si
 
 content 页一级要点 ≤3 条 20pt、≤5 条 18pt、≤7 条 16pt、更多 14pt；二级要点再小 3pt。**这是上限信号：要点超过 7 条必须拆页。**
 
+## 拆页与备注规划（写 deck 前先过一遍）
+
+- **拆页信号**：一页要点 >7 条、图表/表格/图片多个主角、单个 custom 元素 >10、标题超过 20 字——都说明该拆页或换表达。
+- **一页一个主角**：content 页只放要点，数据用 table/chart 页承载；不要在同一页塞"要点 + 表格 + 图表"三件套。
+- **notes 是讲稿与来源的家**：口径、完整出处、备选数据、演讲提示都写 `notes`，观众看不到；页面 caption 只放关键来源（如"来源：财务中台"）。
+- **toc 与 section 一致**：toc 的 bullets 必须和实际 section 标题逐字一致；改了章节记得同步 toc。
+- **长 deck 先写 outline 再写 JSON**：先规划页面节奏（cover → toc → section → 内容 → end），再逐页写 deck；不要边写边想导致节奏失控。
+
 ## 图片 src 三种来源
 
 1. 工作区相对路径：`pdf_images/报告/p001.jpg`（先 list_files 确认存在）
@@ -65,6 +86,57 @@ content 页一级要点 ≤3 条 20pt、≤5 条 18pt、≤7 条 16pt、更多 1
 ## 校验错误
 
 非法 deck 会整册拒绝并返回具体页码与原因（如"第 3 页(layout=chart) 缺少 chart.categories"）——按提示修正后重试即可，不要换用 outline 逃避结构问题。
+
+## write_pptx 的 outline 参数（轻量入口）
+
+`write_pptx(path, outline, title?)` 可直接接受 Markdown 风格大纲，适合快速草稿/结构化初稿；需要精细版式时仍用 `deck`/`deck_file`。
+
+- `# 标题` → `content` 内容页（页标题 = 标题）
+- `## 标题` → `section` 分节页
+- `- 要点` 或普通行 → 当前页一级要点
+- 缩进 2 空格的 `- 子要点` → 二级要点（level 2）
+- 空行忽略；没有标题时自动以 `title` 建第一页
+
+示例：
+
+```text
+# 项目启动会
+## 背景
+- 业务现状
+- 目标与范围
+  - 一期范围
+  - 二期规划
+## 方案
+- 关键路径
+```
+
+等价于用 content/section 页组成的 deck。outline 只用于快速起步，复杂 deck 直接用 deck JSON。
+
+## edit_ppt 算子（ops 数组）
+
+`edit_ppt(path, ops)` 的 ops 为 JSON 数组，**一次 ≤50 个**，任一非法整批不生效并报错。
+
+| op | 必填参数 | 说明 |
+|---|---|---|
+| `add_slide` | `slide` 或 `slides`，`index?` | 新增/插入页；`slide` 语法同 Deck 页字段，`slides` 可一次多页 |
+| `delete_slide` | `index` | 删除第 index 页（1 起） |
+| `move_slide` | `from, to` | 移动第 from 页到第 to 位 |
+| `update_slide` | `index, slide` | 局部更新第 index 页（`slide` 只给要改的字段，如 `{"title":"新标题"}`） |
+| `replace_text` | `find, replace` | 全 deck 文本替换 |
+| `set_theme` | `theme`，`themeOverride?` | 换主题；`themeOverride` 可覆盖 `primary/accent/bg/title/body` |
+| `set_title` | `title` | 改 deck 元数据标题 |
+| `set_notes` | `index, notes` | 改/清空第 index 页演讲者备注 |
+
+示例：
+
+```json
+[{"op":"update_slide","index":3,"slide":{"title":"Q3 经营复盘","bullets":["营收 1.2 亿","同比 +18%"]}},
+ {"op":"add_slide","slide":{"layout":"section","title":"下季度计划"}},
+ {"op":"set_theme","theme":"midnight"},
+ {"op":"replace_text","find":"Q3","replace":"Q4"}]
+```
+
+index 以 `read_ppt` 返回的 Deck 源中 slides 顺序为准（1 起）。
 
 ## Deck 源文件模式（推荐用于长 deck）
 

@@ -9,6 +9,7 @@ import { MultimodalConfig } from '../model/MultimodalConfig';
 import { ApiProfile } from '../model/ApiProfile';
 import { FileItem, StreamCallbacks, AbortSignal } from '../common/Types';
 import { AgentLoader } from '../service/AgentLoader';
+import { PluginHotLoader } from '../service/PluginHotLoader';
 import { ChatService } from '../service/ChatService';
 import { FileUploadService } from '../service/FileUploadService';
 import { FileService, PickedFile } from '../service/FileService';
@@ -139,6 +140,9 @@ export class ChatViewModel {
 
     // 加载智能体
     this.agents = await AgentLoader.loadAllAgents(this.context);
+
+    // 热加载 rawfile/plugins 插件(注册进 ToolRegistry, 工作模式动态目录自动包含)
+    await PluginHotLoader.loadAll(this.context);
 
     // 加载对话
     this.conversations = await StorageManager.loadConversations(this.context);

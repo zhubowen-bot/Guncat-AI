@@ -15,6 +15,32 @@ export class WebFetchResult {
 }
 
 export class WebFetchService {
+  // 深度取消注册表: stopStreaming 时销毁在途 web_fetch HTTP 请求
+  private static toolRequests: http.HttpRequest[] = [];
+
+  // 深度取消: 销毁所有在途 web_fetch HTTP 请求
+  static abortToolRequests(): void {
+    for (let i: number = 0; i < WebFetchService.toolRequests.length; i++) {
+      try {
+        WebFetchService.toolRequests[i].destroy();
+      } catch (e) {
+        // 已结束/已销毁的请求忽略
+      }
+    }
+    WebFetchService.toolRequests = [];
+  }
+
+  private static registerToolRequest(req: http.HttpRequest): void {
+    WebFetchService.toolRequests.push(req);
+  }
+
+  private static unregisterToolRequest(req: http.HttpRequest): void {
+    let idx: number = WebFetchService.toolRequests.indexOf(req);
+    if (idx >= 0) {
+      WebFetchService.toolRequests.splice(idx, 1);
+    }
+  }
+
   // 拉取并转换为送回模型的文本
   static fetch(url: string, maxChars: number): Promise<WebFetchResult> {
     let cap: number = maxChars > 0 ? Math.min(maxChars, Constants.WORK_WEBFETCH_MAX_CHARS) :
@@ -28,6 +54,7 @@ export class WebFetchService {
         return;
       }
       let httpRequest: http.HttpRequest = http.createHttp();
+      WebFetchService.registerToolRequest(httpRequest);
       httpRequest.request(trimmed, {
         method: http.RequestMethod.GET,
         connectTimeout: 20000,
@@ -75,12 +102,14 @@ export class WebFetchService {
           out.ok = true;
           resolve(out);
         } finally {
+          WebFetchService.unregisterToolRequest(httpRequest);
           httpRequest.destroy();
         }
       }).catch((err: Error) => {
         let msg: string = err.message !== undefined ? err.message : '网络请求失败';
         out.error = msg;
         try {
+          WebFetchService.unregisterToolRequest(httpRequest);
           httpRequest.destroy();
         } catch (e) {
           // ignore

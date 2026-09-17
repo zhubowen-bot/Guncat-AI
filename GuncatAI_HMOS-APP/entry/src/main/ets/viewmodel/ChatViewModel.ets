@@ -9,12 +9,24 @@ import { ApiConfig } from '../model/ApiConfig';
 import { MultimodalConfig } from '../model/MultimodalConfig';
 import { ApiProfile } from '../model/ApiProfile';
 import { FileItem, StreamCallbacks, AbortSignal, ParsedFileResult } from '../common/Types';
+import { ToolExecutionGuard } from '../common/ToolExecutionGuard';
+import { LoopMetrics } from '../common/LoopMetrics';
+import { ToolScheduler, ScheduledGroup } from '../common/ToolScheduler';
+import { RepeatDetector } from '../common/RepeatDetector';
+import { LoopDecisions } from '../common/LoopDecisions';
+import { WorkLoopStateMachine } from '../common/WorkLoopStateMachine';
+import { WorkLoopPlanner, WorkLoopTurnInfo, WorkLoopStep } from '../common/WorkLoopPlanner';
+import { WorkLoopStepInfoBuilder } from '../common/WorkLoopStepInfoBuilder';
+import { SessionLogAggregator } from '../common/SessionLogAggregator';
 import { AgentLoader } from '../service/AgentLoader';
+import { PluginHotLoader } from '../service/PluginHotLoader';
 import { ChatService, ChatStreamResult } from '../service/ChatService';
 import { LOCAL_SEARCH_TOOL_NAME, LocalWebSearch, SearchEngineSettings, LocalSearchOutcome } from '../service/LocalWebSearch';
 import { AgentLoopService, LoopError, LoopMessage, LoopTurnCallbacks, LoopTurnResult } from '../service/AgentLoopService';
 import { WorkFileService, WorkspaceFileInfo, ToolExecResult } from '../service/WorkFileService';
 import { WorkToolRunner } from '../service/WorkToolRunner';
+import { WorkLoopDriverBridge } from '../service/WorkLoopDriverBridge';
+import { WebFetchService } from '../service/WebFetchService';
 import { SpillStore } from '../service/SpillStore';
 import { AskUserBridge, PendingAsk, AskAnswer } from '../service/AskUserBridge';
 import { ScheduleService } from '../service/ScheduleService';
@@ -41,6 +53,13 @@ import { fileIo, fileUri } from '@kit.CoreFileKit';
 import { uniformTypeDescriptor } from '@kit.ArkData';
 import { filePreview } from '@kit.PreviewKit';
 import { systemShare } from '@kit.ShareKit';
+
+// executeWorkLoop 单步执行的外部可变状态(驱动接管后由 runWorkStep 读写)
+class WorkLoopStepState {
+  traceSeq: number = 0;
+  turnEndStatus: string = 'complete';
+  finalAnswerText: string = '';
+}
 
 @Observed
 export class ChatViewModel {
@@ -72,9 +91,13 @@ export class ChatViewModel {
   // 用于推导本会话的字符→token 比例并做上下文预算判断; 0 表示未知)
   private lastWorkPromptTokens: number = 0;
   private lastWorkPromptChars: number = 0;
-  // 重复调用防护状态(连续同工具同参数计数, 每次任务循环开始时重置)
+  // @deprecated 重复调用防护已迁移到 RepeatDetector, 保留兼容
   private workRepeatKey: string = '';
   private workRepeatCount: number = 0;
+  // 重复调用防护状态(连续同工具同参数计数, 每次任务循环开始时重置)
+  private workRepeatDetector: RepeatDetector = new RepeatDetector();
+  // 工作模式显式状态机(idle/running/paused/awaiting_user/aborting)
+  private workStateMachine: WorkLoopStateMachine = new WorkLoopStateMachine();
   private workspaceJustAdded: string[] = [];
   // 最近一次使用的真实智能体(退出工作模式时回切)
   private lastChatAgentId: string = '';
@@ -198,6 +221,9 @@ export class ChatViewModel {
 
     // 加载智能体; 工作模式作为与智能体平行的固定项注入列表顶部
     this.agents = await AgentLoader.loadAllAgents(this.context);
+
+    // 热加载 rawfile/plugins 插件(注册进 ToolRegistry, 工作模式动态目录自动包含)
+    await PluginHotLoader.loadAll(this.context);
     this.agents.unshift(this.buildWorkAgent());
     // 记录第一个真实智能体(退出工作模式时回切)
     for (let i: number = 0; i < this.agents.length; i++) {
@@ -1292,22 +1318,35 @@ export class ChatViewModel {
   // 追加式增长(压缩是唯一改写历史的操作)。相邻两轮请求因此共享逐字节相同的前缀,
   // 模型侧 KV 缓存可跨轮命中, 每轮只有真正新增的尾部需要重新计算。
   private async executeWorkLoop(conv: Conversation): Promise<void> {
+    if (Constants.WORK_USE_DRIVER_LOOP) {
+      await this.executeWorkLoopDriver(conv);
+      return;
+    }
     this.abortSignal = new AbortSignal();
+    this.workStateMachine.reset();
+    this.workStateMachine.start();
+    let metrics: LoopMetrics = new LoopMetrics();
+    let traceSeq: number = 0;
     this.markStreamStart();
     this.streamTimer = -1;
     this.lastWorkPromptTokens = 0;
     this.lastWorkPromptChars = 0;
     this.workRepeatKey = '';
     this.workRepeatCount = 0;
+    this.workRepeatDetector.reset();
     this.workSteerQueue = [];
     this.pendingAsk = null;
     if (this.context !== null) {
       SubagentService.bind(this.apiConfig, this.thinkingEnabled, this.reasoningEffort,
-        (ctx: common.UIAbilityContext, cid: string, name: string, argsJson: string):
-          Promise<ToolExecResult> => {
-          return WorkToolRunner.execute(ctx, cid, name, argsJson);
+        (ctx: common.UIAbilityContext, cid: string, name: string, argsJson: string,
+          abortSignal?: AbortSignal | null): Promise<ToolExecResult> => {
+          let signal: AbortSignal | null =
+            abortSignal !== undefined && abortSignal !== null ? abortSignal : null;
+          return WorkToolRunner.execute(ctx, cid, name, argsJson, signal);
         });
     }
+
+    let turnToolEvents: Record<string, Object>[] = [];
 
     try {
       // 组装与协议无关的循环历史(含既有全部消息); 系统提示词为静态文本, 整个循环不重写
@@ -1324,6 +1363,7 @@ export class ChatViewModel {
             if (calls[c].result === '') {
               calls[c].result = '(执行被中断, 无结果)';
               calls[c].isError = true;
+              calls[c].cancelled = true;
               if (calls[c].durationMs < 0) {
                 calls[c].durationMs = 0;
               }
@@ -1342,7 +1382,14 @@ export class ChatViewModel {
         }
       }
       if (this.context !== null) {
-        SessionLogService.append(this.context, conv.id, 'turn_start', { 'user': lastUserText });
+        let turnStartPayload: Record<string, Object> = { 'user': lastUserText };
+        if (AgentLoopService.lastPromptBudget !== null) {
+          turnStartPayload['promptBudget'] = AgentLoopService.lastPromptBudget;
+        }
+        if (AgentLoopService.lastProtocol !== '') {
+          turnStartPayload['protocol'] = AgentLoopService.lastProtocol;
+        }
+        SessionLogService.append(this.context, conv.id, 'turn_start', turnStartPayload);
       }
       let turnEndStatus: string = 'complete';
       let finalAnswerText: string = '';
@@ -1368,6 +1415,9 @@ export class ChatViewModel {
         // assistant 与其工具结果在同一条消息内, 压缩/裁剪都不会拆散协议对;
         // 任务清单与工作区文件不参与压缩, 始终可由模型 read_file 找回。
         let compactNote: string = await this.compactWorkHistoryIfNeeded(messages, false);
+        if (compactNote !== '') {
+          metrics.recordCompaction();
+        }
         // 运行时快照(取代旧的系统提示词内嵌刷新): 内容与历史末尾快照一致时不追加,
         // 请求前缀保持逐字节稳定——这是跨轮 KV 缓存命中的关键。
         await this.appendRuntimeSnapshotIfNeeded(messages, ctx, conv.id);
@@ -1407,6 +1457,7 @@ export class ChatViewModel {
         };
 
         callbacks.onRetry = (attempt: number, reason: string): void => {
+          metrics.recordRetry();
           // 重试会重新流式输出: 先清掉上一次尝试的部分内容避免重复, 保留压缩标注
           turnMsg.content = compactNote + '⚠️ ' + reason + '，自动重试(第 ' +
             attempt.toString() + ' 次)…\n\n';
@@ -1420,6 +1471,7 @@ export class ChatViewModel {
         let turn: LoopTurnResult = await this.runStepWithOverflowRetry(
           messages, turnMsg, compactNote, callbacks, ctx, conv.id, (): void => {
             // 上下文超限强制压缩后重试: 清掉上一次尝试已流出的部分工具行
+            metrics.recordCompaction();
             turnMsg.toolCalls = [];
           });
         if (this.abortSignal.aborted) {
@@ -1427,6 +1479,8 @@ export class ChatViewModel {
           this.finalizeWorkTurn(turnMsg, true, conv);
           break;
         }
+        // 评估指标: 每轮记录是否携带工具调用(无工具调用的轮次计为无效步)
+        metrics.recordTurn(turn.toolCalls.length > 0);
         if (turn.promptTokens > 0) {
           this.lastWorkPromptTokens = turn.promptTokens;
           this.lastWorkPromptChars = requestChars;
@@ -1454,12 +1508,19 @@ export class ChatViewModel {
           SessionLogService.append(ctx, conv.id, 'assistant_message', logPayload);
         }
 
-        // 无工具调用 → 最终回答(文本已流式写入本轮消息)
-        if (turn.toolCalls.length === 0) {
+        // 单轮评估: 由纯决策层 WorkLoopPlanner 决定下一步(工具/收尾/压缩/中止)
+        let planInfo: WorkLoopTurnInfo = new WorkLoopTurnInfo();
+        planInfo.toolCallsCount = turn.toolCalls.length;
+        planInfo.contentLength = turn.content.length;
+        planInfo.finishReason = turn.finishReason;
+        planInfo.aborted = this.abortSignal.aborted;
+        let plan = WorkLoopPlanner.decide(planInfo);
+        if (plan.action === WorkLoopStep.FINISH) {
           finalAnswerText = turn.content;
           this.finalizeWorkTurn(turnMsg, false, conv);
           // 粘性 max-tokens(对齐 dsh): 输出顶到上限即收尾并提示续跑
-          if (turn.finishReason === 'max_tokens') {
+          if (LoopDecisions.shouldBreakOnMaxTokens(turn.finishReason)) {
+            metrics.recordMaxTokens();
             this.appendTurnNote(turnMsg, ' 本轮输出达到模型上限(max tokens), 已自动收尾。发送"继续"接着输出。');
             turnEndStatus = 'max_tokens';
           }
@@ -1473,19 +1534,22 @@ export class ChatViewModel {
         let imageDataUrl: string = '';
         let imagePath: string = '';
         let reminders: string[] = [];
-        let ci: number = 0;
-        while (ci < turn.toolCalls.length) {
+        let readFlags: boolean[] = [];
+        for (let f: number = 0; f < turn.toolCalls.length; f++) {
+          readFlags.push(WorkFileService.isReadOnlyTool(turn.toolCalls[f].name));
+        }
+        let groups: ScheduledGroup[] = ToolScheduler.schedule(
+          readFlags, Constants.WORK_MAX_PARALLEL_TOOLS, Constants.WORK_ALLOW_PARALLEL_TOOLS);
+        for (let g: number = 0; g < groups.length; g++) {
+          let group: ScheduledGroup = groups[g];
+          let ci: number = group.start;
+          let gj: number = ci + group.count;
           if (this.abortSignal.aborted) {
             break;
           }
           let headCall: ToolCallRecord = turn.toolCalls[ci];
-          if (WorkFileService.isReadOnlyTool(headCall.name)) {
-            // 收集连续只读调用为一组: 先整体展示(执行中状态), 再经有界滚动池并发执行、按模型顺序提交
-            let gj: number = ci;
-            while (gj < turn.toolCalls.length &&
-              WorkFileService.isReadOnlyTool(turn.toolCalls[gj].name)) {
-              gj++;
-            }
+          if (group.parallel) {
+            // 只读组: 先整体展示(执行中状态), 再经有界滚动池并发执行、按模型顺序提交
             for (let k: number = ci; k < gj; k++) {
               this.ensureToolRecordOnTimeline(turnMsg, turn.toolCalls[k]);
             }
@@ -1494,12 +1558,13 @@ export class ChatViewModel {
             // 先让"执行中"工具行上屏, 再开始可能长时间占用主线程的同步工具执行
             await this.sleep(30);
             let groupCount: number = gj - ci;
-            let poolSize: number = Math.min(Constants.WORK_MAX_PARALLEL_TOOLS, groupCount);
+            let poolSize: number = ToolScheduler.poolSize(group, Constants.WORK_MAX_PARALLEL_TOOLS);
             let execs: Promise<ToolExecResult>[] = new Array(groupCount);
             let launchOne = (idx: number): void => {
               turn.toolCalls[ci + idx].preparing = false;
               execs[idx] = WorkToolRunner.execute(ctx, conv.id,
-                turn.toolCalls[ci + idx].name, turn.toolCalls[ci + idx].argsJson);
+                turn.toolCalls[ci + idx].name, turn.toolCalls[ci + idx].argsJson,
+                this.abortSignal);
             };
             for (let k: number = 0; k < poolSize; k++) {
               launchOne(k);
@@ -1509,18 +1574,32 @@ export class ChatViewModel {
               let execStart: number = Date.now();
               let exec: ToolExecResult = await execs[r];
               this.applyToolResult(ctx, conv.id, cur, exec, execStart);
+              metrics.recordToolCall(!cur.isError, cur.timeout, cur.cancelled, cur.schemaError);
+              if (cur.name === 'subagent') {
+                metrics.recordSubagentCall();
+              }
+              if (cur.traceId === '') {
+                cur.traceId = 'call-' + traceSeq.toString();
+              }
+              traceSeq++;
               if (exec.imageDataUrl !== '') {
                 imageDataUrl = exec.imageDataUrl;
                 imagePath = parseToolArgPath(cur.argsJson);
               }
               if (ctx !== null) {
-                SessionLogService.append(ctx, conv.id, 'tool_result', {
+                let toolEvent: Record<string, Object> = {
                   'step': step,
                   'name': cur.name,
                   'ok': !cur.isError,
                   'durationMs': cur.durationMs,
+                  'timeout': cur.timeout,
+                  'cancelled': cur.cancelled,
+                  'schemaError': cur.schemaError,
+                  'traceId': cur.traceId,
                   'result': cur.result
-                });
+                };
+                turnToolEvents.push(toolEvent);
+                SessionLogService.append(ctx, conv.id, 'tool_result', toolEvent);
               }
               let reminder: string = this.noteWorkRepeat(cur);
               if (reminder !== '') {
@@ -1535,7 +1614,6 @@ export class ChatViewModel {
             }
             // 只读组也可能产生 .spill 溢出文件, 组结束后同样刷新面板
             await this.refreshWorkspace();
-            ci = gj;
           } else {
             this.ensureToolRecordOnTimeline(turnMsg, headCall);
             this.persistConversations();
@@ -1544,8 +1622,16 @@ export class ChatViewModel {
             headCall.preparing = false;
             let execStart: number = Date.now();
             let exec: ToolExecResult = await WorkToolRunner.execute(
-              ctx, conv.id, headCall.name, headCall.argsJson);
+              ctx, conv.id, headCall.name, headCall.argsJson, this.abortSignal);
             this.applyToolResult(ctx, conv.id, headCall, exec, execStart);
+            metrics.recordToolCall(!headCall.isError, headCall.timeout, headCall.cancelled, headCall.schemaError);
+            if (headCall.name === 'subagent') {
+              metrics.recordSubagentCall();
+            }
+            if (headCall.traceId === '') {
+              headCall.traceId = 'call-' + traceSeq.toString();
+            }
+            traceSeq++;
             if (exec.imageDataUrl !== '') {
               imageDataUrl = exec.imageDataUrl;
               imagePath = parseToolArgPath(headCall.argsJson);
@@ -1554,13 +1640,19 @@ export class ChatViewModel {
               await this.refreshWorkspace();
             }
             if (ctx !== null) {
-              SessionLogService.append(ctx, conv.id, 'tool_result', {
+              let toolEvent: Record<string, Object> = {
                 'step': step,
                 'name': headCall.name,
                 'ok': !headCall.isError,
                 'durationMs': headCall.durationMs,
+                'timeout': headCall.timeout,
+                'cancelled': headCall.cancelled,
+                'schemaError': headCall.schemaError,
+                'traceId': headCall.traceId,
                 'result': headCall.result
-              });
+              };
+              turnToolEvents.push(toolEvent);
+              SessionLogService.append(ctx, conv.id, 'tool_result', toolEvent);
             }
             let reminder: string = this.noteWorkRepeat(headCall);
             if (reminder !== '') {
@@ -1568,7 +1660,6 @@ export class ChatViewModel {
             }
             this.persistConversations();
             this.notifyUIChange();
-            ci++;
           }
         }
         if (this.abortSignal.aborted) {
@@ -1609,7 +1700,11 @@ export class ChatViewModel {
         }
       }
       if (this.context !== null) {
-        SessionLogService.append(this.context, conv.id, 'turn_end', { 'status': turnEndStatus });
+        SessionLogService.append(this.context, conv.id, 'turn_end', {
+          'status': turnEndStatus,
+          'metrics': metrics.snapshot()
+        });
+        this.appendToolLatencyEvents(conv, turnToolEvents);
       }
       if (finalAnswerText !== '' && !this.abortSignal.aborted) {
         this.maybeGenerateTitle(conv, lastUserText, finalAnswerText);
@@ -1617,7 +1712,12 @@ export class ChatViewModel {
     } catch (e) {
       let err: Error = e as Error;
       if (!this.abortSignal.aborted) {
-        let msg: string = err.message !== undefined ? err.message : '任务执行失败';
+        let userMsg: string = '';
+        if (err instanceof LoopError && (err as LoopError).userMessage !== '') {
+          userMsg = (err as LoopError).userMessage;
+        }
+        let msg: string = userMsg !== '' ? userMsg :
+          (err.message !== undefined ? err.message : '任务执行失败');
         let last: Message | null = conv.messages.length > 0 ? conv.messages[conv.messages.length - 1] : null;
         if (last !== null && last.role === 'assistant') {
           this.appendTurnNote(last, '⚠️ ' + msg);
@@ -1628,11 +1728,178 @@ export class ChatViewModel {
         }
         if (this.context !== null) {
           SessionLogService.append(this.context, conv.id, 'turn_end',
-            { 'status': 'error', 'error': msg });
+            { 'status': 'error', 'error': msg, 'metrics': metrics.snapshot() });
+          this.appendToolLatencyEvents(conv, turnToolEvents);
         }
       }
     } finally {
       this.markStreamEnd();
+      if (this.abortSignal.aborted) {
+        this.workStateMachine.abort();
+        this.workStateMachine.aborted();
+      } else {
+        this.workStateMachine.finish();
+      }
+      this.streamTarget = null;
+      this.pendingAsk = null;
+      AskUserBridge.cancelAll();
+      if (this.streamTimer !== -1) {
+        clearTimeout(this.streamTimer);
+        this.streamTimer = -1;
+      }
+      this.persistConversations();
+      this.notifyUIChange();
+    }
+  }
+
+
+private async executeWorkLoopDriver(conv: Conversation): Promise<void> {
+    this.abortSignal = new AbortSignal();
+    this.workStateMachine.reset();
+    this.workStateMachine.start();
+    let metrics: LoopMetrics = new LoopMetrics();
+    let traceSeq: number = 0;
+    this.markStreamStart();
+    this.streamTimer = -1;
+    this.lastWorkPromptTokens = 0;
+    this.lastWorkPromptChars = 0;
+    this.workRepeatKey = '';
+    this.workRepeatCount = 0;
+    this.workRepeatDetector.reset();
+    this.workSteerQueue = [];
+    this.pendingAsk = null;
+    if (this.context !== null) {
+      SubagentService.bind(this.apiConfig, this.thinkingEnabled, this.reasoningEffort,
+        (ctx: common.UIAbilityContext, cid: string, name: string, argsJson: string,
+          abortSignal?: AbortSignal | null): Promise<ToolExecResult> => {
+          let signal: AbortSignal | null =
+            abortSignal !== undefined && abortSignal !== null ? abortSignal : null;
+          return WorkToolRunner.execute(ctx, cid, name, argsJson, signal);
+        });
+    }
+
+    let turnToolEvents: Record<string, Object>[] = [];
+
+    try {
+      // 组装与协议无关的循环历史(含既有全部消息); 系统提示词为静态文本, 整个循环不重写
+      let messages: LoopMessage[] = [];
+      messages.push(LoopMessage.system(AgentLoopService.buildWorkSystemPrompt()));
+      for (let i: number = 0; i < conv.messages.length; i++) {
+        let m: Message = conv.messages[i];
+        if (m.role === 'user' && m.content !== '') {
+          messages.push(LoopMessage.user(m.content));
+        } else if (m.role === 'assistant' && (m.content !== '' || m.toolCalls.length > 0)) {
+          // 中断遗留的空结果标记为已中断, 避免模型把空串当成功
+          let calls: ToolCallRecord[] = m.toolCalls;
+          for (let c: number = 0; c < calls.length; c++) {
+            if (calls[c].result === '') {
+              calls[c].result = '(执行被中断, 无结果)';
+              calls[c].isError = true;
+              calls[c].cancelled = true;
+              if (calls[c].durationMs < 0) {
+                calls[c].durationMs = 0;
+              }
+            }
+          }
+          messages.push(LoopMessage.assistant(m.content, calls));
+        }
+      }
+
+      // 会话事件日志(对齐 dsh append-only session log): turn/start 留痕
+      let lastUserText: string = '';
+      for (let i: number = conv.messages.length - 1; i >= 0; i--) {
+        if (conv.messages[i].role === 'user' && conv.messages[i].content !== '') {
+          lastUserText = conv.messages[i].content;
+          break;
+        }
+      }
+      if (this.context !== null) {
+        let turnStartPayload: Record<string, Object> = { 'user': lastUserText };
+        if (AgentLoopService.lastPromptBudget !== null) {
+          turnStartPayload['promptBudget'] = AgentLoopService.lastPromptBudget;
+        }
+        if (AgentLoopService.lastProtocol !== '') {
+          turnStartPayload['protocol'] = AgentLoopService.lastProtocol;
+        }
+        SessionLogService.append(this.context, conv.id, 'turn_start', turnStartPayload);
+      }
+      let turnEndStatus: string = 'complete';
+      let finalAnswerText: string = '';
+
+      let step: number = 0;
+      let state: WorkLoopStepState = new WorkLoopStepState();
+      let res = await WorkLoopDriverBridge.runWithStep(async (i: number): Promise<WorkLoopTurnInfo> => {
+        return await this.runDriverStep(conv, messages, metrics, turnToolEvents, state, i);
+      }, Constants.WORK_MAX_STEPS, (s: number, action: string, reason?: string): void => {
+        if (this.context !== null) {
+          SessionLogService.append(this.context, conv.id, 'driver_step',
+            { 'step': s, 'action': action, 'reason': reason !== undefined ? reason : '' });
+        }
+      });
+      if (res.maxStepsReached) {
+        step = Constants.WORK_MAX_STEPS;
+      }
+      turnEndStatus = state.turnEndStatus;
+      finalAnswerText = state.finalAnswerText;
+      if (this.context !== null) {
+        SessionLogService.append(this.context, conv.id, 'driver_summary', {
+          'steps': res.steps, 'toolSteps': res.toolSteps, 'textSteps': res.textSteps,
+          'compactSteps': res.compactSteps, 'retries': res.retries,
+          'aborted': res.aborted, 'maxStepsReached': res.maxStepsReached,
+          'finalReason': res.finalReason, 'finalState': res.finalState
+        });
+      }
+
+      // 步数耗尽: 在最后一条消息上标注(防失控保险, 正常长任务触不到)
+      if (!this.abortSignal.aborted && step >= Constants.WORK_MAX_STEPS && conv.messages.length > 0) {
+        turnEndStatus = 'max_steps';
+        let last: Message = conv.messages[conv.messages.length - 1];
+        if (last.role === 'assistant') {
+          this.appendTurnNote(last, ' 已连续执行 ' + Constants.WORK_MAX_STEPS.toString() +
+            ' 轮工具调用(防失控保险), 发送"继续"可接着执行。');
+        }
+      }
+      if (this.context !== null) {
+        SessionLogService.append(this.context, conv.id, 'turn_end', {
+          'status': turnEndStatus,
+          'metrics': metrics.snapshot()
+        });
+        this.appendToolLatencyEvents(conv, turnToolEvents);
+      }
+      if (finalAnswerText !== '' && !this.abortSignal.aborted) {
+        this.maybeGenerateTitle(conv, lastUserText, finalAnswerText);
+      }
+    } catch (e) {
+      let err: Error = e as Error;
+      if (!this.abortSignal.aborted) {
+        let userMsg: string = '';
+        if (err instanceof LoopError && (err as LoopError).userMessage !== '') {
+          userMsg = (err as LoopError).userMessage;
+        }
+        let msg: string = userMsg !== '' ? userMsg :
+          (err.message !== undefined ? err.message : '任务执行失败');
+        let last: Message | null = conv.messages.length > 0 ? conv.messages[conv.messages.length - 1] : null;
+        if (last !== null && last.role === 'assistant') {
+          this.appendTurnNote(last, '⚠️ ' + msg);
+        } else {
+          let errMsg: Message = Message.ofAssistant(generateMessageId(), '⚠️ ' + msg);
+          errMsg.displayContent = errMsg.content;
+          conv.messages.push(errMsg);
+        }
+        if (this.context !== null) {
+          SessionLogService.append(this.context, conv.id, 'turn_end',
+            { 'status': 'error', 'error': msg, 'metrics': metrics.snapshot() });
+          this.appendToolLatencyEvents(conv, turnToolEvents);
+        }
+      }
+    } finally {
+      this.markStreamEnd();
+      if (this.abortSignal.aborted) {
+        this.workStateMachine.abort();
+        this.workStateMachine.aborted();
+      } else {
+        this.workStateMachine.finish();
+      }
       this.streamTarget = null;
       this.pendingAsk = null;
       AskUserBridge.cancelAll();
@@ -1648,7 +1915,325 @@ export class ChatViewModel {
   // 执行一次步骤请求; 若因上下文窗口超限失败(对齐 DeepSeek Harness 对
   // CONTEXT_WINDOW_EXCEEDED 的响应式压缩), 强制压缩历史后重试一次。
   // onForcedRetry: 重试前清掉上一次尝试已流出的部分工具行
-  private async runStepWithOverflowRetry(messages: LoopMessage[], turnMsg: Message,
+
+
+  private async runDriverStep(conv: Conversation, messages: LoopMessage[], metrics: LoopMetrics,
+    turnToolEvents: Record<string, Object>[], state: WorkLoopStepState, stepIndex: number): Promise<WorkLoopTurnInfo> {
+let info: WorkLoopTurnInfo = new WorkLoopTurnInfo();
+        if (this.abortSignal.aborted) {
+          state.turnEndStatus = 'aborted';
+          return WorkLoopStepInfoBuilder.aborted();
+        }
+        if (this.context === null) {
+          return info;
+        }
+        let step: number = stepIndex;
+        let lastTurn: LoopTurnResult | null = null;
+        for (let once: number = 0; once < 1; once++) {
+if (this.abortSignal.aborted) {
+          state.turnEndStatus = 'aborted';
+          break;
+        }
+        if (this.context === null) {
+          break;
+        }
+        let ctx: common.UIAbilityContext = this.context;
+        // 本轮独立消息: 本轮的思考/工具/文本都挂在这一条上
+        let turnMsg: Message = Message.ofAssistant(generateMessageId(), '');
+        conv.messages.push(turnMsg);
+        this.streamTarget = turnMsg;
+        this.persistConversations();
+        this.notifyUIChange();
+
+        // 上下文预算管理(缓存感知): 超预算先无模型剪枝, 再前缀复用式压缩, 最后整条裁剪。
+        // assistant 与其工具结果在同一条消息内, 压缩/裁剪都不会拆散协议对;
+        // 任务清单与工作区文件不参与压缩, 始终可由模型 read_file 找回。
+        let compactNote: string = await this.compactWorkHistoryIfNeeded(messages, false);
+        if (compactNote !== '') {
+          metrics.recordCompaction();
+        }
+        // 运行时快照(取代旧的系统提示词内嵌刷新): 内容与历史末尾快照一致时不追加,
+        // 请求前缀保持逐字节稳定——这是跨轮 KV 缓存命中的关键。
+        await this.appendRuntimeSnapshotIfNeeded(messages, ctx, conv.id);
+
+        let streamStartMs: number = Date.now();
+        let callbacks: LoopTurnCallbacks = new LoopTurnCallbacks();
+        callbacks.onToken = (delta: string): void => {
+          turnMsg.content += delta;
+          this.updateLiveTokenSpeed(turnMsg, streamStartMs);
+          this.scheduleStreamUpdate();
+        };
+        callbacks.onReasoning = (text: string): void => {
+          turnMsg.reasoning = text;
+          this.updateLiveTokenSpeed(turnMsg, streamStartMs);
+          this.scheduleStreamUpdate();
+        };
+        callbacks.onToolCalls = (calls: ToolCallRecord[]): void => {
+          // 模型生成调用参数的过程中即时同步到时间线(preparing 态),
+          // 由 WorkTurnView 的流式定时器在 33ms 内上屏, 不等整轮响应结束
+          for (let i: number = 0; i < calls.length; i++) {
+            let call: ToolCallRecord = calls[i];
+            if (call.name === '' || turnMsg.toolCalls.indexOf(call) >= 0) {
+              continue;
+            }
+            turnMsg.toolCalls.push(call);
+            call.preparing = true;
+          }
+        };
+        callbacks.onUsage = (speed: number, hit: number): void => {
+          if (speed > 0) {
+            turnMsg.tokenSpeed = speed;
+          }
+          if (hit >= 0) {
+            turnMsg.cacheHitRate = hit;
+          }
+          this.scheduleStreamUpdate();
+        };
+
+        callbacks.onRetry = (attempt: number, reason: string): void => {
+          metrics.recordRetry();
+          // 重试会重新流式输出: 先清掉上一次尝试的部分内容避免重复, 保留压缩标注
+          turnMsg.content = compactNote + '⚠️ ' + reason + '，自动重试(第 ' +
+            attempt.toString() + ' 次)…\n\n';
+          turnMsg.reasoning = '';
+          turnMsg.toolCalls = [];
+          this.scheduleStreamUpdate();
+        };
+
+        // 记录请求字符量, 与 usage 的真实 prompt tokens 配对, 推导本会话字符→token 比例
+        let requestChars: number = loopMsgChars(messages);
+        let turn: LoopTurnResult = await this.runStepWithOverflowRetry(
+          messages, turnMsg, compactNote, callbacks, ctx, conv.id, (): void => {
+            // 上下文超限强制压缩后重试: 清掉上一次尝试已流出的部分工具行
+            metrics.recordCompaction();
+            turnMsg.toolCalls = [];
+          });
+        lastTurn = turn;
+        if (this.abortSignal.aborted) {
+          state.turnEndStatus = 'aborted';
+          this.finalizeWorkTurn(turnMsg, true, conv);
+          info = WorkLoopStepInfoBuilder.aborted();
+          break;
+        }
+        // 评估指标: 每轮记录是否携带工具调用(无工具调用的轮次计为无效步)
+        metrics.recordTurn(turn.toolCalls.length > 0);
+        if (turn.promptTokens > 0) {
+          this.lastWorkPromptTokens = turn.promptTokens;
+          this.lastWorkPromptChars = requestChars;
+        }
+        // 步骤事件留痕(assistant 内容 + 思考摘要 + 调用清单)
+        if (ctx !== null) {
+          let callsForLog: Object[] = [];
+          for (let i: number = 0; i < turn.toolCalls.length; i++) {
+            let callLog: Record<string, Object> = {
+              'id': turn.toolCalls[i].id,
+              'name': turn.toolCalls[i].name,
+              'args': turn.toolCalls[i].argsJson.substring(0, 2000)
+            };
+            callsForLog.push(callLog);
+          }
+          let logPayload: Record<string, Object> = {
+            'step': step,
+            'content': turn.content,
+            'reasoning': turn.reasoning.length > Constants.WORK_LOG_REASONING_CHARS ?
+              turn.reasoning.substring(0, Constants.WORK_LOG_REASONING_CHARS) +
+              '…(已截断)' : turn.reasoning,
+            'toolCalls': callsForLog,
+            'finishReason': turn.finishReason
+          };
+          SessionLogService.append(ctx, conv.id, 'assistant_message', logPayload);
+        }
+
+        // 单轮评估: 由纯决策层 WorkLoopPlanner 决定下一步(工具/收尾/压缩/中止)
+        let planInfo: WorkLoopTurnInfo = new WorkLoopTurnInfo();
+        planInfo.toolCallsCount = turn.toolCalls.length;
+        planInfo.contentLength = turn.content.length;
+        planInfo.finishReason = turn.finishReason;
+        planInfo.aborted = this.abortSignal.aborted;
+        let plan = WorkLoopPlanner.decide(planInfo);
+        if (plan.action === WorkLoopStep.FINISH) {
+          state.finalAnswerText = turn.content;
+          this.finalizeWorkTurn(turnMsg, false, conv);
+          // 粘性 max-tokens(对齐 dsh): 输出顶到上限即收尾并提示续跑
+          if (LoopDecisions.shouldBreakOnMaxTokens(turn.finishReason)) {
+            metrics.recordMaxTokens();
+            this.appendTurnNote(turnMsg, ' 本轮输出达到模型上限(max tokens), 已自动收尾。发送"继续"接着输出。');
+            state.turnEndStatus = 'max_tokens';
+          }
+          info = WorkLoopStepInfoBuilder.finish(turn.content.length, turn.finishReason);
+          break;
+        }
+
+        // 工具轮: 连续的只读调用经有界滚动池并发执行(上限 WORK_MAX_PARALLEL_TOOLS,
+        // 结果按模型顺序提交), 其余调用逐个执行(对齐 dsh 的 exclusive/parallel 调度)
+        // fromTurn 携带思考文本与签名: Anthropic 思考模式下下一轮请求需回传 thinking 块
+        let turnLoopMsg: LoopMessage = LoopMessage.fromTurn(turn);
+        let imageDataUrl: string = '';
+        let imagePath: string = '';
+        let reminders: string[] = [];
+        let readFlags: boolean[] = [];
+        for (let f: number = 0; f < turn.toolCalls.length; f++) {
+          readFlags.push(WorkFileService.isReadOnlyTool(turn.toolCalls[f].name));
+        }
+        let groups: ScheduledGroup[] = ToolScheduler.schedule(
+          readFlags, Constants.WORK_MAX_PARALLEL_TOOLS, Constants.WORK_ALLOW_PARALLEL_TOOLS);
+        for (let g: number = 0; g < groups.length; g++) {
+          let group: ScheduledGroup = groups[g];
+          let ci: number = group.start;
+          let gj: number = ci + group.count;
+          if (this.abortSignal.aborted) {
+            break;
+          }
+          let headCall: ToolCallRecord = turn.toolCalls[ci];
+          if (group.parallel) {
+            // 只读组: 先整体展示(执行中状态), 再经有界滚动池并发执行、按模型顺序提交
+            for (let k: number = ci; k < gj; k++) {
+              this.ensureToolRecordOnTimeline(turnMsg, turn.toolCalls[k]);
+            }
+            this.persistConversations();
+            this.notifyUIChange();
+            // 先让"执行中"工具行上屏, 再开始可能长时间占用主线程的同步工具执行
+            await this.sleep(30);
+            let groupCount: number = gj - ci;
+            let poolSize: number = ToolScheduler.poolSize(group, Constants.WORK_MAX_PARALLEL_TOOLS);
+            let execs: Promise<ToolExecResult>[] = new Array(groupCount);
+            let launchOne = (idx: number): void => {
+              turn.toolCalls[ci + idx].preparing = false;
+              execs[idx] = WorkToolRunner.execute(ctx, conv.id,
+                turn.toolCalls[ci + idx].name, turn.toolCalls[ci + idx].argsJson,
+                this.abortSignal);
+            };
+            for (let k: number = 0; k < poolSize; k++) {
+              launchOne(k);
+            }
+            for (let r: number = 0; r < groupCount; r++) {
+              let cur: ToolCallRecord = turn.toolCalls[ci + r];
+              let execStart: number = Date.now();
+              let exec: ToolExecResult = await execs[r];
+              this.applyToolResult(ctx, conv.id, cur, exec, execStart);
+              metrics.recordToolCall(!cur.isError, cur.timeout, cur.cancelled, cur.schemaError);
+              if (cur.name === 'subagent') {
+                metrics.recordSubagentCall();
+              }
+              if (cur.traceId === '') {
+                cur.traceId = 'call-' + state.traceSeq.toString();
+              }
+              state.traceSeq++;
+              if (exec.imageDataUrl !== '') {
+                imageDataUrl = exec.imageDataUrl;
+                imagePath = parseToolArgPath(cur.argsJson);
+              }
+              if (ctx !== null) {
+                let toolEvent: Record<string, Object> = {
+                  'step': step,
+                  'name': cur.name,
+                  'ok': !cur.isError,
+                  'durationMs': cur.durationMs,
+                  'timeout': cur.timeout,
+                  'cancelled': cur.cancelled,
+                  'schemaError': cur.schemaError,
+                  'traceId': cur.traceId,
+                  'result': cur.result
+                };
+                turnToolEvents.push(toolEvent);
+                SessionLogService.append(ctx, conv.id, 'tool_result', toolEvent);
+              }
+              let reminder: string = this.noteWorkRepeat(cur);
+              if (reminder !== '') {
+                reminders.push(reminder);
+              }
+              this.persistConversations();
+              this.notifyUIChange();
+              let nextIdx: number = r + poolSize;
+              if (nextIdx < groupCount) {
+                launchOne(nextIdx);
+              }
+            }
+            // 只读组也可能产生 .spill 溢出文件, 组结束后同样刷新面板
+            await this.refreshWorkspace();
+          } else {
+            this.ensureToolRecordOnTimeline(turnMsg, headCall);
+            this.persistConversations();
+            this.notifyUIChange();
+            await this.sleep(30);
+            headCall.preparing = false;
+            let execStart: number = Date.now();
+            let exec: ToolExecResult = await WorkToolRunner.execute(
+              ctx, conv.id, headCall.name, headCall.argsJson, this.abortSignal);
+            this.applyToolResult(ctx, conv.id, headCall, exec, execStart);
+            metrics.recordToolCall(!headCall.isError, headCall.timeout, headCall.cancelled, headCall.schemaError);
+            if (headCall.name === 'subagent') {
+              metrics.recordSubagentCall();
+            }
+            if (headCall.traceId === '') {
+              headCall.traceId = 'call-' + state.traceSeq.toString();
+            }
+            state.traceSeq++;
+            if (exec.imageDataUrl !== '') {
+              imageDataUrl = exec.imageDataUrl;
+              imagePath = parseToolArgPath(headCall.argsJson);
+            }
+            if (WorkFileService.isMutatingTool(headCall.name)) {
+              await this.refreshWorkspace();
+            }
+            if (ctx !== null) {
+              let toolEvent: Record<string, Object> = {
+                'step': step,
+                'name': headCall.name,
+                'ok': !headCall.isError,
+                'durationMs': headCall.durationMs,
+                'timeout': headCall.timeout,
+                'cancelled': headCall.cancelled,
+                'schemaError': headCall.schemaError,
+                'traceId': headCall.traceId,
+                'result': headCall.result
+              };
+              turnToolEvents.push(toolEvent);
+              SessionLogService.append(ctx, conv.id, 'tool_result', toolEvent);
+            }
+            let reminder: string = this.noteWorkRepeat(headCall);
+            if (reminder !== '') {
+              reminders.push(reminder);
+            }
+            this.persistConversations();
+            this.notifyUIChange();
+          }
+        }
+        if (this.abortSignal.aborted) {
+          state.turnEndStatus = 'aborted';
+          this.finalizeWorkTurn(turnMsg, true, conv);
+          info = WorkLoopStepInfoBuilder.aborted();
+          break;
+        }
+        this.finalizeWorkTurn(turnMsg, false, conv);
+        // 本轮(assistant + 工具结果)进入下一轮请求历史
+        messages.push(turnLoopMsg);
+        // view_image: 把图片作为下一条多模态用户消息注入, 供模型视觉分析
+        if (imageDataUrl !== '') {
+          messages.push(LoopMessage.userImage(
+            '【工作区图片】' + imagePath + '\n这是你刚才调用 view_image 读取的图片, 请结合当前任务分析图中内容。',
+            imageDataUrl));
+        }
+        // 重复调用提醒在本轮结果之后追加, 时序上紧跟触发它的那轮工具调用
+        for (let r: number = 0; r < reminders.length; r++) {
+          messages.push(LoopMessage.user(reminders[r]));
+        }
+        // 用户插话(next-step steering): 本轮结束后注入, 下一步请求可见
+        if (this.workSteerQueue.length > 0) {
+          let drained: string[] = this.workSteerQueue;
+          this.workSteerQueue = [];
+          for (let s: number = 0; s < drained.length; s++) {
+            messages.push(LoopMessage.user('【用户补充】' + drained[s]));
+          }
+        }
+        }
+        if (lastTurn !== null) {
+          return WorkLoopStepInfoBuilder.tool(lastTurn.toolCalls.length,
+            lastTurn.content.length, lastTurn.finishReason);
+        }
+        return info;
+
+  }  private async runStepWithOverflowRetry(messages: LoopMessage[], turnMsg: Message,
     compactNote: string, callbacks: LoopTurnCallbacks,
     ctx: common.UIAbilityContext, convId: string,
     onForcedRetry: () => void): Promise<LoopTurnResult> {
@@ -1658,8 +2243,8 @@ export class ChatViewModel {
         callbacks, this.abortSignal);
     } catch (e) {
       let err: Error = e as Error;
-      if (!this.abortSignal.aborted && err instanceof LoopError &&
-        (err as LoopError).isContextOverflow()) {
+      if (LoopDecisions.shouldForceCompactOnOverflow(this.abortSignal.aborted,
+        err instanceof LoopError && (err as LoopError).isContextOverflow(), false)) {
         let forcedNote: string = await this.compactWorkHistoryIfNeeded(messages, true);
         if (forcedNote !== '') {
           turnMsg.content = forcedNote;
@@ -1698,7 +2283,7 @@ export class ChatViewModel {
     }
     scheduleText = ScheduleService.renderList(ScheduleService.list(root));
     let snapshot: string = AgentLoopService.buildRuntimeSnapshot(tree, todoText, goalText, scheduleText);
-    if (AgentLoopService.findLastSnapshot(messages) !== snapshot) {
+    if (LoopDecisions.shouldAppendSnapshot(AgentLoopService.findLastSnapshot(messages), snapshot)) {
       messages.push(LoopMessage.user(snapshot));
     }
   }
@@ -1711,6 +2296,17 @@ export class ChatViewModel {
   // 3) 第二级(前缀复用): 摘要请求自带完整前缀(静态系统提示词+工具+历史), 仅在末尾
   //    追加固定压缩指令——对模型侧 KV 缓存而言是上一请求的延续, 前缀部分按缓存命中计价。
   // 4) 兜底: 摘要失败或压缩后仍超预算时, 从最旧处整条丢弃。
+  // 把本 turn 的 tool_result 聚合成 tool_latency 事件落日志
+  private appendToolLatencyEvents(conv: Conversation, turnToolEvents: Record<string, Object>[]): void {
+    if (this.context === null) {
+      return;
+    }
+    let evs: Record<string, Object>[] = SessionLogAggregator.buildToolLatencyEvents(turnToolEvents);
+    for (let i: number = 0; i < evs.length; i++) {
+      SessionLogService.append(this.context, conv.id, 'tool_latency', evs[i]);
+    }
+  }
+
   private async compactWorkHistoryIfNeeded(messages: LoopMessage[], force: boolean): Promise<string> {
     if (!force && !this.workHistoryOverBudget(messages)) {
       return '';
@@ -1797,6 +2393,9 @@ export class ChatViewModel {
   private applyToolResult(ctx: common.UIAbilityContext, convId: string,
     call: ToolCallRecord, exec: ToolExecResult, execStart: number): void {
     call.meta = exec.meta;
+    call.timeout = exec.timeout;
+    call.cancelled = exec.cancelled;
+    call.schemaError = exec.schemaError;
     if (exec.output.length > Constants.WORK_RESULT_MAX_CHARS) {
       let root: string = WorkFileService.workspaceRoot(ctx, convId);
       let spillRel: string = SpillStore.save(root, call.name, exec.output);
@@ -1823,17 +2422,11 @@ export class ChatViewModel {
   // 计数, 第 3/5/8 次时生成一条系统提醒文本(仅提示不阻断; 新任务开始时重置)。
   // 提醒由调用方在本轮工具结果入史之后追加, 保证时序自然。返回空串表示本次无需提醒。
   private noteWorkRepeat(call: ToolCallRecord): string {
-    let key: string = call.name + '|' + call.argsJson;
-    if (key === this.workRepeatKey) {
-      this.workRepeatCount++;
-    } else {
-      this.workRepeatKey = key;
-      this.workRepeatCount = 1;
-    }
-    if (this.workRepeatCount !== 3 && this.workRepeatCount !== 5 && this.workRepeatCount !== 8) {
+    let outcome = this.workRepeatDetector.record(call.name, call.argsJson);
+    if (!outcome.shouldRemind) {
       return '';
     }
-    return '【系统提醒】你已连续 ' + this.workRepeatCount.toString() +
+    return '【系统提醒】你已连续 ' + outcome.count.toString() +
       ' 次以完全相同的参数调用 ' + call.name + '，相同调用不会产生新结果。请停下分析: 核对参数、' +
       '改用其他工具或调整方法；确有无法逾越的障碍时，如实向用户说明并收口。';
   }
@@ -1973,8 +2566,14 @@ export class ChatViewModel {
         let execStart: number = Date.now();
         if (call.name === LOCAL_SEARCH_TOOL_NAME) {
           let query: string = ChatViewModel.parseSearchQuery(call.argsJson);
-          let outcome: LocalSearchOutcome = await LocalWebSearch.searchWeb(query, this.abortSignal);
+          let outcome: LocalSearchOutcome = await ToolExecutionGuard.run(
+            LocalWebSearch.searchWeb(query, this.abortSignal),
+            Constants.WORK_TOOL_TIMEOUT_MS, this.abortSignal,
+            (): LocalSearchOutcome => ChatViewModel.searchOutcomeWithError('本机搜索执行超时', true),
+            (): LocalSearchOutcome => ChatViewModel.searchOutcomeWithError('本机搜索已取消', false, true));
           call.durationMs = Date.now() - execStart;
+          call.timeout = outcome.timeout;
+          call.cancelled = outcome.cancelled;
           if (outcome.ok) {
             call.isError = false;
             call.result = outcome.contentForAI;
@@ -1987,8 +2586,14 @@ export class ChatViewModel {
         } else if (call.name === WEB_FETCH_TOOL_NAME) {
           let args: Record<string, Object> = ChatViewModel.parseArgsObject(call.argsJson);
           let url: string = ChatViewModel.readArgString(args, 'url');
-          let fetchResult: ToolExecResult = await HarnessTools.toolWebFetch(args);
+          let fetchResult: ToolExecResult = await ToolExecutionGuard.run(
+            HarnessTools.toolWebFetch(args),
+            Constants.WORK_TOOL_TIMEOUT_MS, this.abortSignal,
+            (): ToolExecResult => ChatViewModel.toolResultError('web_fetch 执行超时', true),
+            (): ToolExecResult => ChatViewModel.toolResultError('web_fetch 执行已取消', false, true));
           call.durationMs = Date.now() - execStart;
+          call.timeout = fetchResult.timeout;
+          call.cancelled = fetchResult.cancelled;
           call.isError = !fetchResult.ok;
           call.result = fetchResult.output;
           if (fetchResult.ok) {
@@ -2027,6 +2632,28 @@ export class ChatViewModel {
       // ignore
     }
     return argsJson.trim();
+  }
+
+  // 本地搜索的超时/取消兜底结果(与工具护栏一致: ok=false + errorMessage)
+  private static searchOutcomeWithError(msg: string,
+    timeout: boolean = false, cancelled: boolean = false): LocalSearchOutcome {
+    let o: LocalSearchOutcome = new LocalSearchOutcome();
+    o.ok = false;
+    o.errorMessage = msg;
+    o.timeout = timeout;
+    o.cancelled = cancelled;
+    return o;
+  }
+
+  // web_fetch 等工具的超时/取消兜底结果
+  private static toolResultError(msg: string,
+    timeout: boolean = false, cancelled: boolean = false): ToolExecResult {
+    let r: ToolExecResult = new ToolExecResult();
+    r.ok = false;
+    r.output = 'ERROR: ' + msg;
+    r.timeout = timeout;
+    r.cancelled = cancelled;
+    return r;
   }
 
   // 工具调用参数 JSON → 对象(解析失败回落空对象)
@@ -2148,6 +2775,9 @@ export class ChatViewModel {
     this.abortSignal.aborted = true;
     ChatService.abort();
     AgentLoopService.abort();
+    // 深度取消工具内 HTTP: 真正销毁在途 download_file / web_fetch 请求, 避免底层继续占用
+    WorkToolRunner.abortToolRequests();
+    WebFetchService.abortToolRequests();
     // 挂起中的 ask_user_question 立即落定(以取消收场), 避免工具永久挂起
     AskUserBridge.cancelAll();
     this.pendingAsk = null;

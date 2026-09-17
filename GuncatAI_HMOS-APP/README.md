@@ -115,7 +115,7 @@ Guncat Work 是使用 ArkTS 与 ArkUI 开发的原生 HarmonyOS AI 对话客户�
 
 - **沙箱工作区**：每个工作会话对应 `filesDir/workspaces/<convId>/` 目录，支持上传文件、导出 `.zip` 打包、清空；全程应用沙箱内读写 + 系统安全组件选/存文件，无新增权限。
 - **42 个本地工具**：文件 CRUD（list/read/write/append/delete/create_dir/move/search，search_files 支持 glob 文件名过滤）、任务清单（todo_write）、图片查看（view_image，走主模型多模态）、网络下载（download_file，把链接文件拉进工作区）、PDF 解析（parse_document + read_file 自动路由）、Office 生成（write_docx / write_xlsx / write_csv）、数据管道（transform_file，大文件本地清洗/转换/互转，数据不经模型上下文）、PPT 读写编辑（write_pptx / read_ppt / edit_ppt，基于 Deck JSON 中间层）、Word 读写编辑（write_docx / read_docx / edit_docx，基于 Doc JSON 中间层）、Excel 读写编辑（write_xlsx / read_xlsx / edit_xlsx，基于 Workbook JSON 中间层）、SVG 生图（write_svg，矢量出图 + PNG 预览）、技能系统（list_skills / load_skill，按需加载领域操作指南）。6.1 新增（DeepSeek Harness 移植）：glob / grep（模式找文件与正则搜索）、edit / str_replace_editor（逐字符精确编辑 + diff 卡片）、web_fetch（抓取网页/接口原文）、ask_user_question（向用户提问并等待作答）、schedule_create/list/delete（会话内定时提醒）、goal_create/get/update（会话自主目标）、subagent（子代理委派）、session_search（会话事件日志检索）。**run_js（JSVM-API 沙箱）**：无 shell 环境下唯一的"执行代码"能力，详见下文"run_js：设备内 JS 执行沙箱"。
-- **技能系统**：领域操作指南打包在 `rawfile/skills/<id>/`（SKILL.md + reference/*.md），系统提示词只保留触发提示（保证 KV 缓存前缀稳定），模型通过 `list_skills`/`load_skill` 渐进式加载。内置 `ppt` 技能（Deck JSON 语法、设计规范、主题、自检清单）、`docx` 技能（Doc JSON 语法、排版规范）、`xlsx` 技能（Workbook JSON 语法、公式优先与数字格式规范）、`svg` 技能（SVG 绘制规范、"生成→预览→修正"工作流、图标/流程图/信息图配方）与 `data` 技能（transform_file 管道 ops 与表达式完整语法、清洗/提取/互转配方）。
+- **技能系统**：领域操作指南打包在 `rawfile/skills/<id>/`（SKILL.md + reference/*.md），系统提示词只保留触发提示（保证 KV 缓存前缀稳定），模型通过 `list_skills`/`load_skill` 渐进式加载。内置 `ppt` 技能（Deck JSON 语法、设计规范、内容纪律、主题、常见演示文稿蓝图、自检清单）、`docx` 技能（Doc JSON 语法、排版规范、文档形态选型、常见 Word 文档蓝图、专业文书规范）、`xlsx` 技能（Workbook JSON 语法、公式优先、数字格式规范、数据分析链路、常见报表蓝图、数据分析玩法）、`svg` 技能（SVG 绘制规范、"生成→预览→修正"工作流、可视化类型选择、信息图蓝图、图标/流程图/柱状图/时间轴配方）与 `data` 技能（transform_file 管道 ops 与表达式完整语法、数据质量检查、清洗/提取/互转配方、能力边界）。
 - **本地解析引擎**：`.docx/.xlsx/.pptx/.pdf` 全部在设备本地抽取文本，不依赖多模态解析 API、不消耗配额。
 - **任务清单纪律**：复杂任务先 `todo_write` 建清单，清单与工作区状态经「运行时上下文」快照注入对话尾部，逐项推进、完成后更新。
 - **Codex 式时间线**：每轮独立消息按「思考 → 工具步骤 → 正文」时序排列，单容器时间线 UI，工具步骤可展开查看参数与结果。
@@ -237,16 +237,16 @@ entry/src/main/resources/rawfile/
 └── skills/                         # 工作模式技能（AI 按需 load_skill 加载, 见「3.2 技能系统」）
     ├── ppt/
     │   ├── SKILL.md                # PPT 技能正文（工作流/速查/自检清单）
-    │   └── reference/              # deck-dsl.md / design-guide.md / themes.md / troubleshooting.md
+    │   └── reference/              # deck-dsl.md / design-guide.md / themes.md / troubleshooting.md / deck-blueprints.md / visual-components.md / style-guidelines.md
     ├── docx/
     │   ├── SKILL.md                # Word 技能正文（新建/编辑工作流/块速查/排版规则/自检清单）
-    │   └── reference/              # doc-dsl.md / design-guide.md / troubleshooting.md
+    │   └── reference/              # doc-dsl.md / design-guide.md / troubleshooting.md / document-blueprints.md / professional-docs.md / chatgpt-design-presets.md
     ├── xlsx/
     │   ├── SKILL.md                # Excel 技能正文（新建/编辑工作流/公式优先/速查/自检清单）
-    │   └── reference/              # workbook-dsl.md / format-guide.md / troubleshooting.md
+    │   └── reference/              # workbook-dsl.md / format-guide.md / troubleshooting.md / report-blueprints.md / analysis-playbook.md
     └── svg/
         ├── SKILL.md                # SVG 生图技能（生成→预览→修正工作流/自检清单）
-        └── reference/              # svg-craft.md / svg-recipes.md
+        └── reference/              # svg-craft.md / svg-recipes.md / infographic-blueprints.md
 
 test/
 ├── pptx-harness/                   # PPT/CSV/Word/Excel 服务层离线验证（Node 构建 + python 校验 + tsc 类型检查）
@@ -293,7 +293,7 @@ ChatService (SSE)
    - 管理对话列表、智能体选择、API 配置和输入状态。
    - 处理消息发送、流式响应、附件解析与重新生成。
    - 负责持久化存储和状态恢复。
-   - 工作模式：`executeWorkLoop` 驱动 Agent 循环（每轮一条消息、工具执行、图片注入、上下文自动压缩）。
+   - 工作模式：`executeWorkLoop` 驱动 Agent 循环（每轮一条消息、工具执行、图片注入、上下文自动压缩；循环主体默认由 `WorkLoopDriver` 驱动，见「2.1」）。
 
 2. **ChatService**
    
@@ -337,8 +337,11 @@ ChatService (SSE)
 > **维护文档地图**（改哪块看哪份）：
 > 
 > - 本节（README）——架构、工具/技能/PPT 三套系统的设计与扩展步骤；
+> - `ITERATION_LOG.md`——Agent Loop 核心层逐轮改动与验证记录（R1–R64）；
+> - `BACKLOG.md`——当前待办与已完成的审计维度；
+> - `PORT_NOTES.md`——dsh 移植对照与后续核心层迭代说明；
 > - `test/pptx-harness/README.md`——PPT 生成器与 CSV 写入器的离线验证环境（Node 构建 + python-pptx 校验 + PNG 目检），改 `export/` 下任何文件后必跑；
-> - `entry/src/main/resources/rawfile/skills/`——**模型看到的**操作指南（`ppt`：deck-dsl 语法/设计规范/主题；`svg`：绘制规范/生图配方），是随工具演进同步维护的文档，也是可移植到其他 Agent 框架的复用资产。
+> - `entry/src/main/resources/rawfile/skills/`——**模型看到的**操作指南（`ppt`：deck-dsl 语法/设计规范/内容纪律/主题/演示文稿蓝图；`docx`：doc-dsl 语法/排版规范/文档形态选型/文档蓝图/专业文书规范；`xlsx`：workbook-dsl 语法/公式与数字格式/数据分析链路/报表蓝图/分析玩法；`svg`：绘制规范/可视化类型选择/信息图蓝图/生图配方），是随工具演进同步维护的文档，也是可移植到其他 Agent 框架的复用资产。
 
 ### 1. 身份与会话模型
 
@@ -365,11 +368,25 @@ for step in 1..WORK_MAX_STEPS(200, 防失控保险):
   7. 本轮(assistant + 工具结果)进入请求历史，继续下一轮
 ```
 
+- **循环驱动引擎（默认启用）**：`WORK_USE_DRIVER_LOOP=true`，`executeWorkLoop` 先分派到 `executeWorkLoopDriver`，由 `WorkLoopDriverBridge.runWithStep` + `runDriverStep` 驱动循环级状态机/计划器；旧 `executeWorkLoop` 保留可回退（改回 `false` 即可）。
 - **每轮一条消息**是时间线 UI 的数据基础：消息列表天然按「思考→工具→正文」时序排列，不再复用单条大消息。
 - **上下文自动压缩（缓存感知，对齐 DeepSeek Harness）**：预算优先用上一请求真实 prompt tokens（usage 锚定）对比 `WORK_CONTEXT_WINDOW_TOKENS`×0.85（1M×0.85=85 万 token），无 usage 数据时按会话实测字符→token 比例估算。超预算时两级处理：先无模型修剪早期过长工具结果（头尾节选 + 精确省略提示），不够再把早期历史交给模型压缩成「状态摘要」（≤2400 字，保留最近 12 条原样）——摘要请求自带完整前缀（静态系统提示词+工具定义+历史），对模型侧 KV 缓存是上一请求的延续而非冷启动，前缀按缓存命中计价。摘要失败或仍超预算才回退为从最旧处整条丢弃；若请求直接报上下文超限，强制压缩后自动重试一次。任务清单与工作区文件不参与压缩，始终可被模型 `read_file` 找回——这是长任务跨上下文存续状态的关键。时间线上会标注「已自动压缩早期历史」。
 - **前缀缓存设计**：系统提示词全静态（构建一次不再变）；日期/文件树/任务清单以「运行时上下文」快照 user 消息追加到历史末尾、且仅在内容变化时追加；历史严格追加式增长（压缩是唯一改写历史的操作）——相邻两轮请求共享逐字节相同前缀，模型侧 KV 缓存可跨轮命中，写文件后也只有末尾一小段需要重算。
 - **中断**：`stopStreaming()` 同时调用 `ChatService.abort()` 与 `AgentLoopService.abort()`；中断轮若无产出则移除消息，否则追加「⏹ 任务已手动停止」。
 - **步数保险**：`WORK_MAX_STEPS(200)` 仅作为失控保护（防止工具调用死循环持续消耗），正常长任务触不到；触发后在最后一条消息标注「发送“继续”可接着执行」。
+
+### 2.1 核心层纯逻辑迭代（R13–R64，维护者看这里）
+
+6.1 之后对 Agent Loop 核心层做了系统性迭代，把“可决策、可测试”的部分抽成 `common/` 纯逻辑模块，运行期只做 IO 注入。改循环逻辑先看这批文件：
+
+- **决策/编排层**：`ToolScheduler`（调度分组 + `SchedulerSummary` 统计）、`RepeatDetector`（重复防护）、`LoopDecisions`（快照去重/溢出压缩/max_tokens/无效步判定）、`WorkLoopPlanner`（单轮 TOOL/FINISH/ABORT/COMPACT + `describe` 可读描述）、`WorkLoopSimulator`（全循环回归）、`WorkLoopDriver`（循环主体纯驱动：状态机+计划器+重试/压缩回调）、`WorkLoopDriverBridge` + `LoopTurnInfoMapper` + `WorkLoopStepInfoBuilder`（真实循环接入桥梁/单步信息纯构造）、`WorkLoopStateMachine`（idle/running/paused/awaiting_user/aborting）。
+- **协议层**：`LLMProtocol`（协议/端点单一事实源）、`ToolDefAdapter`（三协议工具形态）、`SSEProtocolAdapter` + `SSEAdapterFactory`（SSE 解析统一流水线，工作/聊天共用）。
+- **错误/重试**：`RetryPolicy`（指数退避+jitter+retry-after+可重试 kind）、`RetryAfterParser`（Retry-After 头解析）、`ToolRetryPolicy`（工具级重试）、`LoopError`（显式 `retryable`/`userMessage`，纯层可单测）。
+- **插件/技能**：`ToolRegistry`（工具+技能元数据单一事实源）、`PluginManifestLoader`（manifest 解析/apply/unload）、`PluginHotLoader`（rawfile 热加载/reloadAll）、`PluginToolExecutor`（插件工具声明式实现注册）、`SkillDirectoryFormatter`（技能目录 full_index/trigger_only A/B）。
+- **可观测**：`LoopMetrics`（重试/压缩/max_tokens 计数）、`SessionLogAggregator`（协议维度 + 工具延迟 p50/p90/p99 + 跨会话聚合）、`PromptBudget`（token 预算估算）。
+- **测试**：`test/guncat-harness` 纯逻辑用例 **277 项全绿**；改 `common/` 后跑 `node setup.mjs && node test-core.mjs`，再 `node check-setup.mjs && tsc -p check/tsconfig.json`，最后 `assembleHap` 真机构建。
+
+每轮改动与验证记录在 `ITERATION_LOG.md`；当前待办见 `BACKLOG.md`；dsh 移植对照见 `PORT_NOTES.md`。
 
 ### 3. 工具系统（42 个）
 
@@ -876,6 +893,10 @@ hvigorw --mode module -p product=default -p module=entry@default -p buildMode=de
 - 新增本地联网搜索（软件内置，无需手动开关），工作模式、聊天模式都能调用，联网能力不再受制于服务端联网开关！
 - 修复了 Anthropic API 协议中偶发的传入参数错误和文本过长截断问题
 - 新增后缀补全开关，可选择关闭后缀补全功能，以便非标准地址接入。
+- 工作模式整体更稳、更聪明：遇到限流或网络抖动会自动重试，不用你重来；任务做太久会自动整理历史、重要信息不丢；工具调用加了超时、取消和参数检查，出错更快发现；支持外挂插件和技能，按需扩展能力；每次工具调用耗时、接入方式、是否重试都有记录，出问题好排查；错误提示更友好；每个改动都有自动化测试兜底，修一处不会弄坏另一处。
+- 工作模式的核心循环换成了新的「驱动引擎」（默认启用）：每一步由统一的状态机和计划器来调度，日志里能看清每步决策和整轮摘要，任务执行更可控、更好排查；如果遇到异常，可以一键回退到旧循环继续用，不影响正常工作。
+- **办公技能全面升级（V3，版本仍为 6.2.0）**：PPT / Word / Excel 三个技能全部改为“门”式约束——进入任务必须先 `load_skill` 全量加载 SKILL.md 与全部参考文件，禁止挑读；新建文档/PPT/工作簿前会通过 `ask_user_question` 一次问清目的、篇幅、风格、素材等关键信息；交付前必须生成可核对的 `ppt_qa_report.md` / `docx_qa_report.md` / `xlsx_qa_report.md` 自检报告，并在最终总结附自检摘要。
+- **PPT 生成质量大幅增强（V3.1）**：默认篇幅提升到 20 页以上；每页必须有装饰性 SVG/纹理背景 + 内容配图（流程图、时间轴、架构图、对比图、简单插画、信息图），纯文字页会把一部分内容自动转成示意图；新增科技、古风、简约、杂志、商务、学术、路演等视觉风格目录与纹理/勾边/花色配方，告别纯色默认模板。
 
 ## 6.1.2 更新（新增 Guncat 3.1-Flash）
 
@@ -914,7 +935,7 @@ hvigorw --mode module -p product=default -p module=entry@default -p buildMode=de
 - **素材获取与生图**：`download_file` 把网络图片/文件拉进工作区（类型嗅探、html 告警、≤20MB）；`write_svg` 让模型手写 SVG 生成图标/示意图/信息图——自动校验（xmlns/viewBox/禁 script）并经设备图片引擎栅格化出 PNG 预览，配合 `view_image` 形成"生成→预览→修正"闭环；`write_pptx` 可直接引用 `.svg`（导出时自动栅格化）。`search_files` 新增 `glob` 文件名过滤（`*.md`、`*.png,*.jpg`）。`write_csv` 显式支持 CSV（RFC 4180 转义 + UTF-8 BOM）。
 - **PPT 工具链（Deck JSON 中间层）**：对齐 open-kimi-ppt-skill 的 PPTD 设计——AI 写结构化 Deck 源，`PptxBuilder` 渲染 13 种版式（封面/目录/分节/要点/双栏/图文/图片/全幅大图/表格/图表/引用/结尾/自由版面）、8 套主题 + 自定义色板、图表（柱/折线/面积/饼/圆环，数据内嵌）、表格、图片（工作区/data URL/http）、演讲备注；导出文件内嵌 `docProps/deck.json` 源，`read_ppt` 无损读回、`edit_ppt` 算子式编辑（外来 pptx 近似导入并在重建前自动备份）；深色背景文字与图表自动反白。新增 `DeckModel/PptxThemes/PptxCharts/PptxImage/PptxImporter` 五个模块并重写 `PptxBuilder`；配套离线验证环境 `test/pptx-harness/`（Node 构建全版式/负例 + python-pptx 结构校验 + PowerPoint 渲染 PNG 目检）。
 - **Excel 工具链（Workbook JSON 中间层）**：与 PPT/Word 同构的中间层设计——AI 写结构化 Workbook 源（多工作表/表头加粗三主题/`=公式`/数字格式 money·int·percent·year·date·number/列宽/冻结窗格），`XlsxBuilder` 渲染全部件（内嵌 `docProps/workbook.json` 源），`read_xlsx` 无损读回、`edit_xlsx` 算子式编辑（改表名/加删移表/增删改行/改单元格/全文替换；外来 xlsx 近似导入并在重建前自动备份）。**公式优先**与数字格式/负数零值显示约定吸收自 MiniMax 的 xlsx 参考技能，模型操作指南见 `xlsx` 技能。新增 `XlsxModel/XlsxBuilder/XlsxImporter` 三模块；`write_xlsx` 保留 table 文本快路径；配套离线验证环境 `test/xlsx-harness/`（Node 构建 + openpyxl 结构校验 + 内嵌源往返）。
-- **技能系统**：领域操作指南按 `rawfile/skills/<id>/`（SKILL.md + reference/）组织，`list_skills`/`load_skill` 渐进式加载；系统提示词只保留一行触发提示，KV 缓存前缀保持逐字节稳定。内置 `ppt` 技能（Deck JSON 语法/设计规范/主题/自检清单）、`docx` 技能（Doc JSON 语法/排版规范）、`xlsx` 技能（Workbook JSON 语法/公式优先/数字格式/编辑完整性）、`svg` 技能（绘制规范/"生成→预览→修正"工作流/图标·流程图·信息图配方）与 `data` 技能（管道 ops/表达式语法/清洗·提取·互转配方）；技能格式对齐标准 Agent Skills 约定，可跨 Agent 框架复用；新增技能只需写文档 + `WorkSkillService.registry()` 登记（详见架构指南 3.2）。
+- **技能系统**：领域操作指南按 `rawfile/skills/<id>/`（SKILL.md + reference/）组织，`list_skills`/`load_skill` 渐进式加载；系统提示词只保留一行触发提示，KV 缓存前缀保持逐字节稳定。内置 `ppt` 技能（Deck JSON 语法/设计规范/内容纪律/主题/演示文稿蓝图/自检清单）、`docx` 技能（Doc JSON 语法/排版规范/文档形态选型/文档蓝图/专业文书规范）、`xlsx` 技能（Workbook JSON 语法/公式优先/数字格式/数据分析链路/报表蓝图/分析玩法/编辑完整性）、`svg` 技能（绘制规范/"生成→预览→修正"工作流/可视化类型选择/信息图蓝图/图标·流程图·柱状图·时间轴配方）与 `data` 技能（管道 ops/表达式语法/数据质量检查/清洗·提取·互转配方/能力边界）；技能格式对齐标准 Agent Skills 约定，可跨 Agent 框架复用；新增技能只需写文档 + `WorkSkillService.registry()` 登记（详见架构指南 3.2）。
 - **本地解析引擎**：新增 `OfficeReader`（OOXML 文本抽取，修复 `<w:t` 前缀误匹配导致的 XML 泄漏）、`PdfTextExtractor`（字节层对象表/ObjStm 展开/页面树资源继承/ToUnicode CJK 映射/内容流解析/兜底扫描与诊断）、`Flate`（纯 TS DEFLATE 解压）。不再依赖多模态解析 API。
 - **Codex 式时间线 UI**：单容器时间线（唯一 🛠 标识 + 任务卡 + 逐轮「思考→工具→正文」），工具步骤可展开参数与结果，中间轮隐藏操作按钮；工作区面板支持上传/导出 zip/清空。
 - **稳定性修复**：PDF 解析 OOM（整文件 latin1 拼接改为字节层扫描 + utf-16le 原生转换）；主线程阻塞 appfreeze（解析分阶段 yield、兜底扫描跳过字体/图片/超大流并限量限预检）；`arrayBufferToBase64` 同类 O(n²) 拼接一并修复。

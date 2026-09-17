@@ -94,3 +94,44 @@
 ```
 
 真实数据图表不要用这个——用 ppt 技能的 chart 版式（真坐标轴）。
+
+## 8. 柱状对比图（简单类目对比，数据来自工作区）
+
+```svg
+<svg xmlns="http://www.w3.org/2000/svg" width="360" height="240" viewBox="0 0 360 240">
+  <title>类目对比</title>
+  <line x1="40" y1="200" x2="340" y2="200" stroke="#9AA3AF" stroke-width="2"/>
+  <rect x="70"  y="120" width="44" height="80" rx="4" fill="#0A7AFF"/>
+  <rect x="158" y="60"  width="44" height="140" rx="4" fill="#3DBE64"/>
+  <rect x="246" y="90"  width="44" height="110" rx="4" fill="#E9A23B"/>
+  <text x="92"  y="218" text-anchor="middle" font-family="sans-serif" font-size="12" fill="#333F50">线上</text>
+  <text x="180" y="218" text-anchor="middle" font-family="sans-serif" font-size="12" fill="#333F50">线下</text>
+  <text x="268" y="218" text-anchor="middle" font-family="sans-serif" font-size="12" fill="#333F50">直播</text>
+  <text x="92"  y="112" text-anchor="middle" font-family="sans-serif" font-size="12" fill="#333F50">120</text>
+  <text x="180" y="52"  text-anchor="middle" font-family="sans-serif" font-size="12" fill="#333F50">220</text>
+  <text x="268" y="82"  text-anchor="middle" font-family="sans-serif" font-size="12" fill="#333F50">170</text>
+</svg>
+```
+
+- 柱高按数据比例换算：`height = value / maxValue * 绘图区高度`；标签写真实数字，禁止编造。
+- 类目 ≤7 个；超过就只画 Top 7 或改用 PPT chart 版式。
+
+## 9. 时间轴/里程碑
+
+```svg
+<svg xmlns="http://www.w3.org/2000/svg" width="480" height="120" viewBox="0 0 480 120">
+  <title>项目里程碑</title>
+  <line x1="30" y1="60" x2="450" y2="60" stroke="#9AA3AF" stroke-width="2"/>
+  <circle cx="90"  cy="60" r="8" fill="#0A7AFF"/>
+  <circle cx="220" cy="60" r="8" fill="#0A7AFF"/>
+  <circle cx="350" cy="60" r="8" fill="#0A7AFF"/>
+  <text x="90"  y="30" text-anchor="middle" font-family="sans-serif" font-size="13" font-weight="bold" fill="#333F50">Q1</text>
+  <text x="90"  y="86" text-anchor="middle" font-family="sans-serif" font-size="12" fill="#6B7280">立项</text>
+  <text x="220" y="30" text-anchor="middle" font-family="sans-serif" font-size="13" font-weight="bold" fill="#333F50">Q2</text>
+  <text x="220" y="86" text-anchor="middle" font-family="sans-serif" font-size="12" fill="#6B7280">上线</text>
+  <text x="350" y="30" text-anchor="middle" font-family="sans-serif" font-size="13" font-weight="bold" fill="#333F50">Q3</text>
+  <text x="350" y="86" text-anchor="middle" font-family="sans-serif" font-size="12" fill="#6B7280">复盘</text>
+</svg>
+```
+
+- 事件 ≤6 个；节点从左到右按时间顺序均匀排列，日期/阶段写真实值。
