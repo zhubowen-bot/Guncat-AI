@@ -90,29 +90,29 @@ export struct WorkTurnView {
     }
   }
 
-  // 工具行状态签名: 调用数 + 每个调用的参数量/准备态/耗时/结果量, 任一变化才触发行重建
+  // 工具行状态签名: 调用数 + 每个调用的参数量/准备态/启动态/耗时/结果量, 任一变化才触发行重建
   private callsSignature(): string {
     let calls: ToolCallRecord[] = this.message.toolCalls;
     let parts: string[] = [calls.length.toString()];
     for (let i: number = 0; i < calls.length; i++) {
       parts.push(calls[i].argsJson.length.toString() + ':' +
-        (calls[i].preparing ? 'p' : 'r') + ':' + calls[i].durationMs.toString() + ':' +
+        (calls[i].preparing ? 'p' : 'r') + ':' +
+        (calls[i].started ? 's' : '-') + ':' +
+        calls[i].durationMs.toString() + ':' +
         calls[i].result.length.toString());
     }
     return parts.join('|');
   }
 
-  // 进行中工具行的状态文案: 有更早未完成的调用 → 排队等待;
-  // 模型仍在生成调用参数(preparing) → 生成调用中; 否则 → 执行中
+  // 进行中工具行的状态文案:
+  //  - started=true → 已真正开始执行, 显示“执行中…”（无论它在模型调用顺序里排第几）
+  //  - 否则 preparing=true → 模型还在生成调用参数
+  //  - 否则 → 已生成完但还没轮到(排队等待)
   private stepStatusLabel(call: ToolCallRecord): string {
-    let calls: ToolCallRecord[] = this.message.toolCalls;
-    let myIdx: number = calls.indexOf(call);
-    for (let i: number = 0; i < myIdx; i++) {
-      if (calls[i].durationMs < 0) {
-        return '等待中…';
-      }
+    if (call.started) {
+      return '执行中…';
     }
-    return call.preparing ? '生成调用中…' : '执行中…';
+    return call.preparing ? '生成调用中…' : '等待中…';
   }
 
   build() {
@@ -381,7 +381,7 @@ export struct WorkTurnView {
                 SymbolGlyph(WorkStepFormat.iconRes(call.name))
                   .fontSize(14)
                   .fontColor([call.isError ? $r('app.color.danger') : $r('app.color.text_secondary')])
-              } else if (this.isStreaming || call.preparing) {
+              } else if (this.isStreaming || call.preparing || call.started) {
                 LoadingProgress()
                   .width(12)
                   .height(12)
@@ -410,7 +410,7 @@ export struct WorkTurnView {
                 .maxLines(1)
                 .textOverflow({ overflow: TextOverflow.Ellipsis })
                 .layoutWeight(1)
-              if (call.durationMs < 0 && (this.isStreaming || call.preparing)) {
+              if (call.durationMs < 0 && (this.isStreaming || call.preparing || call.started)) {
                 Text(this.stepStatusLabel(call))
                   .fontSize(10)
                   .fontColor($r('app.color.brand'))

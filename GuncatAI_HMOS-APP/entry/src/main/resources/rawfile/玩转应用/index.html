@@ -798,7 +798,8 @@
           <div class="card-body">
             <div class="card-title">技能系统（list_skills / load_skill）</div>
             <div class="card-text">技能是打包好的领域操作指南（纯文档）。接到对应任务时，智能体先 list_skills 查看有哪些技能，再 load_skill 按需加载——就像新员工上岗前先翻一遍岗位手册，而不是凭感觉干活。</div>
-            <div class="card-text">内置十大技能：ppt（Deck 语法、设计规范、主题、自检清单，任何 PPT 任务开始前先加载）；svg（SVG 绘制规范与「生成→预览→修正」工作流，图标/流程图/信息图配方）；data（数据管道的完整语法与清洗、提取、互转配方）；docx（Word 的 Doc JSON 语法与排版规范，任何 Word 任务先加载）；xlsx（Excel 的 Workbook JSON 语法、公式优先与数字格式规范，任何表格任务先加载）；以及五位专家智能体技能：paper（论文改写）、law（法律意见书）、research（深度调研）、sift（时效信息筛滤）、llm-eval（大模型评测）——需要专家级处理时说明用哪一位，即按该专家的完整方法论执行。</div>
+            <div class="card-text">内置技能从十大扩展到三十二个（10 个核心技能 + 22 个移植领域技能）。核心技能：ppt（Deck 语法、设计规范、主题、自检清单，任何 PPT 任务开始前先加载）；svg（SVG 绘制规范与「生成→预览→修正」工作流，图标/流程图/信息图配方）；data（数据管道的完整语法与清洗、提取、互转配方）；docx（Word 的 Doc JSON 语法与排版规范，任何 Word 任务先加载）；xlsx（Excel 的 Workbook JSON 语法、公式优先与数字格式规范，任何表格任务先加载）；以及五位专家智能体技能：paper（论文改写）、law（法律意见书）、research（深度调研）、sift（时效信息筛滤）、llm-eval（大模型评测）——需要专家级处理时说明用哪一位，即按该专家的完整方法论执行。</div>
+            <div class="card-text">22 个移植领域技能（来自四大主流 AI 工作平台并完成本应用工具适配）——写作类：humanizer（去 AI 味/可读性）、khazix-writer（公众号长文）、newmedia-writing（小红书/公众号/短视频新媒体）、content-rewrite（多平台改写分发）、translation（法律/医学翻译与术语一致性）；Office/内容类：prompt-engineering（提示词工程）、pdf（PDF 读取/搜索/扫描件阅读）、html（单页 HTML 开发）；营销类：marketing-plan（营销策划方案）、marketing-material-review（营销素材审核）、sentiment-tracker（舆情追踪与溯源）；学术类：paper-reviewer（学术论文审稿）、paper-rebuttal（审稿意见回复）、paper-close-reading（论文精读）、reference-audit（参考文献审计）、research-lineage-map（研究谱系演进图）、journal-format（学术论文 DOCX 格式排版）、research-proposal（学术立项书/基金申请撰写）、patent-drafting（专利申请文件撰写）；研究类：questionnaire（问卷/深访/原声打标/定量分析）、industry-analysis（行业深度研究）、review-agent（代码评审）。这些技能在交付时都会按需加载 docx / xlsx / ppt / svg / data 等核心技能，用本应用的 Office 工具直接产出文件。</div>
             <div class="card-text">加载是渐进式的：先读技能正文，需要细节再读参考分册。技能正文优先于模型自己的默认做法——这保证了产出稳定符合规范，也是 PPT、生图、Office 文档与专家任务质量的秘密所在。</div>
           </div>
         </div>

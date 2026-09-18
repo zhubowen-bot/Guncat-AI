@@ -191,6 +191,8 @@ export class Constants {
   static readonly WORK_SCHEDULE_MIN_EVERY_SEC: number = 300;
   // subagent: 子代理最大步数 / 工具结果送回字符上限(复用 WORK_RESULT_MAX_CHARS)
   static readonly WORK_SUBAGENT_MAX_STEPS: number = 40;
+  // 子代理工作区隔离: 未指定 output_dir 时自动分配 <前缀>/sa_<序号>/ 独立产出目录
+  static readonly WORK_SUBAGENT_OUTPUT_DIR_PREFIX: string = 'subagents';
   // run_js 工具(JSVM-API 沙箱): 源码/输入文件/超时/输出 上限。
   // 说明: 沙箱输出文件最终仍走工作区写入, 单文件上限沿用 WORK_WRITE_MAX_BYTES。
   static readonly WORK_JS_MAX_CODE_BYTES: number = 128 * 1024;
@@ -208,6 +210,9 @@ export class Constants {
   // 工具并发执行的滚动池大小(对齐 dsh 的 maxParallelToolCalls, 只作用于只读并行段)
   static readonly WORK_MAX_PARALLEL_TOOLS: number = 4;
   static readonly WORK_ALLOW_PARALLEL_TOOLS: boolean = true;
+  // 子代理并行派发: 是否把 subagent 归入并行组 + 全局最大并发子代理数(与只读池一致取 4)
+  static readonly WORK_ALLOW_PARALLEL_SUBAGENTS: boolean = true;
+  static readonly WORK_MAX_PARALLEL_SUBAGENTS: number = 4;
   // 循环主体是否走 WorkLoopDriver 纯驱动(接入桥梁见 service/WorkLoopDriverBridge.ts):
   // 已切换为 true, 由驱动接管循环级状态机/计划器; 如需回退旧 executeWorkLoop 改回 false 即可
   static readonly WORK_USE_DRIVER_LOOP: boolean = true;

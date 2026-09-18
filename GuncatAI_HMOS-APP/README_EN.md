@@ -115,7 +115,7 @@ Work mode is an **independent identity parallel to the chat agents** — the �
 
 - **Sandbox workspace**: each work conversation maps to `filesDir/workspaces/<convId>/`, with upload, `.zip` export, and clear actions. Everything stays inside the app sandbox plus system safe components (document picker) — **no new permissions**.
 - **41 local tools**: file CRUD (list/read/write/append/delete/create_dir/move/search, with `glob` filename filtering on search_files), task checklist (`todo_write`), image viewing (`view_image`, routed to the main model's multimodal vision), web download (`download_file`, pulls linked files into the workspace), PDF parsing (`parse_document` + automatic `read_file` routing), Office generation (`write_docx` / `write_xlsx` / `write_csv`), data pipeline (`transform_file`, local cleaning/transformation/conversion of large files without entering model context), PPT read/write/edit (`write_pptx` / `read_ppt` / `edit_ppt`, on a Deck JSON intermediate layer), Word read/write/edit (`write_docx` / `read_docx` / `edit_docx`, on a Doc JSON intermediate layer), Excel read/write/edit (`write_xlsx` / `read_xlsx` / `edit_xlsx`, on a Workbook JSON intermediate layer), SVG image generation (`write_svg`, vector output + PNG preview), and the skill system (`list_skills` / `load_skill`, on-demand domain guides). New in 6.1 (DeepSeek Harness port): `glob` / `grep` (pattern-based file lookup and regex content search), `edit` / `str_replace_editor` (exact character-level editing with a diff card), `web_fetch` (fetch page/API source as readable text), `ask_user_question` (ask the user and wait for an answer), `schedule_create/list/delete` (session-local reminders), `goal_create/get/update` (session goal), `subagent` (child-agent delegation), `session_search` (session event-log search).
-- **Skill system**: domain operation guides are packaged under `rawfile/skills/<id>/` (SKILL.md + reference/*.md). The system prompt keeps only a one-line trigger (preserving the byte-stable KV-cache prefix); the model loads skills on demand via `list_skills`/`load_skill`. The bundled `ppt` skill covers the Deck JSON syntax, design guidelines, content discipline, themes, common deck blueprints, and self-check lists; the `docx` skill covers the Doc JSON syntax, Chinese typography rules, document form-factor selection, common document blueprints, and professional-document norms; the `xlsx` skill covers the Workbook JSON syntax, formula-first / number-format conventions, the data-analysis delivery workflow, common report blueprints, and an analysis playbook; the `svg` skill covers SVG authoring rules, the "generate → preview → iterate" workflow, visualization-type selection, infographic blueprints, and recipes for icons/flowcharts/bar charts/timelines.
+- **Skill system**: domain operation guides are packaged under `rawfile/skills/<id>/` (SKILL.md + reference/*.md). The system prompt keeps only a one-line trigger (preserving the byte-stable KV-cache prefix); the model loads skills on demand via `list_skills`/`load_skill`. The bundled `ppt` skill covers the Deck JSON syntax, design guidelines, content discipline, themes, common deck blueprints, and self-check lists; the `docx` skill covers the Doc JSON syntax, Chinese typography rules, document form-factor selection, common document blueprints, and professional-document norms; the `xlsx` skill covers the Workbook JSON syntax, formula-first / number-format conventions, the data-analysis delivery workflow, common report blueprints, and an analysis playbook; the `svg` skill covers SVG authoring rules, the "generate → preview → iterate" workflow, visualization-type selection, infographic blueprints, and recipes for icons/flowcharts/bar charts/timelines; the `data` skill covers the transform_file pipeline ops and expression syntax, data-quality checks, and cleaning/extraction/conversion recipes. **There are now 32 skills total**: in addition to the 10 core skills above (which also include `paper`, `law`, `research`, `sift`, and `llm-eval`), 22 domain skills were ported and adapted from four mainstream AI work platforms — `humanizer` (de-AI/humanize/readability), `prompt-engineering` (prompt engineering), `pdf` (PDF reading/search/scanned-page reading), `translation` (legal/medical translation & terminology consistency), `questionnaire` (survey/in-depth interview/verbatim tagging/quantitative analysis), `content-rewrite` (multi-platform content rewriting & distribution), `html` (single-page HTML development), `paper-reviewer` (academic paper review), `review-agent` (code review), `paper-rebuttal` (reviewer-rebuttal responses), `research-lineage-map` (research lineage/evolution maps), `marketing-plan` (marketing plan proposals), `reference-audit` (reference/citation auditing), and `paper-close-reading` (deep academic-paper reading), `khazix-writer` (WeChat long-form writing), `newmedia-writing` (Xiaohongshu/WeChat/short-video new-media writing), `marketing-material-review` (marketing-material compliance review), `patent-drafting` (patent application drafting), `sentiment-tracker` (public-opinion tracking & tracing), `journal-format` (academic DOCX formatting & repair), `research-proposal` (research proposal/grant application drafting), `industry-analysis` (industry deep research).
 - **Local parsing engine**: `.docx/.xlsx/.pptx/.pdf` text is extracted entirely on-device — no multimodal parsing API and no quota consumption.
 - **Task checklist discipline**: complex tasks start with a `todo_write` checklist; checklist and workspace state reach the model through a "runtime context" snapshot appended to the tail of the conversation. Progress is updated item by item.
 - **Codex-style timeline**: each turn is its own message, laid out chronologically as "thinking → tool steps → answer" inside a single-container timeline; tool steps expand to show arguments and results.
@@ -151,11 +151,10 @@ Agents are managed through `resources/rawfile/agents.json` and separate Markdown
 
 ## Persistence and themes
 
-The app uses `@kit.ArkData` Preferences:
+The app uses two kinds of local persistence:
 
-- Conversation history and settings are serialized as JSON.
-- The current conversation, selected agent, and multiple API profiles are saved automatically.
-- Deep thinking, web search, reader voice, and reader speed are persisted.
+- **Conversation history**: serialized as JSON and stored in the sandbox file `filesDir/guncat_conversations.json`. It is no longer subject to the Preferences 16 MB single-value limit. On first launch after upgrading, old conversations are migrated from Preferences automatically.
+- **Settings**: `@kit.ArkData` Preferences stores the current conversation, selected agent, multiple API profiles, deep thinking, web search, reader voice, and reader speed.
 - Local state is restored when the app restarts.
 
 The theme system uses HarmonyOS resource qualifiers:
@@ -244,9 +243,13 @@ entry/src/main/resources/rawfile/
     ├── xlsx/
     │   ├── SKILL.md                # Excel skill body (create/edit workflows / formula-first / quick reference)
     │   └── reference/              # workbook-dsl.md / format-guide.md / troubleshooting.md / report-blueprints.md / analysis-playbook.md
-    └── svg/
-        ├── SKILL.md                # SVG image-generation skill (generate→preview→iterate workflow / self-check)
-        └── reference/              # svg-craft.md / svg-recipes.md / infographic-blueprints.md
+    ├── data/
+    │   ├── SKILL.md                # Data-pipeline skill (transform_file ops/expression syntax/data quality/cleaning·extraction·conversion recipes)
+    │   └── reference/              # data-pipeline.md / data-quality.md / recipes.md
+    ├── svg/
+    │   ├── SKILL.md                # SVG image-generation skill (generate→preview→iterate workflow / self-check)
+    │   └── reference/              # svg-craft.md / svg-recipes.md / infographic-blueprints.md
+    └── …/                          # plus paper/law/research/sift/llm-eval and 22 ported skills, 32 total (humanizer/prompt-engineering/pdf/translation/questionnaire/content-rewrite/html/paper-reviewer/review-agent/paper-rebuttal/research-lineage-map/marketing-plan/reference-audit/paper-close-reading/khazix-writer/newmedia-writing/marketing-material-review/patent-drafting/sentiment-tracker/journal-format/research-proposal/industry-analysis)
 
 test/
 ├── pptx-harness/                   # Offline verification for PPT/CSV/Word/Excel services (Node build + python checks + tsc)
@@ -316,7 +319,7 @@ User task → ChatViewModel.executeWorkLoop
    - `Flate`: pure-TS DEFLATE/zlib inflate (the SDK zlib only offers file-level APIs).
 
 6. **StorageManager**
-   - Wraps Preferences storage.
+   - Wraps local persistence: conversation history lives in `filesDir/guncat_conversations.json`; settings/toggles/reader preferences use Preferences.
    - Persists conversations, profiles, toggles, and reader preferences.
 
 7. **TextReaderService / BackgroundReaderService**
@@ -334,7 +337,7 @@ Work mode is a standalone agent execution environment: a virtual agent + a per-c
 > - `BACKLOG.md` — current open items and completed audit dimensions.
 > - `PORT_NOTES.md` — dsh port map and subsequent core-layer iteration notes.
 > - `test/pptx-harness/README.md` — the offline verification harness for the PPT pipeline and CSV writer (Node build + python-pptx checks + PNG review). Mandatory after touching anything under `export/`.
-> - `entry/src/main/resources/rawfile/skills/` — the **model-facing** operation guides (`ppt`: deck-dsl syntax / design guidelines / content discipline / themes / deck blueprints; `docx`: doc-dsl syntax / typography / document form-factor selection / document blueprints / professional-document norms; `xlsx`: workbook-dsl syntax / formula & number-format conventions / data-analysis delivery / report blueprints / analysis playbook; `svg`: authoring rules / visualization-type selection / infographic blueprints / image-generation recipes). They evolve in lockstep with the tools and double as reusable assets portable to other agent frameworks.
+> - `entry/src/main/resources/rawfile/skills/` — the **model-facing** operation guides (`ppt`: deck-dsl syntax / design guidelines / content discipline / themes / deck blueprints; `docx`: doc-dsl syntax / typography / document form-factor selection / document blueprints / professional-document norms; `xlsx`: workbook-dsl syntax / formula & number-format conventions / data-analysis delivery / report blueprints / analysis playbook; `svg`: authoring rules / visualization-type selection / infographic blueprints / image-generation recipes; `data`: transform_file pipeline syntax / data-quality / recipes; plus `paper`/`law`/`research`/`sift`/`llm-eval` and 22 ported skills, 32 total). They evolve in lockstep with the tools and double as reusable assets portable to other agent frameworks.
 
 ### 1. Identity and conversation model
 
@@ -342,7 +345,7 @@ Work mode is a standalone agent execution environment: a virtual agent + a per-c
 - **Enter/exit**: tapping "Work Mode" in the drawer = `selectAgent('work')`; tapping any real agent exits (the tool-row Work Mode pill exits back to `lastChatAgentId`, the most recently used real agent).
 - **Conversation binding**: `Conversation.mode = 'chat' | 'work'`; work conversations keep `agentId = 'work'`, migrated automatically for legacy data on launch. Deleting a work conversation also deletes its sandbox workspace directory.
 - **Toggle differences**: entering work mode force-enables deep thinking (the toggle is hidden from the tool row); web search stays available (the server-side search tool is sent alongside client function tools); uploads and camera captures go into the workspace instead of chat attachments.
-- **Persistence**: conversation JSON gains `mode` and `Message.toolCalls` (`ToolCallRecord[]` with arguments/results/duration — the timeline and the LLM history are restored from these after restart). Workspace files themselves live in the sandbox `filesDir`, not in Preferences.
+- **Persistence**: conversation JSON gains `mode` and `Message.toolCalls` (`ToolCallRecord[]` with arguments/results/duration — the timeline and the LLM history are restored from these after restart). Conversation archives (`filesDir/guncat_conversations.json`) and workspace files themselves live in the sandbox `filesDir`, not in Preferences.
 
 ### 2. Agent Loop (`ChatViewModel.executeWorkLoop`)
 
@@ -410,7 +413,7 @@ Dispatch chain: `ChatViewModel` → `WorkToolRunner.execute()` (.ets entry) → 
 | `read_ppt` | toolReadPpt → PptxImporter.import | .pptx → Deck JSON source (lossless restore for app-generated files, approximate import otherwise) |
 | `edit_ppt` | toolEditPpt → PptxImporter + DeckOps + PptxBuilder | Restore → apply ops → rebuild (foreign files are backed up first) |
 | `write_svg` | WorkToolRunner.toolWriteSvg → SvgUtil | SVG source → workspace .svg + rasterized PNG preview; xmlns/no-script validation, missing width/height auto-filled from viewBox (required by the device engine), precise diagnostics on decode failure |
-| `list_skills` / `load_skill` | WorkFileService.dispatchTool → WorkSkillService | Skill list and on-demand skill-doc loading (the ppt, docx, xlsx, svg, and data skills under rawfile/skills/) |
+| `list_skills` / `load_skill` | WorkFileService.dispatchTool → WorkSkillService | Skill list and on-demand skill-doc loading (32 skills under rawfile/skills/: 10 core + 22 ported) |
 | `glob` | HarnessTools.toolGlob → FileSearchCore | Find files by glob pattern (`**`/`*`/`?`/`{a,b}`/`[...]`; top-level commas don't break `{}` branches); returns relative paths with sizes (≤500) |
 | `grep` | HarnessTools.toolGrep → FileSearchCore | Regex search over text files, returning `file:line: text` (≤200 hits; optional `glob` filename filter and `ignore_case`; invalid patterns fail with a clear error) |
 | `edit` | HarnessTools.toolEdit → DiffUtil | Exact character-level replacement (multiple matches rejected; `replace_all` overrides); the result carries line-level diff hunks (meta persisted with the session, rendered as a diff card) |
@@ -419,7 +422,7 @@ Dispatch chain: `ChatViewModel` → `WorkToolRunner.execute()` (.ets entry) → 
 | `ask_user_question` | HarnessTools.toolAskUser → AskUserBridge | Pauses execution for a user answer; the UI card supports single/multi select plus free text, submitted via one "Submit" button; unanswered for 5 minutes resolves as cancelled; loop abort resolves all pending asks |
 | `schedule_create` / `schedule_list` / `schedule_delete` | HarnessTools → ScheduleService | Session-local reminders (persisted in `.schedule.json`; one-shot `after_seconds` or recurring `every_seconds`≥300s); when due, a user message wakes the loop (steered mid-task) |
 | `goal_create` / `goal_get` / `goal_update` | HarnessTools → GoalService | Session goal (`.goal.json`) injected via the runtime snapshot; `bump_round` counts rounds, auto-pausing at the cap |
-| `subagent` | HarnessTools → SubagentService (via the `WorkFileService.subagentHook`) | In-process child agent: shares the workspace, isolated context (toolset excludes subagent/ask_user/schedule/goal/todo_write), ≤40 steps, final report returned as the tool result |
+| `subagent` | HarnessTools → SubagentService (via the `WorkFileService.subagentHook`) | In-process child agent: shares the workspace, isolated context (toolset excludes subagent/ask_user/schedule/goal/todo_write), ≤40 steps; can be dispatched in parallel (global cap 4), and each child gets an isolated output directory `subagents/sa_<timestamp>_<seq>/` by default (override with `output_dir`); it can read the whole workspace, while writes are auto-redirected into that directory; the final report is returned as the tool result and includes the output directory |
 | `session_search` | HarnessTools.toolSessionSearch → SessionLogService | Search the session event log (JSONL) to recover details lost to context compaction |
 
 Path safety: every tool path passes through `resolveSafe()` — absolute paths, drive letters, and `..` traversal are rejected; operations stay inside `filesDir/workspaces/<convId>/`.
@@ -620,11 +623,17 @@ entry/src/main/resources/rawfile/skills/
 │       ├── workbook-dsl.md     # Workbook JSON field-level syntax + edit_xlsx ops
 │       ├── format-guide.md     # formula-first / number formats / financial conventions / edit integrity
 │       └── troubleshooting.md  # symptom→fix lookup
-└── svg/                        ← built-in skill 5: SVG vector drawing (image generation)
-    ├── SKILL.md                # "generate → preview → iterate" workflow + tool boundaries (photos via download_file)
-    └── reference/
-        ├── svg-craft.md        # authoring rules: xmlns/viewBox requirements, 24 grid, path-first, text risk, color discipline
-        └── svg-recipes.md      # ready-to-use templates: stroke icons / flowcharts / architecture / infographic cards / cover decor
+├── data/                        ← built-in skill 5: data pipeline (transform_file)
+│   ├── SKILL.md                # pipeline ops / expression syntax / data-quality checks / cleaning·extraction·conversion recipes
+│   └── reference/
+│       ├── data-pipeline.md    # ops whitelist + expression evaluator
+│       └── data-quality.md     # quality checks / cleaning / conversion recipes
+├── svg/                        ← built-in skill 6: SVG vector drawing (image generation)
+│   ├── SKILL.md                # "generate → preview → iterate" workflow + tool boundaries (photos via download_file)
+│   └── reference/
+│       ├── svg-craft.md        # authoring rules: xmlns/viewBox requirements, 24 grid, path-first, text risk, color discipline
+│       └── svg-recipes.md      # ready-to-use templates: stroke icons / flowcharts / architecture / infographic cards / cover decor
+└── …/                          # plus paper/law/research/sift/llm-eval and 22 ported skills, 32 total
 ```
 
 The registry lives in `WorkSkillService.registry()` (**the code is the registry, no config file**). Each `SkillInfo = { id, name, description, files: SkillFileInfo[] }`; `files` is the whitelist of files `load_skill` may read (`SKILL.md` is always allowed), guarding against path probing. **Unregistered skills are invisible to the model** — dropping docs into the directory without registering them does nothing.
@@ -829,7 +838,7 @@ You can also select content in Gallery or a file manager and choose Guncat Work 
 - Share Kit: receiving images and files from other apps.
 - CoreSpeechKit: text-to-speech and speech recognition.
 - AVSession Kit: background media session.
-- ArkData Preferences: local configuration and conversation persistence.
+- ArkData Preferences: local configuration persistence; conversation history is stored in `filesDir/guncat_conversations.json`.
 
 ## Privacy
 
@@ -851,6 +860,13 @@ You can also select content in Gallery or a file manager and choose Guncat Work 
 - Work Mode's core loop now runs on a new "driver engine" (enabled by default): every step is scheduled by a unified state machine and planner, and the logs show each step's decision plus an end-of-loop summary, making long tasks more controllable and easier to diagnose. If anything goes wrong, you can flip one flag back to the legacy loop and keep using the app normally.
 - **Office skills fully upgraded (V3, version stays 6.2.0)**: the PPT / Word / Excel skills now use a gate-style structure — you must first `load_skill` to fully load SKILL.md plus all reference files (no cherry-picking); before creating a new deck/document/workbook, the agent asks a consolidated `ask_user_question` (purpose, length, style, materials, etc.); and before delivery it must produce a verifiable QA report (`ppt_qa_report.md` / `docx_qa_report.md` / `xlsx_qa_report.md`) and include a self-check summary in the final answer.
 - **Much richer PPT output (V3.1)**: default length raised to 20+ slides; every slide must have both a decorative SVG/texture background and a content visual (flowchart, timeline, architecture diagram, comparison, simple illustration, infographic) — text-only slides automatically convert part of their content into diagrams; a visual-style catalog (tech, classic Chinese, minimalist, magazine, business, academic, launch, etc.) with texture/outline/pattern recipes replaces plain color-only default templates.
+- **Skill library expansion (V3 port, version stays 6.2.0)**: Work Mode gains 22 reusable domain skills, fully ported from four mainstream AI work platforms and adapted to this project's available tools (unavailable platforms/tools were cleaned up) — `humanizer` (de-AI/humanize/readability), `prompt-engineering` (prompt engineering), `pdf` (PDF reading/search/scanned-page reading), `translation` (legal/medical translation & terminology consistency), `questionnaire` (survey/in-depth interview/verbatim tagging/quantitative analysis), `content-rewrite` (multi-platform content rewriting & distribution), `html` (single-page HTML development), `paper-reviewer` (academic paper review), `review-agent` (code review), `paper-rebuttal` (reviewer-rebuttal responses), `research-lineage-map` (research lineage/evolution maps), `marketing-plan` (marketing plan proposals), `reference-audit` (reference/citation auditing), `paper-close-reading` (deep academic-paper reading), `khazix-writer` (WeChat long-form writing), `newmedia-writing` (Xiaohongshu/WeChat/short-video new-media writing), `marketing-material-review` (marketing-material compliance review), `patent-drafting` (patent application drafting), `sentiment-tracker` (public-opinion tracking & tracing), `journal-format` (academic DOCX formatting & repair), `research-proposal` (research proposal/grant application drafting), `industry-analysis` (industry deep research). Together with the original 10 skills, there are now 32 skills, all loaded on demand via `load_skill`.
+- **Parallel subagent dispatch (version stays 6.2.0)**: Work Mode's `subagent` tool can now dispatch multiple child agents concurrently (global cap 4, same as the read-only pool); cancelling the parent task also aborts all running child agents; set `WORK_ALLOW_PARALLEL_SUBAGENTS=false` in `Constants.ts` to return to sequential dispatch.
+- **Parallel results appear as soon as they finish (version stays 6.2.0)**: tools in a parallel group now fill in their results and refresh the UI as soon as they finish, no longer waiting in model order; the right-side status label is based on whether a call has actually started — multiple running child agents show "executing…" at the same time.
+- **web_fetch parallelism (version stays 6.2.0)**: `web_fetch` keeps using the read-only parallel pool with up to 4 concurrent fetches by default; no extra cap was added.
+- **Child-agent workspace isolation (R67, version stays 6.2.0)**: each child agent gets its own output directory `subagents/sa_<timestamp>_<seq>/` by default (or use `output_dir`); the child can still read/search the entire main workspace, but all writes/creates/moves/deletes are automatically redirected or restricted into its own output directory (bare paths are auto-prefixed, `delete_file` clearing the workspace root is blocked, and `run_js` outputs land there too); the final report header includes the output directory — parallel child agents no longer overwrite each other's same-named files and cannot pollute, clobber, or delete main-loop files. Feedback is explicit: out-of-bounds writes show an "already redirected to…" notice before the tool result, and deleting/moving main-workspace files is blocked with a clear "out-of-bounds" error instead of "path not found".
+- **Conversation history moved to file storage (version stays 6.2.0)**: conversations no longer use a single Preferences value; they are saved to `filesDir/guncat_conversations.json`, removing the Preferences 16 MB single-value limit. Long work-mode tasks or many history conversations no longer disappear after restarting. On first launch after upgrading, existing Preferences conversations are migrated automatically and the legacy key is cleaned up.
+- **Fixed sidebar not refreshing immediately after delete/new (version stays 6.2.0)**: deleting a history conversation now removes the item from the sidebar/drawer immediately, and newly created conversations appear right away — no need to switch entries or close the drawer to force a refresh.
 
 ## Version 6.1.2 (New agent: Guncat 3.1-Flash)
 

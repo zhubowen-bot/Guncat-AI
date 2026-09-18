@@ -391,6 +391,8 @@ export class ChatViewModel {
       // 效率模式默认关闭深度思考、专家模式默认开启：新建对话时按当前智能体重置开关
       await this.applyAgentThinkingDefault();
     }
+    // 立即刷新侧栏/抽屉的会话列表投影, 新建的会话马上可见
+    this.notifyUIChange();
   }
 
   private async cleanupEmptyConversation(): Promise<void> {
@@ -435,6 +437,8 @@ export class ChatViewModel {
       }
     }
     this.persistConversations();
+    // 立即通知 UI 重建侧栏/抽屉的会话列表投影, 删除后马上从列表消失
+    this.notifyUIChange();
   }
 
   // 抽屉
@@ -1527,19 +1531,22 @@ export class ChatViewModel {
           break;
         }
 
-        // 工具轮: 连续的只读调用经有界滚动池并发执行(上限 WORK_MAX_PARALLEL_TOOLS,
-        // 结果按模型顺序提交), 其余调用逐个执行(对齐 dsh 的 exclusive/parallel 调度)
+        // 工具轮: 连续的“只读或并行安全”调用经有界滚动池并发执行(上限 WORK_MAX_PARALLEL_TOOLS,
+        // UI 按完成顺序展示, 给模型的 tool_result 仍按模型顺序提交), 其余调用逐个执行(对齐 dsh 的 exclusive/parallel 调度)。
+        // subagent 为并行安全工具: 独立上下文/独立 LLM 循环, 多个子代理可并行派发。
         // fromTurn 携带思考文本与签名: Anthropic 思考模式下下一轮请求需回传 thinking 块
         let turnLoopMsg: LoopMessage = LoopMessage.fromTurn(turn);
         let imageDataUrl: string = '';
         let imagePath: string = '';
         let reminders: string[] = [];
-        let readFlags: boolean[] = [];
+        let parallelFlags: boolean[] = [];
         for (let f: number = 0; f < turn.toolCalls.length; f++) {
-          readFlags.push(WorkFileService.isReadOnlyTool(turn.toolCalls[f].name));
+          let toolName: string = turn.toolCalls[f].name;
+          parallelFlags.push(WorkFileService.isReadOnlyTool(toolName) ||
+            (Constants.WORK_ALLOW_PARALLEL_SUBAGENTS && WorkFileService.isParallelSafeTool(toolName)));
         }
         let groups: ScheduledGroup[] = ToolScheduler.schedule(
-          readFlags, Constants.WORK_MAX_PARALLEL_TOOLS, Constants.WORK_ALLOW_PARALLEL_TOOLS);
+          parallelFlags, Constants.WORK_MAX_PARALLEL_TOOLS, Constants.WORK_ALLOW_PARALLEL_TOOLS);
         for (let g: number = 0; g < groups.length; g++) {
           let group: ScheduledGroup = groups[g];
           let ci: number = group.start;
@@ -1549,9 +1556,14 @@ export class ChatViewModel {
           }
           let headCall: ToolCallRecord = turn.toolCalls[ci];
           if (group.parallel) {
-            // 只读组: 先整体展示(执行中状态), 再经有界滚动池并发执行、按模型顺序提交
+            // 并行组: 先整体展示“执行中”状态, 再经有界滚动池并发执行;
+            // 谁先完成谁先回填结果/刷新 UI(不再按模型顺序等待); 给模型的 tool_result 仍按原顺序保留。
             for (let k: number = ci; k < gj; k++) {
               this.ensureToolRecordOnTimeline(turnMsg, turn.toolCalls[k]);
+            }
+            for (let k: number = ci; k < gj; k++) {
+              // 模型参数已生成完: 未启动的进入“等待中”, 已启动的进入“执行中”
+              turn.toolCalls[k].preparing = false;
             }
             this.persistConversations();
             this.notifyUIChange();
@@ -1559,60 +1571,88 @@ export class ChatViewModel {
             await this.sleep(30);
             let groupCount: number = gj - ci;
             let poolSize: number = ToolScheduler.poolSize(group, Constants.WORK_MAX_PARALLEL_TOOLS);
-            let execs: Promise<ToolExecResult>[] = new Array(groupCount);
-            let launchOne = (idx: number): void => {
-              turn.toolCalls[ci + idx].preparing = false;
-              execs[idx] = WorkToolRunner.execute(ctx, conv.id,
-                turn.toolCalls[ci + idx].name, turn.toolCalls[ci + idx].argsJson,
-                this.abortSignal);
-            };
-            for (let k: number = 0; k < poolSize; k++) {
-              launchOne(k);
-            }
-            for (let r: number = 0; r < groupCount; r++) {
-              let cur: ToolCallRecord = turn.toolCalls[ci + r];
-              let execStart: number = Date.now();
-              let exec: ToolExecResult = await execs[r];
-              this.applyToolResult(ctx, conv.id, cur, exec, execStart);
-              metrics.recordToolCall(!cur.isError, cur.timeout, cur.cancelled, cur.schemaError);
-              if (cur.name === 'subagent') {
-                metrics.recordSubagentCall();
-              }
-              if (cur.traceId === '') {
-                cur.traceId = 'call-' + traceSeq.toString();
-              }
-              traceSeq++;
-              if (exec.imageDataUrl !== '') {
-                imageDataUrl = exec.imageDataUrl;
-                imagePath = parseToolArgPath(cur.argsJson);
-              }
-              if (ctx !== null) {
-                let toolEvent: Record<string, Object> = {
-                  'step': step,
-                  'name': cur.name,
-                  'ok': !cur.isError,
-                  'durationMs': cur.durationMs,
-                  'timeout': cur.timeout,
-                  'cancelled': cur.cancelled,
-                  'schemaError': cur.schemaError,
-                  'traceId': cur.traceId,
-                  'result': cur.result
+            let nextIdx: number = poolSize;
+            let remaining: number = groupCount;
+            await new Promise<void>((resolve: () => void, _reject: (e: Error) => void): void => {
+              let finishExec = (cur: ToolCallRecord, exec: ToolExecResult, execStart: number): void => {
+                this.applyToolResult(ctx, conv.id, cur, exec, execStart);
+                metrics.recordToolCall(!cur.isError, cur.timeout, cur.cancelled, cur.schemaError);
+                if (cur.name === 'subagent') {
+                  metrics.recordSubagentCall();
+                }
+                if (cur.traceId === '') {
+                  cur.traceId = 'call-' + traceSeq.toString();
+                }
+                traceSeq++;
+                if (exec.imageDataUrl !== '') {
+                  imageDataUrl = exec.imageDataUrl;
+                  imagePath = parseToolArgPath(cur.argsJson);
+                }
+                if (ctx !== null) {
+                  let toolEvent: Record<string, Object> = {
+                    'step': step,
+                    'name': cur.name,
+                    'ok': !cur.isError,
+                    'durationMs': cur.durationMs,
+                    'timeout': cur.timeout,
+                    'cancelled': cur.cancelled,
+                    'schemaError': cur.schemaError,
+                    'traceId': cur.traceId,
+                    'result': cur.result
+                  };
+                  turnToolEvents.push(toolEvent);
+                  SessionLogService.append(ctx, conv.id, 'tool_result', toolEvent);
+                }
+                let reminder: string = this.noteWorkRepeat(cur);
+                if (reminder !== '') {
+                  reminders.push(reminder);
+                }
+                this.persistConversations();
+                this.notifyUIChange();
+                remaining--;
+                if (remaining === 0) {
+                  resolve();
+                  return;
+                }
+                if (nextIdx < groupCount) {
+                  let n: number = nextIdx;
+                  nextIdx++;
+                  launchOne(n);
+                }
+              };
+              let launchOne = (idx: number): void => {
+                let cur: ToolCallRecord = turn.toolCalls[ci + idx];
+                let execStart: number = Date.now();
+                // 每个调用只允许完成一次(成功或失败二选一), 防止 then 处理器内部抛错时
+                // 被 catch 再次回填导致计数重复
+                let settled: boolean = false;
+                let finishOnce = (exec: ToolExecResult): void => {
+                  if (settled) {
+                    return;
+                  }
+                  settled = true;
+                  finishExec(cur, exec, execStart);
                 };
-                turnToolEvents.push(toolEvent);
-                SessionLogService.append(ctx, conv.id, 'tool_result', toolEvent);
+                cur.preparing = false;
+                cur.started = true;
+                WorkToolRunner.execute(ctx, conv.id, cur.name, cur.argsJson, this.abortSignal)
+                  .then((exec: ToolExecResult): void => {
+                    finishOnce(exec);
+                  })
+                  .catch((e: Error): void => {
+                    let exec: ToolExecResult = new ToolExecResult();
+                    exec.ok = false;
+                    let msg: string = e.message !== undefined ? e.message : '并行工具执行失败';
+                    exec.output = 'ERROR: ' + msg;
+                    finishOnce(exec);
+                  });
+              };
+              for (let k: number = 0; k < poolSize; k++) {
+                launchOne(k);
               }
-              let reminder: string = this.noteWorkRepeat(cur);
-              if (reminder !== '') {
-                reminders.push(reminder);
-              }
-              this.persistConversations();
               this.notifyUIChange();
-              let nextIdx: number = r + poolSize;
-              if (nextIdx < groupCount) {
-                launchOne(nextIdx);
-              }
-            }
-            // 只读组也可能产生 .spill 溢出文件, 组结束后同样刷新面板
+            });
+            // 并行组也可能产生 .spill 溢出文件, 组结束后同样刷新面板
             await this.refreshWorkspace();
           } else {
             this.ensureToolRecordOnTimeline(turnMsg, headCall);
@@ -1620,6 +1660,8 @@ export class ChatViewModel {
             this.notifyUIChange();
             await this.sleep(30);
             headCall.preparing = false;
+            headCall.started = true;
+            this.notifyUIChange();
             let execStart: number = Date.now();
             let exec: ToolExecResult = await WorkToolRunner.execute(
               ctx, conv.id, headCall.name, headCall.argsJson, this.abortSignal);
@@ -1636,7 +1678,7 @@ export class ChatViewModel {
               imageDataUrl = exec.imageDataUrl;
               imagePath = parseToolArgPath(headCall.argsJson);
             }
-            if (WorkFileService.isMutatingTool(headCall.name)) {
+            if (WorkFileService.isMutatingTool(headCall.name) || headCall.name === 'subagent') {
               await this.refreshWorkspace();
             }
             if (ctx !== null) {
@@ -2064,19 +2106,22 @@ if (this.abortSignal.aborted) {
           break;
         }
 
-        // 工具轮: 连续的只读调用经有界滚动池并发执行(上限 WORK_MAX_PARALLEL_TOOLS,
-        // 结果按模型顺序提交), 其余调用逐个执行(对齐 dsh 的 exclusive/parallel 调度)
+        // 工具轮: 连续的“只读或并行安全”调用经有界滚动池并发执行(上限 WORK_MAX_PARALLEL_TOOLS,
+        // UI 按完成顺序展示, 给模型的 tool_result 仍按模型顺序提交), 其余调用逐个执行(对齐 dsh 的 exclusive/parallel 调度)。
+        // subagent 为并行安全工具: 独立上下文/独立 LLM 循环, 多个子代理可并行派发。
         // fromTurn 携带思考文本与签名: Anthropic 思考模式下下一轮请求需回传 thinking 块
         let turnLoopMsg: LoopMessage = LoopMessage.fromTurn(turn);
         let imageDataUrl: string = '';
         let imagePath: string = '';
         let reminders: string[] = [];
-        let readFlags: boolean[] = [];
+        let parallelFlags: boolean[] = [];
         for (let f: number = 0; f < turn.toolCalls.length; f++) {
-          readFlags.push(WorkFileService.isReadOnlyTool(turn.toolCalls[f].name));
+          let toolName: string = turn.toolCalls[f].name;
+          parallelFlags.push(WorkFileService.isReadOnlyTool(toolName) ||
+            (Constants.WORK_ALLOW_PARALLEL_SUBAGENTS && WorkFileService.isParallelSafeTool(toolName)));
         }
         let groups: ScheduledGroup[] = ToolScheduler.schedule(
-          readFlags, Constants.WORK_MAX_PARALLEL_TOOLS, Constants.WORK_ALLOW_PARALLEL_TOOLS);
+          parallelFlags, Constants.WORK_MAX_PARALLEL_TOOLS, Constants.WORK_ALLOW_PARALLEL_TOOLS);
         for (let g: number = 0; g < groups.length; g++) {
           let group: ScheduledGroup = groups[g];
           let ci: number = group.start;
@@ -2086,9 +2131,14 @@ if (this.abortSignal.aborted) {
           }
           let headCall: ToolCallRecord = turn.toolCalls[ci];
           if (group.parallel) {
-            // 只读组: 先整体展示(执行中状态), 再经有界滚动池并发执行、按模型顺序提交
+            // 并行组: 先整体展示“执行中”状态, 再经有界滚动池并发执行;
+            // 谁先完成谁先回填结果/刷新 UI(不再按模型顺序等待); 给模型的 tool_result 仍按原顺序保留。
             for (let k: number = ci; k < gj; k++) {
               this.ensureToolRecordOnTimeline(turnMsg, turn.toolCalls[k]);
+            }
+            for (let k: number = ci; k < gj; k++) {
+              // 模型参数已生成完: 未启动的进入“等待中”, 已启动的进入“执行中”
+              turn.toolCalls[k].preparing = false;
             }
             this.persistConversations();
             this.notifyUIChange();
@@ -2096,60 +2146,88 @@ if (this.abortSignal.aborted) {
             await this.sleep(30);
             let groupCount: number = gj - ci;
             let poolSize: number = ToolScheduler.poolSize(group, Constants.WORK_MAX_PARALLEL_TOOLS);
-            let execs: Promise<ToolExecResult>[] = new Array(groupCount);
-            let launchOne = (idx: number): void => {
-              turn.toolCalls[ci + idx].preparing = false;
-              execs[idx] = WorkToolRunner.execute(ctx, conv.id,
-                turn.toolCalls[ci + idx].name, turn.toolCalls[ci + idx].argsJson,
-                this.abortSignal);
-            };
-            for (let k: number = 0; k < poolSize; k++) {
-              launchOne(k);
-            }
-            for (let r: number = 0; r < groupCount; r++) {
-              let cur: ToolCallRecord = turn.toolCalls[ci + r];
-              let execStart: number = Date.now();
-              let exec: ToolExecResult = await execs[r];
-              this.applyToolResult(ctx, conv.id, cur, exec, execStart);
-              metrics.recordToolCall(!cur.isError, cur.timeout, cur.cancelled, cur.schemaError);
-              if (cur.name === 'subagent') {
-                metrics.recordSubagentCall();
-              }
-              if (cur.traceId === '') {
-                cur.traceId = 'call-' + state.traceSeq.toString();
-              }
-              state.traceSeq++;
-              if (exec.imageDataUrl !== '') {
-                imageDataUrl = exec.imageDataUrl;
-                imagePath = parseToolArgPath(cur.argsJson);
-              }
-              if (ctx !== null) {
-                let toolEvent: Record<string, Object> = {
-                  'step': step,
-                  'name': cur.name,
-                  'ok': !cur.isError,
-                  'durationMs': cur.durationMs,
-                  'timeout': cur.timeout,
-                  'cancelled': cur.cancelled,
-                  'schemaError': cur.schemaError,
-                  'traceId': cur.traceId,
-                  'result': cur.result
+            let nextIdx: number = poolSize;
+            let remaining: number = groupCount;
+            await new Promise<void>((resolve: () => void, _reject: (e: Error) => void): void => {
+              let finishExec = (cur: ToolCallRecord, exec: ToolExecResult, execStart: number): void => {
+                this.applyToolResult(ctx, conv.id, cur, exec, execStart);
+                metrics.recordToolCall(!cur.isError, cur.timeout, cur.cancelled, cur.schemaError);
+                if (cur.name === 'subagent') {
+                  metrics.recordSubagentCall();
+                }
+                if (cur.traceId === '') {
+                  cur.traceId = 'call-' + state.traceSeq.toString();
+                }
+                state.traceSeq++;
+                if (exec.imageDataUrl !== '') {
+                  imageDataUrl = exec.imageDataUrl;
+                  imagePath = parseToolArgPath(cur.argsJson);
+                }
+                if (ctx !== null) {
+                  let toolEvent: Record<string, Object> = {
+                    'step': step,
+                    'name': cur.name,
+                    'ok': !cur.isError,
+                    'durationMs': cur.durationMs,
+                    'timeout': cur.timeout,
+                    'cancelled': cur.cancelled,
+                    'schemaError': cur.schemaError,
+                    'traceId': cur.traceId,
+                    'result': cur.result
+                  };
+                  turnToolEvents.push(toolEvent);
+                  SessionLogService.append(ctx, conv.id, 'tool_result', toolEvent);
+                }
+                let reminder: string = this.noteWorkRepeat(cur);
+                if (reminder !== '') {
+                  reminders.push(reminder);
+                }
+                this.persistConversations();
+                this.notifyUIChange();
+                remaining--;
+                if (remaining === 0) {
+                  resolve();
+                  return;
+                }
+                if (nextIdx < groupCount) {
+                  let n: number = nextIdx;
+                  nextIdx++;
+                  launchOne(n);
+                }
+              };
+              let launchOne = (idx: number): void => {
+                let cur: ToolCallRecord = turn.toolCalls[ci + idx];
+                let execStart: number = Date.now();
+                // 每个调用只允许完成一次(成功或失败二选一), 防止 then 处理器内部抛错时
+                // 被 catch 再次回填导致计数重复
+                let settled: boolean = false;
+                let finishOnce = (exec: ToolExecResult): void => {
+                  if (settled) {
+                    return;
+                  }
+                  settled = true;
+                  finishExec(cur, exec, execStart);
                 };
-                turnToolEvents.push(toolEvent);
-                SessionLogService.append(ctx, conv.id, 'tool_result', toolEvent);
+                cur.preparing = false;
+                cur.started = true;
+                WorkToolRunner.execute(ctx, conv.id, cur.name, cur.argsJson, this.abortSignal)
+                  .then((exec: ToolExecResult): void => {
+                    finishOnce(exec);
+                  })
+                  .catch((e: Error): void => {
+                    let exec: ToolExecResult = new ToolExecResult();
+                    exec.ok = false;
+                    let msg: string = e.message !== undefined ? e.message : '并行工具执行失败';
+                    exec.output = 'ERROR: ' + msg;
+                    finishOnce(exec);
+                  });
+              };
+              for (let k: number = 0; k < poolSize; k++) {
+                launchOne(k);
               }
-              let reminder: string = this.noteWorkRepeat(cur);
-              if (reminder !== '') {
-                reminders.push(reminder);
-              }
-              this.persistConversations();
               this.notifyUIChange();
-              let nextIdx: number = r + poolSize;
-              if (nextIdx < groupCount) {
-                launchOne(nextIdx);
-              }
-            }
-            // 只读组也可能产生 .spill 溢出文件, 组结束后同样刷新面板
+            });
+            // 并行组也可能产生 .spill 溢出文件, 组结束后同样刷新面板
             await this.refreshWorkspace();
           } else {
             this.ensureToolRecordOnTimeline(turnMsg, headCall);
@@ -2157,6 +2235,8 @@ if (this.abortSignal.aborted) {
             this.notifyUIChange();
             await this.sleep(30);
             headCall.preparing = false;
+            headCall.started = true;
+            this.notifyUIChange();
             let execStart: number = Date.now();
             let exec: ToolExecResult = await WorkToolRunner.execute(
               ctx, conv.id, headCall.name, headCall.argsJson, this.abortSignal);
@@ -2173,7 +2253,7 @@ if (this.abortSignal.aborted) {
               imageDataUrl = exec.imageDataUrl;
               imagePath = parseToolArgPath(headCall.argsJson);
             }
-            if (WorkFileService.isMutatingTool(headCall.name)) {
+            if (WorkFileService.isMutatingTool(headCall.name) || headCall.name === 'subagent') {
               await this.refreshWorkspace();
             }
             if (ctx !== null) {

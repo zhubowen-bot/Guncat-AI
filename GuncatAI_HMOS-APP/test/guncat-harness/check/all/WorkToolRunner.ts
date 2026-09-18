@@ -83,7 +83,7 @@ export class WorkToolRunner {
     if (PluginToolExecutor.has(name)) {
       return WorkToolRunner.runPluginHandler(context, convId, name, argsJson, abortSignal);
     }
-    return await WorkToolRunner.executeInner(context, convId, name, argsJson);
+    return await WorkToolRunner.executeInner(context, convId, name, argsJson, abortSignal);
   }
 
   private static async runPluginHandler(context: common.UIAbilityContext, convId: string,
@@ -159,7 +159,8 @@ export class WorkToolRunner {
   }
 
   private static async executeInner(context: common.UIAbilityContext, convId: string,
-    name: string, argsJson: string): Promise<ToolExecResult> {
+    name: string, argsJson: string,
+    abortSignal: AbortSignal | null): Promise<ToolExecResult> {
     // 结构化参数校验: 按工具定义的 JSON Schema 校验 required 与宽容类型;
     // 未知工具无定义则跳过, 交给分发层给出"未知工具"错误
     let def: Record<string, Object> | null = WorkFileService.findToolDef(name);
@@ -221,7 +222,7 @@ export class WorkToolRunner {
     if (name === 'transform_file') {
       return await WorkToolRunner.toolTransformFile(context, convId, argsJson);
     }
-    return await WorkFileService.executeTool(context, convId, name, argsJson);
+    return await WorkFileService.executeTool(context, convId, name, argsJson, abortSignal);
   }
 
   // ===== 参数读取 =====

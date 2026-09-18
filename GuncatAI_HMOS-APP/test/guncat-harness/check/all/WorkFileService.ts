@@ -18,6 +18,7 @@ import { ToolRegistry } from './ToolRegistry.ts';
 import { Constants } from './Constants.ts';
 import { LocalWebSearch, LocalSearchOutcome, LOCAL_SEARCH_TOOL_DESC_WORK, LOCAL_SEARCH_TOOL_DESC_WORK_FALLBACK,
   LOCAL_SEARCH_QUERY_PROP_DESC } from './LocalWebSearch.ts';
+import { AbortSignal } from './Types.ts';
 
 const DOMAIN: number = 0x0000;
 const TAG: string = 'WorkFileService';
@@ -44,8 +45,11 @@ export class ToolExecResult {
 
 export class WorkFileService {
   // subagent 工具经此钩子执行(由 SubagentService.bind 注入, 规避循环导入)
+  // 第五参为产出目录(可选, 工作区相对路径, 用于子代理工作区隔离)
+  // 第六参为父级取消信号(可选): 并行派发子代理后, 父任务取消需能同步中止子代理内部循环。
   static subagentHook: ((context: common.UIAbilityContext, convId: string,
-    description: string, prompt: string) => Promise<ToolExecResult>) | null = null;
+    description: string, prompt: string, outputDir?: string,
+    abortSignal?: AbortSignal | null) => Promise<ToolExecResult>) | null = null;
   // @deprecated 工具定义查找已迁移到 ToolRegistry(findToolDef 内部实现), 此字段仅保留兼容。
   private static toolDefMap: Record<string, Record<string, Object>> | null = null;
 
@@ -63,6 +67,12 @@ export class WorkFileService {
     mutating = mutating.concat(['edit', 'str_replace_editor', 'goal_create', 'goal_update',
       'schedule_create', 'schedule_delete', 'run_js']);
     ToolRegistry.ensure(WorkFileService.toolDefs(false), readOnly, mutating);
+    // 并行安全标注(核心工具, 独立于只读/变更分类): subagent 是独立上下文/独立 LLM 循环的
+    // 嵌套代理, 可与其他 subagent 并发派发; 由 ToolScheduler 归入并行组。
+    let parallelSafe: string[] = WorkFileService.workParallelSafeNames();
+    for (let i: number = 0; i < parallelSafe.length; i++) {
+      ToolRegistry.setParallelSafe(parallelSafe[i], true);
+    }
   }
 
   // 供外部(SubagentService/插件层)确保注册中心已同步
@@ -469,9 +479,22 @@ export class WorkFileService {
     return ToolRegistry.isMutating(name);
   }
 
+  // 并行安全工具名单: 这类工具虽然可能写工作区, 但每次执行上下文独立,
+  // 可在有界并发池中与其他并行安全工具同时执行。
+  private static workParallelSafeNames(): string[] {
+    return ['subagent'];
+  }
+
+  // 工具是否允许并行派发(供 ToolScheduler 分组使用)
+  static isParallelSafeTool(name: string): boolean {
+    WorkFileService.ensureToolRegistry();
+    return ToolRegistry.isParallelSafe(name);
+  }
+
   // 工具统一入口: 解析参数 JSON 并分发; 任何异常都转为 ERROR 结果送回模型
   static async executeTool(context: common.UIAbilityContext, convId: string,
-    name: string, argsJson: string): Promise<ToolExecResult> {
+    name: string, argsJson: string,
+    abortSignal?: AbortSignal | null): Promise<ToolExecResult> {
     let args: Record<string, Object> | null = null;
     let trimmed: string = argsJson.trim();
     if (trimmed === '') {
@@ -489,7 +512,7 @@ export class WorkFileService {
       return WorkFileService.fail('参数不是合法的 JSON 对象: ' + WorkFileService.capChars(trimmed, 200));
     }
     try {
-      return await WorkFileService.dispatchTool(context, convId, name, args, argsJson);
+      return await WorkFileService.dispatchTool(context, convId, name, args, argsJson, abortSignal);
     } catch (e) {
       let msg: string = '';
       if (e instanceof Error) {
@@ -503,7 +526,8 @@ export class WorkFileService {
   }
 
   private static async dispatchTool(context: common.UIAbilityContext, convId: string,
-    name: string, args: Record<string, Object>, argsJson: string): Promise<ToolExecResult> {
+    name: string, args: Record<string, Object>, argsJson: string,
+    abortSignal?: AbortSignal | null): Promise<ToolExecResult> {
     let root: string = WorkFileService.workspaceRoot(context, convId);
     WorkFileService.ensureDir(root);
     if (name === 'list_files') {
@@ -577,7 +601,7 @@ export class WorkFileService {
     }
     // Guncat Work 6.1 新增工具(glob/grep/edit/str_replace_editor/web_fetch/
     // ask_user_question/schedule_*/goal_*/subagent/session_search)由 HarnessTools 兜底
-    return await HarnessTools.dispatch(context, convId, name, args, root);
+    return await HarnessTools.dispatch(context, convId, name, args, root, abortSignal);
   }
 
   // record_search: 把服务端联网搜索的结论落盘为 .searches.md, 留下可追溯记录

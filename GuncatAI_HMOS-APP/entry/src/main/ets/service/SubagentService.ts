@@ -11,6 +11,7 @@ import { ApiConfig } from '../model/ApiConfig';
 import { AbortSignal } from '../common/Types';
 import { Constants } from '../common/Constants';
 import { ToolRegistry } from '../common/ToolRegistry';
+import { SubagentIsolation } from '../common/SubagentIsolation';
 
 export class SubagentService {
   // 工具执行器(由宿主 ChatViewModel 注入的 .ets 实现, 规避 TS→ArkTS 导入限制);
@@ -22,6 +23,31 @@ export class SubagentService {
   private static apiConfig: ApiConfig | null = null;
   private static thinkingRef: boolean = true;
   private static effortRef: string = 'high';
+  // 全局子代理并发闸: 主循环并行派发后, 仍限制同时运行的子代理总数,
+  // 避免并发 LLM 请求打爆模型服务限流, 也保护设备资源。
+  private static activeSubagents: number = 0;
+  private static subagentWaiters: Array<() => void> = [];
+  // 自动产出目录序号: 每个未指定 output_dir 的子代理获得独立 subagents/sa_<n>/ 目录
+  private static outputSeq: number = 0;
+
+  private static async acquire(): Promise<void> {
+    if (SubagentService.activeSubagents < Constants.WORK_MAX_PARALLEL_SUBAGENTS) {
+      SubagentService.activeSubagents++;
+      return;
+    }
+    await new Promise<void>((resolve: () => void) => {
+      SubagentService.subagentWaiters.push(resolve);
+    });
+    SubagentService.activeSubagents++;
+  }
+
+  private static release(): void {
+    SubagentService.activeSubagents--;
+    const next: (() => void) | undefined = SubagentService.subagentWaiters.shift();
+    if (next !== undefined) {
+      next();
+    }
+  }
 
   // 宿主(ChatViewModel)在 init/每次任务开始时注入运行配置与工具执行器
   static bind(config: ApiConfig, thinkingEnabled: boolean, reasoningEffort: string,
@@ -38,7 +64,9 @@ export class SubagentService {
   }
 
   // 子代理系统提示词: 复用主提示词, 追加子代理职责与收尾纪律
-  private static buildSubagentPrompt(): string {
+  // outputDir 为产出目录(工作区相对路径, 如 subagents/sa_1): 强制子代理所有产出写进该目录,
+  // 避免并行子代理互相覆盖同名文件。
+  private static buildSubagentPrompt(outputDir: string): string {
     let base: string = AgentLoopService.buildWorkSystemPrompt();
     let extra: string[] = [];
     extra.push('');
@@ -46,9 +74,57 @@ export class SubagentService {
     extra.push('- 你是一个被主代理派生的子代理, 正在独立完成一个分配的子任务; 用户看不到你的过程。');
     extra.push('- 不要向用户提问(没有交互通道); 依赖不足时基于合理假设推进, 并在报告中写明假设。');
     extra.push('- 完成子任务后, 输出一份自包含的最终报告(结论 + 关键过程 + 产出文件路径), 报告即工具结果, 主代理只能看到它。');
-    extra.push('- 与主代理通过工作区文件交接: 产出写入工作区相对路径, 报告中列出这些路径。');
+    extra.push('- 你的工作区产出目录是 `' + outputDir + '`(相对路径)。所有产出文件必须写入该子目录内, 严禁写到它之外; 报告中列出这些路径时也要带上前缀, 如 `' + outputDir + '/xxx`。');
+    extra.push('- 你可以继续读取/搜索整个主工作区(包括主循环的文件), 但所有写入/新建/移动/删除都会被系统自动重定向或限制到 `' + outputDir + '` 内, 不会污染主工作区。');
+    extra.push('- 与主代理通过工作区文件交接: 先确保产出目录存在(通常已由主代理创建), 产出写入上述相对路径, 报告中列出这些路径。');
     extra.push('- 不要使用 todo_write(避免与主代理的清单互相覆盖); 也无法创建子代理或向用户提问。');
     return base + '\n' + extra.join('\n');
+  }
+
+  // 自动产出目录: 时间戳+序号, 跨会话/并行调用都不易冲突
+  private static nextAutoOutputDir(): string {
+    SubagentService.outputSeq++;
+    return Constants.WORK_SUBAGENT_OUTPUT_DIR_PREFIX + '/sa_' +
+      Date.now().toString() + '_' + SubagentService.outputSeq.toString();
+  }
+
+  // 清洗用户传入的 output_dir: 只接受工作区内相对路径, 非法时回退自动目录
+  private static sanitizeOutputDir(raw: string): string {
+    let dir: string = raw.trim();
+    if (dir !== '') {
+      dir = dir.replace(/\\/g, '/');
+      while (dir.startsWith('./')) {
+        dir = dir.substring(2);
+      }
+      while (dir.startsWith('/')) {
+        dir = dir.substring(1);
+      }
+      dir = dir.replace(/\/+/g, '/');
+      if (dir === '' || dir === '..' || dir.startsWith('../') ||
+        dir.includes('/../') || dir.endsWith('/..')) {
+        dir = '';
+      }
+    }
+    if (dir === '') {
+      dir = SubagentService.nextAutoOutputDir();
+    }
+    return dir;
+  }
+
+  // 在工作区根下创建产出目录, 返回可用相对路径(清洗后); 创建失败时也回退自动目录
+  private static ensureOutputDir(context: common.UIAbilityContext, convId: string,
+    outputDir: string): string {
+    let root: string = WorkFileService.workspaceRoot(context, convId);
+    let rel: string = SubagentService.sanitizeOutputDir(outputDir);
+    let abs: string | null = WorkFileService.resolveSafe(root, rel);
+    if (abs === null) {
+      rel = SubagentService.nextAutoOutputDir();
+      abs = WorkFileService.resolveSafe(root, rel);
+    }
+    if (abs !== null) {
+      WorkFileService.ensureDir(abs);
+    }
+    return rel;
   }
 
   // 子代理工具面: 从全量工具定义中排除自身(防递归)与交互/调度类(无宿主通道)
@@ -74,15 +150,39 @@ export class SubagentService {
   }
 
   // 执行子任务; 返回作为工具结果送回父任务的文本
+  // outputDir 为产出目录(可选): 不传时自动分配独立 subagents/sa_<n>/, 实现并行子代理工作区隔离
+  // parentAbortSignal 为父任务取消信号(可选): 并行派发子代理后, 用户取消主任务时
+  // 必须能同步中止所有在跑子代理, 而不是让它们在后台继续空跑。
   private static async run(context: common.UIAbilityContext, convId: string,
-    description: string, prompt: string): Promise<ToolExecResult> {
+    description: string, prompt: string, outputDir?: string,
+    parentAbortSignal?: AbortSignal | null): Promise<ToolExecResult> {
     let config: ApiConfig | null = SubagentService.apiConfig;
     if (config === null) {
       return SubagentService.failResult('子代理尚未绑定模型配置');
     }
+    // 产出目录隔离: 用户指定则用指定(经清洗), 否则自动分配独立子目录
+    let effectiveOutputDir: string = SubagentService.ensureOutputDir(context, convId,
+      outputDir !== undefined ? outputDir : '');
+    // 全局并发闸: 超出 WORK_MAX_PARALLEL_SUBAGENTS 时排队等待, 而不是失败
+    await SubagentService.acquire();
+    // 子代理内部取消信号: 跟随父级 abortSignal, 父任务取消时立即中止子代理循环
     let abortSignal: AbortSignal = new AbortSignal();
+    let abortPoller: number = -1;
+    if (parentAbortSignal !== null && parentAbortSignal !== undefined && parentAbortSignal.aborted) {
+      abortSignal.aborted = true;
+    } else if (parentAbortSignal !== null && parentAbortSignal !== undefined) {
+      abortPoller = setInterval((): void => {
+        if (parentAbortSignal !== null && parentAbortSignal !== undefined && parentAbortSignal.aborted) {
+          abortSignal.aborted = true;
+          if (abortPoller !== -1) {
+            clearInterval(abortPoller);
+            abortPoller = -1;
+          }
+        }
+      }, 100);
+    }
     let messages: LoopMessage[] = [];
-    messages.push(LoopMessage.system(SubagentService.buildSubagentPrompt()));
+    messages.push(LoopMessage.system(SubagentService.buildSubagentPrompt(effectiveOutputDir)));
     messages.push(LoopMessage.user('【子任务】' + description + '\n\n【执行指令】\n' + prompt));
     let finalText: string = '';
     let stepsUsed: number = 0;
@@ -113,7 +213,7 @@ export class SubagentService {
           }
           let execStart: number = Date.now();
           let exec: ToolExecResult = await SubagentService.runTool(
-            context, convId, calls[i].name, calls[i].argsJson, abortSignal);
+            context, convId, calls[i].name, calls[i].argsJson, abortSignal, effectiveOutputDir);
           calls[i].durationMs = Date.now() - execStart;
           calls[i].isError = !exec.ok;
           calls[i].timeout = exec.timeout;
@@ -131,12 +231,19 @@ export class SubagentService {
         return SubagentService.failResult('子代理执行失败(' + msg + '), 已运行 ' +
           stepsUsed.toString() + ' 步');
       }
+    } finally {
+      if (abortPoller !== -1) {
+        clearInterval(abortPoller);
+        abortPoller = -1;
+      }
+      SubagentService.release();
     }
     if (finalText.trim() === '') {
       return SubagentService.failResult('子代理在 ' + stepsUsed.toString() +
         ' 步内未产出最终报告(可能被截断), 可拆小任务重试');
     }
-    let header: string = '【子代理报告】(' + description + ' · ' + stepsUsed.toString() + ' 步)\n\n';
+    let header: string = '【子代理报告】(' + description + ' · ' + stepsUsed.toString() +
+      ' 步 · 产出: ' + effectiveOutputDir + ')\n\n';
     let out: ToolExecResult = new ToolExecResult();
     out.ok = true;
     out.output = header + finalText;
@@ -144,14 +251,26 @@ export class SubagentService {
   }
 
   // 工具执行(经宿主注入的执行器; 未注入时全部报错; 取消信号透传给执行器护栏)
+  // 写隔离: 写类工具的目标路径统一重定向到 output_dir(读类工具不受影响, 仍可读主工作区);
+  // 删除/移动越界直接拦截; 写入越界重定向后给工具结果附加明确提示, 避免子代理被静默误导。
   private static async runTool(context: common.UIAbilityContext, convId: string,
-    name: string, argsJson: string,
-    abortSignal: AbortSignal): Promise<ToolExecResult> {
+    name: string, argsJson: string, abortSignal: AbortSignal,
+    outputDir: string): Promise<ToolExecResult> {
+    let blocked: string = SubagentIsolation.isolationBlockReason(name, argsJson, outputDir);
+    if (blocked !== '') {
+      return SubagentService.failResult(blocked);
+    }
+    let notice: string = SubagentIsolation.redirectNotice(name, argsJson, outputDir);
+    let finalArgsJson: string = SubagentIsolation.isolatedArgsJson(name, argsJson, outputDir);
     let executor = SubagentService.toolExecutor;
     if (executor === null) {
       return SubagentService.failResult('子代理工具执行器尚未注入');
     }
-    return await executor(context, convId, name, argsJson, abortSignal);
+    let exec: ToolExecResult = await executor(context, convId, name, finalArgsJson, abortSignal);
+    if (notice !== '') {
+      exec.output = notice + '\n' + exec.output;
+    }
+    return exec;
   }
 
   // 工具结果截断 + 溢出暂存(与主循环 applyToolResult 同策略, 简化为独立实现)

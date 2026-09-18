@@ -68,6 +68,7 @@ for (const [relSrc, relDst, replaces] of [
   ['common/WorkLoopDriver.ts', 'WorkLoopDriver.ts', []],
   ['common/PluginToolExecutor.ts', 'PluginToolExecutor.ts', []],
   ['common/LoopError.ts', 'LoopError.ts', []],
+  ['common/SubagentIsolation.ts', 'SubagentIsolation.ts', []],
   ['common/LoopTurnInfoMapper.ts', 'LoopTurnInfoMapper.ts', []],
   ['common/WorkLoopStepInfoBuilder.ts', 'WorkLoopStepInfoBuilder.ts', []],
   ['common/Types.ts', 'Types.ts', []],

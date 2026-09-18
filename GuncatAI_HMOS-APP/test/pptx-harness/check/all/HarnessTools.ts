@@ -1,7 +1,8 @@
 // HarnessTools: Guncat Work 6.1 新增工具集(DeepSeek Harness 移植)
 // glob/grep(纯 TS 正则搜索, 对齐 tool-fs-search) / edit+str_replace_editor(对齐 tool-fs 与
 // str-replace-editor) / web_fetch(对齐 web-fetch-http) / ask_user_question(对齐 ask-user) /
-// schedule_*/goal_*(会话级提醒与目标) / subagent(进程内嵌套代理) / session_search(事件日志检索)。
+// schedule_*/goal_*(会话级提醒与目标) / subagent(进程内嵌套代理) / session_search(事件日志检索) /
+// run_js(JSVM-API 沙箱, 见 JsCodeService —— 无 shell 环境下的"执行代码"能力)。
 // 与 WorkFileService 的既有 25 工具并存; dispatch 由 WorkFileService 兜底转发至此。
 import { fileIo } from '@kit.CoreFileKit';
 import { common } from '@kit.AbilityKit';
@@ -15,8 +16,10 @@ import { ScheduleService, ScheduleItem } from './ScheduleService.ts';
 import { GoalService, GoalItem } from './GoalService.ts';
 import { WebFetchService } from './WebFetchService.ts';
 import { SessionLogService } from './SessionLogService.ts';
+import { JsCodeService } from './JsCodeService.ts';
 import { ToolExecResult, WorkFileService } from './WorkFileService.ts';
 import { Constants } from './Constants.ts';
+import { AbortSignal } from './Types.ts';
 
 // ===== 设备侧 FsAdapter(fileIo 实现) =====
 
@@ -86,13 +89,15 @@ export class HarnessTools {
   static isMutating(name: string): boolean {
     return name === 'edit' || name === 'str_replace_editor' ||
       name === 'goal_create' || name === 'goal_update' ||
-      name === 'schedule_create' || name === 'schedule_delete';
+      name === 'schedule_create' || name === 'schedule_delete' ||
+      name === 'run_js';
   }
 
   // ===== 分发(由 WorkFileService.dispatchTool 兜底转发) =====
 
   static async dispatch(context: common.UIAbilityContext, convId: string,
-    name: string, args: Record<string, Object>, root: string): Promise<ToolExecResult> {
+    name: string, args: Record<string, Object>, root: string,
+    abortSignal?: AbortSignal | null): Promise<ToolExecResult> {
     if (name === 'glob') {
       return HarnessTools.toolGlob(root, args);
     }
@@ -155,19 +160,25 @@ export class HarnessTools {
     }
     if (name === 'subagent') {
       let hook: ((ctx: common.UIAbilityContext, cid: string, desc: string,
-        prompt: string) => Promise<ToolExecResult>) | null = WorkFileService.subagentHook;
+        prompt: string, outputDir?: string,
+        abortSignal?: AbortSignal | null) => Promise<ToolExecResult>) | null =
+        WorkFileService.subagentHook;
       if (hook === null) {
         return HarnessTools.fail('子代理服务尚未初始化');
       }
       let description: string = HarnessTools.strArg(args, 'description', '');
       let prompt: string = HarnessTools.strArg(args, 'prompt', '');
+      let outputDir: string = HarnessTools.strArg(args, 'output_dir', '');
       if (description.trim() === '' || prompt.trim() === '') {
         return HarnessTools.fail('缺少参数 description / prompt');
       }
-      return await hook(context, convId, description, prompt);
+      return await hook(context, convId, description, prompt, outputDir, abortSignal);
     }
     if (name === 'session_search') {
       return HarnessTools.toolSessionSearch(context, convId, args);
+    }
+    if (name === JsCodeService.TOOL_NAME) {
+      return await JsCodeService.run(root, args);
     }
     return HarnessTools.fail('未知工具: ' + name);
   }
@@ -266,7 +277,9 @@ export class HarnessTools {
         return HarnessTools.fail('文件已存在, create 仅用于新建: ' + rel);
       }
       let text: string = HarnessTools.strArg(args, 'file_text', '');
-      return HarnessTools.writeTextFile(root, rel, abs, text, false, null, context, convId);
+      return HarnessTools.writeTextFile(root, rel, abs, text, false,
+        DiffUtil.computeFileDiff('', text, rel, Constants.WORK_EDIT_CONTEXT_LINES),
+        context, convId);
     }
     if (!fileIo.accessSync(abs)) {
       return HarnessTools.fail('文件不存在: ' + rel);
@@ -573,7 +586,7 @@ export class HarnessTools {
         'max_chars', HarnessTools.strProp('可选: 返回文本字符上限, 默认 24000')),
       ['url']));
     defs.push(HarnessTools.makeTool('ask_user_question',
-      '向用户提问并等待回答(会暂停执行)。仅当存在影响整体方向的关键缺口(目标格式/范围/口径/确认删除等)且无法用合理默认值时使用; 问题要一次问全(支持多个选项)。options 为选项字符串数组(可空=自由回答); multi_select=true 允许多选; 用户也可补充文字。用户回答会作为本工具结果返回。',
+      '向用户提问并等待回答(会暂停执行)。仅当存在影响整体方向的关键缺口(目标格式/范围/口径/确认删除等)且无法用合理默认值时使用; 问题要一次问全(支持多个选项)。**技能强制前置提问(如 ppt/docx/xlsx 新建)优先于本默认**。options 为选项字符串数组(可空=自由回答); multi_select=true 允许多选; 用户也可补充文字。用户回答会作为本工具结果返回。',
       HarnessTools.props3(
         'question', HarnessTools.strProp('问题文本(把背景与影响一次说清)'),
         'options', HarnessTools.strProp('可选: 选项 JSON 字符串数组, 如 ["方案A","方案B"]'),
@@ -612,10 +625,11 @@ export class HarnessTools {
         'bump_round', HarnessTools.strProp('可选: true 时轮次+1')),
       []));
     defs.push(HarnessTools.makeTool('subagent',
-      '派生一个子代理独立完成子任务(共享同一工作区, 独立上下文, 最多 40 步)。适合把可并行的独立调研/批量产出/大块检索外包出去, 主任务保持轻上下文。description 一句话概括子任务; prompt 是给子代理的完整执行指令(自包含, 含验收标准)。返回子代理的最终报告; 其产出文件通过工作区路径交接。不要在子代理指令里要求向用户提问(没有交互通道)。',
-      HarnessTools.props2(
+      '派生一个子代理独立完成子任务(共享同一工作区, 独立上下文, 最多 40 步)。适合把可并行的独立调研/批量产出/大块检索外包出去, 主任务保持轻上下文。description 一句话概括子任务; prompt 是给子代理的完整执行指令(自包含, 含验收标准); output_dir 可选——指定产出目录(工作区相对路径), 不传则自动分配独立子目录(默认 subagents/<n>/)以隔离并行子代理的产出, 避免互相覆盖。子代理仍可读取/搜索主工作区全部文件, 但所有写入/新建/移动/删除都会被自动限制到其产出目录内。返回子代理的最终报告; 其产出文件通过工作区路径交接。不要在子代理指令里要求向用户提问(没有交互通道)。',
+      HarnessTools.props3(
         'description', HarnessTools.strProp('子任务一句话概括(展示用)'),
-        'prompt', HarnessTools.strProp('子代理的完整执行指令(自包含)')),
+        'prompt', HarnessTools.strProp('子代理的完整执行指令(自包含)'),
+        'output_dir', HarnessTools.strProp('可选: 产出目录(工作区相对路径, 默认自动分配 subagents/<n>/, 并行隔离用)')),
       ['description', 'prompt']));
     defs.push(HarnessTools.makeTool('session_search',
       '在当前会话的事件日志(JSONL, 含历史用户消息/思考摘要/工具调用与结果)中检索, 返回命中事件行。用于找回早期轮次的关键信息(上下文压缩后历史细节可能已丢), 或核对"之前到底执行过什么"。按子串匹配, 最多返回 40 行。',
@@ -623,6 +637,17 @@ export class HarnessTools {
         'query', HarnessTools.strProp('检索关键词(子串匹配)'),
         'max_results', HarnessTools.strProp('可选: 返回行数上限, 默认 40')),
       ['query']));
+    defs.push(HarnessTools.makeTool(JsCodeService.TOOL_NAME,
+      '在本机的独立 JS 引擎沙箱里执行一段 JavaScript, 用于"写几行代码算一下"的活: 日期/数值/单位换算、正则清洗、JSON 重塑与合并、统计汇总、算法试算与验证, 以及批量生成结构化数据(先用 JS 拼出完整 JSON 写出文件, 再交给 write_docx/write_xlsx/write_pptx 成文)。' +
+      '沙箱是纯计算环境: 无网络、无文件系统、无模块加载(不支持 import/require), 文件必须显式进出 —— files 里列出的工作区文件会预载为只读的 inputs(键=去掉 "./" 前缀的相对路径, 结果里会列出实际键名), 脚本里用 inputs["路径"] 或 read("路径") 读取(read 对写法宽容: "./a/b.txt"、"a//b.txt" 都会归一化; 未传 files 时调用 read 会直接报错提示补 files); 脚本内 write(path, content) 声明的输出会在执行成功后写入工作区。' +
+      '返回值取脚本最后一条表达式的值(要显式返回就写 (() => { ...; return 结果; })()); console.log/print 的输出随结果一并返回。' +
+      '限制: 代码 ≤128KB, 默认执行上限 10 秒(timeout_ms 可放宽到 30 秒), 死循环无法中断(超时会放弃等待并计入上限), 单次输出 ≤16 个文件且单文件 ≤512KB。' +
+      '常规表格转换仍优先用 transform_file; 大文件读取仍用 read_file/search_files。',
+      HarnessTools.props3(
+        'code', HarnessTools.strProp('要执行的 JS 代码; 文件内容用 inputs["路径"] 或 read("路径") 读取, 产出用 write("路径", 内容) 写出'),
+        'files', HarnessTools.strProp('可选: 要预载为只读输入的工作区文件相对路径(如 "data/in.csv"), 多个用逗号或 JSON 数组分隔(最多 6 个, 单个 ≤512KB); 不传则脚本里没有可读输入, 需要文件内容时必须传'),
+        'timeout_ms', HarnessTools.strProp('可选: 执行超时毫秒数, 默认 10000, 范围 1000~30000')),
+      ['code']));
     return defs;
   }
 

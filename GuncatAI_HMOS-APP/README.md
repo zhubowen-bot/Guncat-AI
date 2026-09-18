@@ -115,7 +115,7 @@ Guncat Work 是使用 ArkTS 与 ArkUI 开发的原生 HarmonyOS AI 对话客户�
 
 - **沙箱工作区**：每个工作会话对应 `filesDir/workspaces/<convId>/` 目录，支持上传文件、导出 `.zip` 打包、清空；全程应用沙箱内读写 + 系统安全组件选/存文件，无新增权限。
 - **42 个本地工具**：文件 CRUD（list/read/write/append/delete/create_dir/move/search，search_files 支持 glob 文件名过滤）、任务清单（todo_write）、图片查看（view_image，走主模型多模态）、网络下载（download_file，把链接文件拉进工作区）、PDF 解析（parse_document + read_file 自动路由）、Office 生成（write_docx / write_xlsx / write_csv）、数据管道（transform_file，大文件本地清洗/转换/互转，数据不经模型上下文）、PPT 读写编辑（write_pptx / read_ppt / edit_ppt，基于 Deck JSON 中间层）、Word 读写编辑（write_docx / read_docx / edit_docx，基于 Doc JSON 中间层）、Excel 读写编辑（write_xlsx / read_xlsx / edit_xlsx，基于 Workbook JSON 中间层）、SVG 生图（write_svg，矢量出图 + PNG 预览）、技能系统（list_skills / load_skill，按需加载领域操作指南）。6.1 新增（DeepSeek Harness 移植）：glob / grep（模式找文件与正则搜索）、edit / str_replace_editor（逐字符精确编辑 + diff 卡片）、web_fetch（抓取网页/接口原文）、ask_user_question（向用户提问并等待作答）、schedule_create/list/delete（会话内定时提醒）、goal_create/get/update（会话自主目标）、subagent（子代理委派）、session_search（会话事件日志检索）。**run_js（JSVM-API 沙箱）**：无 shell 环境下唯一的"执行代码"能力，详见下文"run_js：设备内 JS 执行沙箱"。
-- **技能系统**：领域操作指南打包在 `rawfile/skills/<id>/`（SKILL.md + reference/*.md），系统提示词只保留触发提示（保证 KV 缓存前缀稳定），模型通过 `list_skills`/`load_skill` 渐进式加载。内置 `ppt` 技能（Deck JSON 语法、设计规范、内容纪律、主题、常见演示文稿蓝图、自检清单）、`docx` 技能（Doc JSON 语法、排版规范、文档形态选型、常见 Word 文档蓝图、专业文书规范）、`xlsx` 技能（Workbook JSON 语法、公式优先、数字格式规范、数据分析链路、常见报表蓝图、数据分析玩法）、`svg` 技能（SVG 绘制规范、"生成→预览→修正"工作流、可视化类型选择、信息图蓝图、图标/流程图/柱状图/时间轴配方）与 `data` 技能（transform_file 管道 ops 与表达式完整语法、数据质量检查、清洗/提取/互转配方、能力边界）。
+- **技能系统**：领域操作指南打包在 `rawfile/skills/<id>/`（SKILL.md + reference/*.md），系统提示词只保留触发提示（保证 KV 缓存前缀稳定），模型通过 `list_skills`/`load_skill` 渐进式加载。内置 `ppt` 技能（Deck JSON 语法、设计规范、内容纪律、主题、常见演示文稿蓝图、自检清单）、`docx` 技能（Doc JSON 语法、排版规范、文档形态选型、常见 Word 文档蓝图、专业文书规范）、`xlsx` 技能（Workbook JSON 语法、公式优先、数字格式规范、数据分析链路、常见报表蓝图、数据分析玩法）、`svg` 技能（SVG 绘制规范、"生成→预览→修正"工作流、可视化类型选择、信息图蓝图、图标/流程图/柱状图/时间轴配方）与 `data` 技能（transform_file 管道 ops 与表达式完整语法、数据质量检查、清洗/提取/互转配方、能力边界）。**当前共 32 个技能**：除上述 10 个核心技能（另含 `paper`/`law`/`research`/`sift`/`llm-eval`）外，新增 22 个从四大主流 AI 工作平台移植并适配的领域技能——`humanizer`（去 AI 味/可读性）、`prompt-engineering`（提示词工程）、`pdf`（PDF 读取/搜索/扫描件阅读）、`translation`（法律/医学翻译与术语一致性）、`questionnaire`（问卷/深访/原声打标/定量分析）、`content-rewrite`（多平台内容改写分发）、`html`（单页 HTML 开发）、`paper-reviewer`（学术论文审稿）、`review-agent`（代码评审）、`paper-rebuttal`（审稿意见 rebuttal 回复）、`research-lineage-map`（研究谱系演进图）、`marketing-plan`（营销策划方案）、`reference-audit`（参考文献审计）、`paper-close-reading`（论文精读）、`khazix-writer`（公众号长文写作）、`newmedia-writing`（小红书/公众号/短视频新媒体写作）、`marketing-material-review`（营销素材审核）、`patent-drafting`（专利申请文件撰写）、`sentiment-tracker`（舆情追踪与溯源）、`journal-format`（学术论文 DOCX 格式排版）、`research-proposal`（学术立项书/基金申请撰写）、`industry-analysis`（行业深度研究）。
 - **本地解析引擎**：`.docx/.xlsx/.pptx/.pdf` 全部在设备本地抽取文本，不依赖多模态解析 API、不消耗配额。
 - **任务清单纪律**：复杂任务先 `todo_write` 建清单，清单与工作区状态经「运行时上下文」快照注入对话尾部，逐项推进、完成后更新。
 - **Codex 式时间线**：每轮独立消息按「思考 → 工具步骤 → 正文」时序排列，单容器时间线 UI，工具步骤可展开查看参数与结果。
@@ -151,11 +151,10 @@ Guncat Work 是使用 ArkTS 与 ArkUI 开发的原生 HarmonyOS AI 对话客户�
 
 ## 持久化与主题系统
 
-应用基于 `@kit.ArkData` Preferences 保存数据：
+应用使用两类本地持久化：
 
-- 对话历史与配置使用 JSON 序列化。
-- 自动保存当前对话、智能体选择和多套 API 配置。
-- 自动保存深度思考、联网搜索、朗读音色和朗读倍速。
+- **对话历史**：JSON 序列化后保存在应用沙箱文件 `filesDir/guncat_conversations.json`，不再受 Preferences 单值 16MB 上限约束；首次升级到该版本会自动从旧 Preferences 迁移历史会话。
+- **配置类数据**：使用 `@kit.ArkData` Preferences 保存，包括当前对话、智能体选择、多套 API 配置、深度思考、联网搜索、朗读音色和朗读倍速。
 - 应用重启后恢复本地状态。
 
 主题使用 HarmonyOS 资源限定符实现：
@@ -244,9 +243,13 @@ entry/src/main/resources/rawfile/
     ├── xlsx/
     │   ├── SKILL.md                # Excel 技能正文（新建/编辑工作流/公式优先/速查/自检清单）
     │   └── reference/              # workbook-dsl.md / format-guide.md / troubleshooting.md / report-blueprints.md / analysis-playbook.md
-    └── svg/
-        ├── SKILL.md                # SVG 生图技能（生成→预览→修正工作流/自检清单）
-        └── reference/              # svg-craft.md / svg-recipes.md / infographic-blueprints.md
+    ├── data/
+    │   ├── SKILL.md                # 数据管道技能（transform_file ops/表达式语法/数据质量/清洗提取互转配方）
+    │   └── reference/              # data-pipeline.md / data-quality.md / recipes.md
+    ├── svg/
+    │   ├── SKILL.md                # SVG 生图技能（生成→预览→修正工作流/自检清单）
+    │   └── reference/              # svg-craft.md / svg-recipes.md / infographic-blueprints.md
+    └── …/                          # 另含 paper/law/research/sift/llm-eval 与 22 个移植技能，共 32 个（humanizer/prompt-engineering/pdf/translation/questionnaire/content-rewrite/html/paper-reviewer/review-agent/paper-rebuttal/research-lineage-map/marketing-plan/reference-audit/paper-close-reading/khazix-writer/newmedia-writing/marketing-material-review/patent-drafting/sentiment-tracker/journal-format/research-proposal/industry-analysis）
 
 test/
 ├── pptx-harness/                   # PPT/CSV/Word/Excel 服务层离线验证（Node 构建 + python 校验 + tsc 类型检查）
@@ -321,7 +324,7 @@ ChatService (SSE)
 
 6. **StorageManager**
    
-   - 封装 Preferences 本地存储。
+   - 封装本地持久化：对话历史存沙箱文件（`filesDir/guncat_conversations.json`），配置/开关/朗读偏好存 Preferences。
    - 管理对话、配置、开关和朗读偏好。
 
 7. **TextReaderService / BackgroundReaderService**
@@ -341,7 +344,7 @@ ChatService (SSE)
 > - `BACKLOG.md`——当前待办与已完成的审计维度；
 > - `PORT_NOTES.md`——dsh 移植对照与后续核心层迭代说明；
 > - `test/pptx-harness/README.md`——PPT 生成器与 CSV 写入器的离线验证环境（Node 构建 + python-pptx 校验 + PNG 目检），改 `export/` 下任何文件后必跑；
-> - `entry/src/main/resources/rawfile/skills/`——**模型看到的**操作指南（`ppt`：deck-dsl 语法/设计规范/内容纪律/主题/演示文稿蓝图；`docx`：doc-dsl 语法/排版规范/文档形态选型/文档蓝图/专业文书规范；`xlsx`：workbook-dsl 语法/公式与数字格式/数据分析链路/报表蓝图/分析玩法；`svg`：绘制规范/可视化类型选择/信息图蓝图/生图配方），是随工具演进同步维护的文档，也是可移植到其他 Agent 框架的复用资产。
+> - `entry/src/main/resources/rawfile/skills/`——**模型看到的**操作指南（`ppt`：deck-dsl 语法/设计规范/内容纪律/主题/演示文稿蓝图；`docx`：doc-dsl 语法/排版规范/文档形态选型/文档蓝图/专业文书规范；`xlsx`：workbook-dsl 语法/公式与数字格式/数据分析链路/报表蓝图/分析玩法；`svg`：绘制规范/可视化类型选择/信息图蓝图/生图配方；`data`：transform_file 管道语法/数据质量/配方；另含 `paper`/`law`/`research`/`sift`/`llm-eval` 与 22 个移植技能，共 32 个），是随工具演进同步维护的文档，也是可移植到其他 Agent 框架的复用资产。
 
 ### 1. 身份与会话模型
 
@@ -349,7 +352,7 @@ ChatService (SSE)
 - **进入/退出**：侧边栏点击「工作模式」= `selectAgent('work')`；点击任意真实智能体即退出（`lastChatAgentId` 记录最近使用的真实智能体，供工具行的工作模式胶囊退出时回切）。
 - **会话绑定**：`Conversation.mode = 'chat' | 'work'`；工作会话 `agentId` 固定为 `'work'`，启动时对旧数据自动迁移。删除工作会话会同步清理沙箱工作区目录。
 - **开关差异**：进入工作模式强制开启深度思考（工具行不显示该开关）；联网搜索保留（服务端搜索工具与客户端函数工具并存下发）；上传/拍照直接进入工作区而非聊天附件。
-- **持久化**：会话 JSON 新增 `mode` 与 `Message.toolCalls`（`ToolCallRecord[]`，含调用参数/结果/耗时，重启后据此还原时间线与 LLM 历史）。工作区文件本体存沙箱 `filesDir`，不进 Preferences。
+- **持久化**：会话 JSON 新增 `mode` 与 `Message.toolCalls`（`ToolCallRecord[]`，含调用参数/结果/耗时，重启后据此还原时间线与 LLM 历史）。会话存档（`filesDir/guncat_conversations.json`）与工作区文件本体都存沙箱 `filesDir`，不进 Preferences。
 
 ### 2. Agent Loop（`ChatViewModel.executeWorkLoop`）
 
@@ -415,7 +418,7 @@ for step in 1..WORK_MAX_STEPS(200, 防失控保险):
 | `read_ppt`                                              | WorkToolRunner.toolReadPpt → PptxImporter.import                    | .pptx → Deck JSON 源（自家文件无损还原，外来近似导入）                                                                                                                                             |
 | `edit_ppt`                                              | WorkToolRunner.toolEditPpt → PptxImporter + DeckOps + PptxBuilder   | 读回→应用操作→重建（外来文件先备份）                                                                                                                                                              |
 | `write_svg`                                             | WorkToolRunner.toolWriteSvg → SvgUtil                               | SVG 源码→工作区 .svg + 栅格化 PNG 预览；xmlns/禁 script 校验，缺 width/height 自动按 viewBox 补齐（实机引擎必需），解码失败报精确诊断                                                                                   |
-| `list_skills` / `load_skill`                            | WorkFileService.dispatchTool → WorkSkillService                     | 技能清单与技能文档按需加载（rawfile/skills/ 下 ppt、docx、xlsx、svg、data 五个技能）                                                                                                                               |
+| `list_skills` / `load_skill`                            | WorkFileService.dispatchTool → WorkSkillService                     | 技能清单与技能文档按需加载（rawfile/skills/ 下共 32 个技能：10 个核心 + 22 个移植）                                                                                                                               |
 | `glob`                                                  | HarnessTools.toolGlob → FileSearchCore                              | glob 模式按路径找文件（`**`/`*`/`?`/`{a,b}`/`[...]`，顶层逗号不破坏 `{}` 分支），返回相对路径与大小（≤500 个）                                                                                                    |
 | `grep`                                                  | HarnessTools.toolGrep → FileSearchCore                              | 正则搜索文本文件内容，返回 `文件:行号: 内容`（≤200 命中；支持 glob 文件名过滤与 ignore_case，非法正则明确报错）                                                                                                           |
 | `edit`                                                  | HarnessTools.toolEdit → DiffUtil                                    | 逐字符唯一匹配替换（多处匹配拒绝，`replace_all` 全替）；结果附行级 diff hunks（meta 随会话持久化，UI 渲染 diff 卡片）                                                                                                   |
@@ -424,7 +427,7 @@ for step in 1..WORK_MAX_STEPS(200, 防失控保险):
 | `ask_user_question`                                     | HarnessTools.toolAskUser → AskUserBridge                            | 暂停执行等待用户作答；UI 问题卡片（单选/多选 + 文字补充，统一由「提交」发送）；5 分钟未答按取消收场，循环中断即全部落定                                                                                                                 |
 | `schedule_create` / `schedule_list` / `schedule_delete` | HarnessTools → ScheduleService                                      | 会话内定时提醒（`.schedule.json` 持久化；一次性 `after_seconds` 或循环 `every_seconds`≥300 秒）；到期注入用户消息自动唤醒，任务执行中走插话通道                                                                              |
 | `goal_create` / `goal_get` / `goal_update`              | HarnessTools → GoalService                                          | 会话自主目标（`.goal.json`），随运行时快照注入；`bump_round` 计轮，达轮次上限自动暂停                                                                                                                          |
-| `subagent`                                              | HarnessTools → SubagentService（经 `WorkFileService.subagentHook` 注入） | 进程内子代理：与主任务共享工作区、独立上下文（工具面排除 subagent/ask_user/schedule/goal/todo_write），≤40 步，最终报告作为工具结果交还                                                                                      |
+| `subagent`                                              | HarnessTools → SubagentService（经 `WorkFileService.subagentHook` 注入） | 进程内子代理：与主任务共享工作区、独立上下文（工具面排除 subagent/ask_user/schedule/goal/todo_write），≤40 步；可并行派发（全局上限 4），每个子代理默认获得独立产出目录 `subagents/sa_<时间戳>_<序号>/`（可用 `output_dir` 指定），可读全工作区、写入自动重定向到该目录，最终报告作为工具结果交还并标注产出目录                                                                                      |
 | `session_search`                                        | HarnessTools.toolSessionSearch → SessionLogService                  | 检索会话事件日志（JSONL），找回被上下文压缩掉的历史细节                                                                                                                                                   |
 | `run_js`                                                | HarnessTools → JsCodeService → 原生 `libguncatjs.so`（JSVM-API）        | **设备内 JS 执行沙箱**：任意小程序化处理（计算/正则/JSON 重塑/统计/程序化生成）＋显式文件进出（`files` 只读预载、`write()` 落盘）；详见下节                                                                                              |
 
@@ -628,11 +631,17 @@ entry/src/main/resources/rawfile/skills/
 │       ├── workbook-dsl.md     # Workbook JSON 字段级语法 + edit_xlsx 算子表
 │       ├── format-guide.md     # 公式优先/数字格式/财务惯例/编辑完整性
 │       └── troubleshooting.md  # 症状→修复排查表
-└── svg/                        ← 内置技能 5：SVG 矢量绘图（生图）
-    ├── SKILL.md                # "生成→预览→修正"工作流 + 工具分界（照片用 download_file）
-    └── reference/
-        ├── svg-craft.md        # 绘制规范: xmlns/viewBox 硬要求、24 网格、path 优先、文字风险、配色纪律
-        └── svg-recipes.md      # 可套用模板: 描边图标/流程图/架构图/信息图卡片/封面装饰
+├── data/                        ← 内置技能 5：数据管道（transform_file）
+│   ├── SKILL.md                # 管道 ops/表达式语法/数据质量检查/清洗·提取·互转配方
+│   └── reference/
+│       ├── data-pipeline.md    # ops 白名单 + 表达式求值器
+│       └── data-quality.md     # 质量检查/清洗/互转配方
+├── svg/                        ← 内置技能 6：SVG 矢量绘图（生图）
+│   ├── SKILL.md                # "生成→预览→修正"工作流 + 工具分界（照片用 download_file）
+│   └── reference/
+│       ├── svg-craft.md        # 绘制规范: xmlns/viewBox 硬要求、24 网格、path 优先、文字风险、配色纪律
+│       └── svg-recipes.md      # 可套用模板: 描边图标/流程图/架构图/信息图卡片/封面装饰
+└── …/                          # 另含 paper/law/research/sift/llm-eval 与 22 个移植技能，共 32 个
 ```
 
 注册表在 `WorkSkillService.registry()`（**代码即注册表，无配置文件**）。每个 `SkillInfo = { id, name, description, files: SkillFileInfo[] }`；`files` 是 `load_skill` 允许的文件白名单（`SKILL.md` 恒可用），防路径探测。**没有登记的技能对模型不存在**——文档放了对目录里也不会被加载。
@@ -874,7 +883,7 @@ hvigorw --mode module -p product=default -p module=entry@default -p buildMode=de
 - Share Kit：接收其他应用分享的图片和文件。
 - CoreSpeechKit：文本朗读与语音识别。
 - AVSession Kit：后台媒体会话。
-- ArkData Preferences：本地配置与对话持久化。
+- ArkData Preferences：本地配置持久化；对话历史存沙箱文件 `filesDir/guncat_conversations.json`。
 
 ## 隐私说明
 
@@ -897,6 +906,13 @@ hvigorw --mode module -p product=default -p module=entry@default -p buildMode=de
 - 工作模式的核心循环换成了新的「驱动引擎」（默认启用）：每一步由统一的状态机和计划器来调度，日志里能看清每步决策和整轮摘要，任务执行更可控、更好排查；如果遇到异常，可以一键回退到旧循环继续用，不影响正常工作。
 - **办公技能全面升级（V3，版本仍为 6.2.0）**：PPT / Word / Excel 三个技能全部改为“门”式约束——进入任务必须先 `load_skill` 全量加载 SKILL.md 与全部参考文件，禁止挑读；新建文档/PPT/工作簿前会通过 `ask_user_question` 一次问清目的、篇幅、风格、素材等关键信息；交付前必须生成可核对的 `ppt_qa_report.md` / `docx_qa_report.md` / `xlsx_qa_report.md` 自检报告，并在最终总结附自检摘要。
 - **PPT 生成质量大幅增强（V3.1）**：默认篇幅提升到 20 页以上；每页必须有装饰性 SVG/纹理背景 + 内容配图（流程图、时间轴、架构图、对比图、简单插画、信息图），纯文字页会把一部分内容自动转成示意图；新增科技、古风、简约、杂志、商务、学术、路演等视觉风格目录与纹理/勾边/花色配方，告别纯色默认模板。
+- **技能库扩展（V3 移植，版本仍为 6.2.0）**：工作模式新增 22 个可复用领域技能，均完整移植自四大主流 AI 工作平台并做本项目工具适配（不可用平台/工具已清理）——`humanizer`（去 AI 味/可读性）、`prompt-engineering`（提示词工程）、`pdf`（PDF 读取/搜索/扫描件阅读）、`translation`（法律/医学翻译与术语一致性）、`questionnaire`（问卷/深访/原声打标/定量分析）、`content-rewrite`（多平台内容改写分发）、`html`（单页 HTML 开发）、`paper-reviewer`（学术论文审稿）、`review-agent`（代码评审）、`paper-rebuttal`（审稿意见 rebuttal 回复）、`research-lineage-map`（研究谱系演进图）、`marketing-plan`（营销策划方案）、`reference-audit`（参考文献审计）、`paper-close-reading`（论文精读）、`khazix-writer`（公众号长文写作）、`newmedia-writing`（小红书/公众号/短视频新媒体写作）、`marketing-material-review`（营销素材审核）、`patent-drafting`（专利申请文件撰写）、`sentiment-tracker`（舆情追踪与溯源）、`journal-format`（学术论文 DOCX 格式排版）、`research-proposal`（学术立项书/基金申请撰写）、`industry-analysis`（行业深度研究）。连同原有 10 个技能，当前共 32 个技能，均由 `load_skill` 按需加载。
+- **子代理并行派发（版本仍为 6.2.0）**：工作模式的 `subagent` 工具支持并行派发，连续多个子代理可同时运行（全局并发上限 4，与只读工具池一致）；父任务取消时会同步中止所有在跑子代理；需要串行时可在 `Constants.ts` 关闭 `WORK_ALLOW_PARALLEL_SUBAGENTS`。
+- **并行结果即时上屏（版本仍为 6.2.0）**：并行组里的工具谁先完成谁先回填结果/刷新 UI，不再按模型顺序从前往后等；右侧状态文案改为按“是否真正启动”显示「执行中…/等待中…」，多个并行的子代理会同时显示「执行中…」。
+- **web_fetch 并行能力（版本仍为 6.2.0）**：`web_fetch` 沿用只读并行池，默认最多 4 个同时抓取，不加额外限制。
+- **子代理工作区隔离（R67，版本仍为 6.2.0）**：每个子代理默认获得独立产出目录 `subagents/sa_<时间戳>_<序号>/`（也可用 `output_dir` 指定）；子代理仍可读取/搜索整个主工作区，但所有写入/新建/移动/删除会被自动重定向或限制到自己的产出目录（裸路径自动加前缀、`delete_file` 清空根目录被拦截、`run_js` 输出同样落入该目录），最终报告头部标注产出目录；并行子代理不再互相覆盖同名文件，也不会污染/改写/删除主循环文件。反馈明确：写入越界会在工具结果前提示“已自动重定向至…”；删除/移动主工作区文件会直接“越界拦截”，不再报“路径不存在”。
+- **对话历史改为文件存储（版本仍为 6.2.0）**：会话历史不再写入 Preferences 单值，改为保存在应用沙箱 `filesDir/guncat_conversations.json`，不再受 Preferences 16MB 单值上限约束；工作模式长任务或历史会话很多时也不会再出现“内容一多、重启后历史消失”的问题。首次启动新版本会自动把旧 Preferences 中的会话迁移到文件，迁移后清理旧 key。
+- **修复删除/新建会话后侧边栏不实时刷新（版本仍为 6.2.0）**：删除历史会话后条目会立即从侧边栏/抽屉消失，新建会话也会立即出现，不再需要手动切换条目或关闭侧边栏触发刷新。
 
 ## 6.1.2 更新（新增 Guncat 3.1-Flash）
 

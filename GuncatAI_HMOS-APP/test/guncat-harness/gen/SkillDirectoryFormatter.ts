@@ -20,6 +20,9 @@ export class SkillDirectoryFormatter {
       for (let f: number = 0; f < s.files.length; f++) {
         out += ', ' + s.files[f].file + '(' + s.files[f].desc + ')';
       }
+      if (s.id === 'ppt' || s.id === 'docx' || s.id === 'xlsx') {
+        out += '\n  注意: ' + s.id + ' 为全量必读技能，必须 load_skill("' + s.id + '") 一次加载 SKILL.md + 全部 reference，禁止按需挑读。';
+      }
       out += '\n';
     }
     return out;
@@ -33,7 +36,7 @@ export class SkillDirectoryFormatter {
     let out: string = '# 技能库（命中领域的任务，第一步先加载技能）\n';
     out += '下面列出全部可用技能及其触发条件。任务命中某技能的触发条件时，**必须先 load_skill 加载该技能再动手**，按其方法论执行；';
     out += '技能正文优先于你的默认做法，也优先于"直接搜索后凭通用知识作答"——技能规定要检索的信息缺口，再用搜索/读文件工具按技能的要求补足。';
-    out += '技能内的参考文件用 load_skill(name, file) 按需加载。\n';
+    out += '技能内的参考文件：若技能正文要求全量加载（如 ppt/docx/xlsx），必须一次 load_skill(name) 读取全部参考，不得挑读；未要求全量时按需加载。\n';
     for (let i: number = 0; i < list.length; i++) {
       let s: SkillMeta = list[i];
       out += '\n- ' + s.id + ' — ' + s.name + '\n  触发: ' + s.description + '\n';

@@ -41,7 +41,7 @@ export class WebFetchService {
     }
   }
 
-  // 拉取并转换为送回模型的文本
+  // 拉取并转换为送回模型的文本(不额外限并发: 由主循环只读并行池控制, 默认上限 4)
   static fetch(url: string, maxChars: number): Promise<WebFetchResult> {
     let cap: number = maxChars > 0 ? Math.min(maxChars, Constants.WORK_WEBFETCH_MAX_CHARS) :
       Constants.WORK_WEBFETCH_MAX_CHARS;

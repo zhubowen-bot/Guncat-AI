@@ -8,6 +8,7 @@ export class ToolMeta {
   version: string = '1';
   readOnly: boolean = false;
   mutating: boolean = false;
+  parallelSafe: boolean = false; // 并行安全：可与同类工具并发执行（如 subagent）
   permissions: string[] = [];
   category: string = '';
   timeoutMs: number = 0;   // 0 表示使用全局默认
@@ -114,6 +115,20 @@ export class ToolRegistry {
   static isMutating(name: string): boolean {
     let meta: ToolMeta | null = ToolRegistry.findMeta(name);
     return meta !== null && meta.mutating;
+  }
+
+  // 是否“并行安全”：可与同类工具并发执行（典型如 subagent——独立上下文/独立 LLM 循环）
+  static isParallelSafe(name: string): boolean {
+    let meta: ToolMeta | null = ToolRegistry.findMeta(name);
+    return meta !== null && meta.parallelSafe;
+  }
+
+  // 动态标注单个工具为“并行安全”（由 WorkFileService 在注册中心同步后对核心工具打标）
+  static setParallelSafe(name: string, flag: boolean): void {
+    let meta: ToolMeta | null = ToolRegistry.findMeta(name);
+    if (meta !== null) {
+      meta.parallelSafe = flag;
+    }
   }
 
   // 动态注册插件工具: 以 namespace 为插件名同步一批工具定义与元数据(幂等, 支持热更新)

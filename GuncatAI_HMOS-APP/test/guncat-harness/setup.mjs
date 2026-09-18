@@ -60,6 +60,7 @@ port('common/RetryAfterParser.ts', 'RetryAfterParser.ts', []);
 port('common/WorkLoopDriver.ts', 'WorkLoopDriver.ts', []);
 port('common/PluginToolExecutor.ts', 'PluginToolExecutor.ts', []);
 port('common/LoopError.ts', 'LoopError.ts', []);
+port('common/SubagentIsolation.ts', 'SubagentIsolation.ts', []);
 port('common/LoopTurnInfoMapper.ts', 'LoopTurnInfoMapper.ts', []);
 port('common/WorkLoopStepInfoBuilder.ts', 'WorkLoopStepInfoBuilder.ts', []);
 port('model/ToolCallRecord.ts', 'ToolCallRecord.ts', []);

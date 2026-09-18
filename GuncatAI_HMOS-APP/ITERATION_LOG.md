@@ -1229,6 +1229,70 @@
 ### 状态
 - 第八轮暂停，等待用户下一步指示。
 
+## 2026-09-16 R66: 子代理并行派发（parallelSafe + 全局并发闸 + 取消透传）
+
+### 目标
+- 将主循环“派发多个子代理”从顺序制改为并行制，同时控制并发上限并打通父任务取消链路。
+
+### 变更
+- `entry/src/main/ets/common/ToolRegistry.ts`：
+  - `ToolMeta` 新增 `parallelSafe` 标记。
+  - 新增 `isParallelSafe(name)` / `setParallelSafe(name, flag)`。
+- `entry/src/main/ets/service/WorkFileService.ts`：
+  - `ensureToolRegistry` 同步后将 `subagent` 标记为并行安全。
+  - 新增 `workParallelSafeNames()` / `isParallelSafeTool(name)`。
+  - `subagentHook` / `executeTool` / `dispatchTool` 增加可选 `abortSignal`，透传到 `HarnessTools.dispatch`。
+- `entry/src/main/ets/service/HarnessTools.ts`：`dispatch` 增加可选 `abortSignal`，`subagent` 分支透传给 `SubagentService.run`。
+- `entry/src/main/ets/service/WorkToolRunner.ets`：`buildTask` / `executeInner` 透传 `abortSignal` 到 `WorkFileService.executeTool`。
+- `entry/src/main/ets/service/SubagentService.ts`：
+  - 新增全局子代理并发闸（信号量），默认 `WORK_MAX_PARALLEL_SUBAGENTS=4`（与只读池上限一致），超出排队等待。
+  - `run()` 接收父级 `abortSignal`，通过轮询同步到子代理内部取消信号，父任务取消时真正中止子代理循环。
+- `entry/src/main/ets/common/Constants.ts`：新增 `WORK_ALLOW_PARALLEL_SUBAGENTS` / `WORK_MAX_PARALLEL_SUBAGENTS`。
+- `entry/src/main/ets/viewmodel/ChatViewModel.ets`：
+  - 旧 `executeWorkLoop` 与当前 `executeWorkLoopDriver` 两处并行组条件从“只读”扩展为“只读或并行安全”。
+  - 并行组改为“谁先完成谁先回填结果/刷新 UI”，不再按模型顺序等待；给模型的 `tool_result` 仍按原顺序保留。
+  - `subagent` 单独执行后也刷新工作区面板。
+- `entry/src/main/ets/model/ToolCallRecord.ts` / `entry/src/main/ets/views/WorkTurnView.ets`：新增 `started` 运行态；状态文案按“是否真正启动”显示“执行中/等待中”，不再因为模型调用顺序把已并行的后置调用标成“等待中”。
+- `test/guncat-harness/test-core.mjs`：新增 `parallelSafe` 标记/查询回归用例。
+
+### 验证
+- `node test/guncat-harness/setup.mjs && node test/guncat-harness/test-core.mjs`：passed=280 failed=0。
+- `node test/guncat-harness/check-setup.mjs && node test/guncat-harness/check/../.npm-cache/_npx/.../tsc -p test/guncat-harness/check/tsconfig.json`：TYPECHECK_OK。
+- 未执行 DevEco Studio `assembleHap`（当前会话未定位 hvigorw），服务层类型检查已通过；建议在 DevEco Studio 中做一次真机构建验证。
+
+### 下一项
+- （R67 已在本日完成，见下节）
+
+## 2026-09-16 R67: 子代理工作区隔离（output_dir + 自动独立产出目录）
+
+### 目标
+- 多个子代理并行时，避免它们在工作区根目录写同名文件互相覆盖；让每个子代理的产出落进独立子目录，父任务通过报告中的路径取回产物。
+
+### 变更
+- `entry/src/main/ets/common/Constants.ts`：新增 `WORK_SUBAGENT_OUTPUT_DIR_PREFIX = 'subagents'`。
+- `entry/src/main/ets/service/HarnessTools.ts`：`subagent` 工具定义新增可选参数 `output_dir`（工作区相对路径），工具描述同步说明“可读全工作区、写入自动重定向到产出目录”。
+- `entry/src/main/ets/service/WorkFileService.ts`：`subagentHook` 类型增加可选 `outputDir` 参数并透传。
+- `entry/src/main/ets/service/SubagentService.ts`：
+  - 未传 `output_dir` 时自动分配独立产出目录 `subagents/sa_<时间戳>_<序号>/`。
+  - `sanitizeOutputDir` / `ensureOutputDir`：只接受工作区内相对路径，非法路径回退自动目录；执行前确保目录已创建。
+  - **执行层写隔离（修正自测发现）**：所有写类工具的目标路径（write/append/delete/create_dir/move/write_csv/download/write_svg/write_docx/write_xlsx/write_pptx/edit/str_replace_editor/edit_docx/edit_xlsx/edit_ppt/transform_file.output）在执行前统一重定向到子代理自己的 `output_dir`——裸路径自动加前缀、已在目录内则原样；`delete_file` 清空整个工作区被拦截；`run_js` 输出通过 `_output_dir` 注入同样落入该目录。读类工具（read_file/glob/grep/search_files/read_docx/read_xlsx/read_ppt/parse_document 等）与输入型路径（write_docx.doc_file / write_xlsx.workbook_file / write_pptx.deck_file / transform_file.input）不重定向，子代理仍可读取主工作区文件。
+  - **越界反馈口径统一（修正第二轮自测）**：写入越界自动重定向后，工具结果前附加「【隔离提示】…已自动重定向至…」，不再静默改写；删除/移动主工作区文件直接返回「越界拦截」错误，不再出现“路径不存在: <隔离目录>/…”的费解信息。
+  - 子代理系统提示词追加产出目录纪律，并说明“可读主工作区、写入被系统自动限制”。
+  - 子代理最终报告头部增加“产出: <目录>”。
+- `entry/src/main/ets/common/SubagentIsolation.ts`（新增，纯逻辑可单测）：写路径字段表、路径重定向、清空/越界拦截、args 重写、重定向提示。
+- `entry/src/main/ets/service/JsCodeService.ts`：`run` 识别 `_output_dir`，输出落盘自动加前缀。
+- `test/guncat-harness/test-core.mjs`：新增 `[SubagentIsolation]` 21 项回归用例（重定向/不重复前缀/输入保留/view 不重定向/清空拦截/越界删除移动拦截/重定向提示等）。
+
+### 验证
+- `node test/guncat-harness/setup.mjs && node test/guncat-harness/test-core.mjs`：passed=301 failed=0。
+- `node test/guncat-harness/check-setup.mjs && tsc -p test/guncat-harness/check/tsconfig.json`：TYPECHECK_OK。
+- 未执行 DevEco Studio `assembleHap`，建议真机构建后重跑“裸路径写主目录/改写主文件/删除主文件”用例确认。
+
+### 下一项
+- 待定。
+
+
+
 
 
 
@@ -1988,3 +2052,334 @@
 
 ### 下一项
 - 继续保守增强：可把 QwenWork pptx 的“模板容量判定”已覆盖后，评估 QwenWork pptx 的“布局 slot 表/安全区”是否需再细化；可把 ChatGPT spreadsheets 的“只读问题不改文件”已在多处覆盖后，寻找其他未覆盖规则。
+
+## 2026-09-17 T1: 四平台参考移植新增 4 个通用技能（humanizer/prompt-engineering/pdf/translation）
+
+### 目标
+- 扫描 `doubao-workbuddy-qwenwork-skills-skill` 参考目录，筛选高频、通用、可复用且与现有 10 个技能不重复的能力，按本项目规范移植到 `rawfile/skills/` 并登记进 `WorkSkillService.registry()`。
+
+### 筛选结果
+- 产出 `SKILL_PORTING_REPORT.md`：记录四平台扫描范围、现有技能覆盖、筛选维度、落选候选、移植清单与 Source Map。
+- 本轮新增 4 个技能：
+  - `humanizer`：去 AI 味/拟人化/可读性改写（来源 workbuddy humanizer + social-content-team de-ai-writing/output-readability）；
+  - `prompt-engineering`：提示词工程（来源 workbuddy prompt-engineering-expert）；
+  - `pdf`：PDF 读取/搜索/扫描件阅读（来源 qwenwork pdf + doubao pdf，适配当前 parse_document/search_pdf/pdf_to_images）；
+  - `translation`：通用翻译/术语一致性/双语交付（来源 legal-translation 通用化 + medical-literature-translation）。
+
+### 变更
+- 新增 `rawfile/skills/humanizer/SKILL.md` + `reference/general-patterns.md`（24 项模式上半，完整 before/after）+ `general-patterns-2.md`（下半 + 完整示例）+ `social-media.md`（de-AI writing 全文）+ `readability.md`（output-readability 全文）；
+- 新增 `rawfile/skills/prompt-engineering/SKILL.md` + `reference/original-skill.md`、`BEST_PRACTICES.md`、`TECHNIQUES.md`、`TROUBLESHOOTING.md`、`EXAMPLES.md`、`START_HERE.md`、`GETTING_STARTED.md`、`SUMMARY.md`、`INDEX.md`、`CLAUDE.md`（原技能全部文档原文）；
+- 新增 `rawfile/skills/pdf/SKILL.md` + `reference/original-prompt-1..4.md`（qwenwork/pdf 原始 SKILL.md 全文拆段）、`troubleshooting.md`、`extraction-guide.md`、`forms-guide.md`、`generation-guide.md`、`security-guide.md`、`advanced-libraries.md`；
+- 新增 `rawfile/skills/translation/SKILL.md` + `reference/translation-playbook.md`、`legal-full.md`（法律翻译完整原文）、`medical-1..5.md`（医学翻译完整原文拆段）；
+- `entry/src/main/ets/service/WorkSkillService.ts`：`registry()` 新增上述 4 个 SkillInfo（id/name/description/files 全量登记）；
+- `test/pptx-harness/check-docs.py`：新增全部新技能文档到体量/围栏检查；
+- `SKILL_PORTING_REPORT.md`：新增分析报告并记录“不简化原则”。
+
+### 验证
+- `python test/pptx-harness/check-docs.py`：新技能文档全部 OK（仅既有 `ppt/SKILL.md` 13026 字符超限为历史遗留，未在本轮改动）；
+- frontmatter 检查：14 个技能目录名与 `name` 均一致；
+- `node check-setup.mjs && npx tsc -p check/tsconfig.json`：类型检查通过；
+- 未删除原文件；未覆盖既有技能 SKILL.md/reference；未改 `entry/build/` 副本。
+
+### 下一项
+- 可继续评估候选：`questionnaire`（问卷/访谈提纲）、`html`（单页 HTML）、`content-rewrite`（一稿多发），确认工具边界后按同样流程移植。
+
+## 2026-09-17 R2（双数轮）：上一轮 4 个技能全面复查与纠正
+
+### 目标
+- 双数轮全面复查 T1 移植的 humanizer / prompt-engineering / pdf / translation，纠正简化、缩略、自编摘要行为，确保内容来自参考项目原文。
+
+### 修正动作
+- **SKILL.md 直接移植原提示词，不再用自编摘要**：
+  - `humanizer/SKILL.md`：原 `workbuddy/skills/humanizer/SKILL.md` 正文前半（CONTENT PATTERNS 完整 before/after）；后半保留在 `reference/general-patterns-2.md`；
+  - `prompt-engineering/SKILL.md`：原 `prompt-engineering-expert/SKILL.md` 全文（仅 frontmatter 名改为 prompt-engineering）；
+  - `pdf/SKILL.md`：原 `qwenwork/skills/pdf/SKILL.md` 前半；后半在 `reference/original-prompt-2..4.md`；
+  - `translation/SKILL.md`：原 `legal-translation/SKILL.md` 全文（仅 frontmatter 名改为 translation）；医学翻译全文保留在 `reference/medical-1..5.md`。
+- **删除自编速查文件（R2 纠正）**：`prompt-engineering/reference/best-practices.md`、`translation/reference/translation-playbook.md` 已删除，并从 registry/check-docs 移除。
+- **删除与 SKILL.md 重复的引用（R2 去重）**：`humanizer/reference/general-patterns.md`、`prompt-engineering/reference/original-skill.md`、`pdf/reference/original-prompt-1.md`、`translation/reference/legal-full.md` 已删除（内容已由对应 SKILL.md 承载）。
+- **新增适配层**：`pdf/reference/tool-notes.md`（本项目工具映射/工作流/能力边界），登记进 registry。
+- `SKILL_PORTING_REPORT.md`：新增「双数轮复查（R2）」章节记录以上修正。
+
+### 验证
+- frontmatter：14 个技能目录名与 `name` 全部一致；
+- 文档体量：新技能全部 <1.2 万字符（仅既有 `ppt/SKILL.md` 13026 字符为历史遗留）；
+- `node check-setup.mjs && npx tsc -p check/tsconfig.json`：类型检查通过；
+- 未删除参考原文件；未覆盖既有技能内容；未改 `entry/build/` 副本。
+
+## 2026-09-17 R3（单数轮）：新增 questionnaire（用户研究）技能
+
+### 目标
+- 单数轮新增 1 个高频、通用、可复用、与现有技能不重复的技能。本轮选择 `questionnaire`（Doubao 问卷/用户研究，文档型非重大 skill，无需额外代码）。
+
+### 变更
+- 完整复制 `doubao/skills/doubao-questionnaire-designer/` 全部内容到 `rawfile/skills/questionnaire/`：`SKILL.md`、`CHANGELOG.md`、`references/m1-questionnaire-design.md`、`m2-interview-outline.md`、`m3-verbatim-tagging.md`、`m4-quantitative-analysis.md`（全文，未简化/未合并）；
+- 仅将 frontmatter `name` 改为 `questionnaire`，并在 SKILL.md 末尾加本项目适配说明（飞书交付改 `write_docx`/`write_xlsx`，M4 用 `transform_file` 清洗）；
+- `WorkSkillService.registry()` 登记 questionnaire（files 全量登记）；
+- `test/pptx-harness/check-docs.py` 加入 questionnaire 全部文档；
+- `SKILL_PORTING_REPORT.md` 更新为 5 个新技能并记录 R3。
+
+### 验证
+- frontmatter：15 个技能目录名与 `name` 全部一致；
+- 文档体量：questionnaire 全部 <1.2 万字符，代码围栏平衡（唯一告警仍为历史遗留 `ppt/SKILL.md`）；
+- `node check-setup.mjs && npx tsc -p check/tsconfig.json`：类型检查通过；
+- 未删除参考原文件；未覆盖既有技能内容；未改 `entry/build/` 副本。
+
+### 下一项
+- 下一双数轮（R4）全面复查 questionnaire（尤其确认无简化/无自编、与 docx/xlsx 交付衔接）；后续单数轮候选：`html`（单页 HTML）、`content-rewrite`（一稿多发）等。
+
+## 2026-09-17 R4（双数轮）：复查 questionnaire
+
+### 复查内容
+- **逐文件核对**：对 `questionnaire/references/m1..m4` 与 `CHANGELOG.md` 做 MD5 哈希比对，与参考源完全一致（IDENTICAL）；
+- **SKILL.md 体量比对**：去除 frontmatter `name` 差异与末尾适配说明后，与 `doubao-questionnaire-designer/SKILL.md` 正文逐字符一致（2579 字符 = 2579 字符）；
+- **适配说明核验**：SKILL.md 末尾新增的适配说明提到的 `write_docx` / `write_xlsx` / `transform_file` / `edit_xlsx` 均为本项目真实存在的工具（已在 `AgentLoopService`/`WorkToolRunner` 中核实），无幻觉工具名；
+- **引用路径核验**：SKILL.md 内 `references/m1..m4` 与注册表、实际文件一一对应，未断裂；
+- **登记核验**：`questionnaire` 全部文件均在 `WorkSkillService.registry()` 白名单内；`check-docs.py` 已覆盖。
+
+### 结论
+- 未发现简化、缩略或自编行为；未改动任何内容（本轮为纯复查）；
+- 15 个技能 frontmatter 全部一致；`tsc` 通过。
+
+### 下一项
+- 下一单数轮（R5）候选：`html`（单页 HTML）、`content-rewrite`（一稿多发）；若选择需代码的重大 skill，则单轮只做一个并走 DevEco Studio 验证清单。
+
+## 2026-09-17 R5（单数轮）：新增 content-rewrite（多平台内容改写分发）
+
+### 目标
+- 单数轮新增 1 个高频、通用、可复用、与现有技能不重复的技能。本轮选择 `content-rewrite`（Doubao 一稿多发，文档型非重大 skill，无需额外 app 代码）。
+
+### 变更
+- 完整复制 `doubao/skills/doubao-multiplatform-rewrite/` 全部内容到 `rawfile/skills/content-rewrite/`：
+  - `SKILL.md`（8870 字符，<1.2 万无需拆段）；
+  - `references/common/`：cover-design-methodology / distribution-package-format / fact-check-and-compliance / image-generation / internet-search / output-standard / source-analysis（7 个全文）；
+  - `references/platforms/`：short-video / wechat / weibo / xhs（4 个全文）；
+- 仅将 frontmatter `name` 改为 `content-rewrite`，并在 SKILL.md 末尾加本项目适配说明（飞书交付改 `write_file`/`write_docx`；配图用 `svg` 或用户供图；`internet-search` 对应 `search_web`）；
+- `WorkSkillService.registry()` 登记 content-rewrite（11 个 reference 文件全量登记）；
+- `test/pptx-harness/check-docs.py` 加入 content-rewrite 全部文档；
+- `SKILL_PORTING_REPORT.md` 更新为 6 个新技能并记录 R5。
+
+### 验证
+- frontmatter：16 个技能目录名与 `name` 全部一致；
+- 文档体量：content-rewrite 全部 <1.2 万字符，代码围栏平衡（唯一告警仍为历史遗留 `ppt/SKILL.md`）；
+- `node check-setup.mjs && npx tsc -p check/tsconfig.json`：类型检查通过；
+- 未删除参考原文件；未覆盖既有技能内容；未改 `entry/build/` 副本。
+
+### 下一项
+- R6（下一双数轮）全面复查 content-rewrite（确认无简化/无自编、与 write_docx/svg/search_web 衔接）；后续单数轮候选：`html`（单页 HTML）等。
+
+## 2026-09-17 R6（双数轮）：复查 content-rewrite
+
+### 复查内容
+- **逐文件核对**：对 `content-rewrite/references/common/*.md`（7 个）与 `references/platforms/*.md`（4 个）做 MD5 哈希比对，与参考源完全一致（IDENTICAL）；
+- **SKILL.md 体量比对**：去除 frontmatter `name` 差异与末尾适配说明（并忽略末尾空行）后，与 `doubao-multiplatform-rewrite/SKILL.md` 正文逐字符一致（8857 = 8858，仅差一个结尾空行，trim 后完全一致）；
+- **适配说明核验**：SKILL.md 末尾适配说明提到的 `write_file` / `write_docx` / `svg` / `search_web` 均为本项目真实存在的工具/技能，无幻觉工具名；
+- **引用路径核验**：SKILL.md 内 `references/common/*.md`、`references/platforms/*.md` 与注册表、实际文件一一对应，未断裂；
+- **登记核验**：`content-rewrite` 全部 12 个文件均在 `WorkSkillService.registry()` 白名单内，`check-docs.py` 已覆盖。
+
+### 结论
+- 未发现简化、缩略或自编行为；未改动任何内容（本轮为纯复查）；
+- 16 个技能 frontmatter 全部一致；`tsc` 通过。
+
+### 下一项
+- R7（下一单数轮）候选：`html`（单页 HTML）；非重大移植可一轮移植多个。
+
+## 2026-09-17 R7（单数轮）：新增 html（单页 HTML 开发）
+
+### 目标
+- 单数轮新增 1 个高频、通用、可复用、与现有技能不重复的技能。本轮选择 `html`（Doubao 单页 HTML，文档型 + 参考脚本，非重大 app 代码移植）。
+
+### 变更
+- 完整复制 `doubao/skills/html/` 到 `rawfile/skills/html/`：
+  - `SKILL.md`（10141 字符，<1.2 万无需拆段）；
+  - `references/`：frontend-design / visual-techniques / 3d-design / chart-atlas / lark-apps-publish / windows-compat（6 个全文）；
+  - `scripts/`：embed.py / shot.py（参考代码，全文保留）；
+- frontmatter 原已是 `html`，未改名；仅在 SKILL.md 末尾加本项目适配说明（脚本不可执行、present_files/妙搭发布不可用、交付用 `write_file`、素材用 `download_file`、配图用 `write_svg`）；
+- `WorkSkillService.registry()` 登记 html（6 个 references + 2 个 scripts 全量登记）；
+- `test/pptx-harness/check-docs.py` 加入 html 的 SKILL.md + 6 个 reference 文档；
+- `SKILL_PORTING_REPORT.md` 更新为 7 个新技能并记录 R7。
+
+### 验证
+- references 与 scripts MD5 哈希与参考源完全一致（IDENTICAL）；
+- SKILL.md 正文（去掉适配说明，忽略结尾空行）与参考源逐字符一致（9857 = 9859，trim 后完全一致）；
+- frontmatter：17 个技能目录名与 `name` 全部一致；
+- 文档体量：html 全部 <1.2 万字符，代码围栏平衡（唯一告警仍为历史遗留 `ppt/SKILL.md`）；
+- `node check-setup.mjs && npx tsc -p check/tsconfig.json`：类型检查通过；
+- 未删除参考原文件；未覆盖既有技能内容；未改 `entry/build/` 副本。
+
+### 下一项
+- R8（下一双数轮）全面复查 html（确认无简化/无自编、与 write_file/download_file/write_svg 衔接正确）；后续单数轮候选：`paper-reviewer`、`skill-creator` 等。
+
+## 2026-09-17 R8（双数轮）：复查 html
+
+### 复查内容
+- **逐文件核对**：`html/references/*.md`（6 个）与 `html/scripts/*.py`（2 个）MD5 哈希与参考源完全一致（IDENTICAL）；
+- **SKILL.md 体量比对**：去除末尾适配说明（并忽略结尾空行）后，与 `doubao/skills/html/SKILL.md` 正文逐字符一致（9857 = 9859，trim 后完全一致）；
+- **适配说明核验**：适配说明提到的 `write_file` / `download_file` / `write_svg` 均为本项目真实存在的工具；`present_files`、妙搭发布、Python 脚本执行均如实标注为不可用，无幻觉工具名；
+- **引用路径核验**：SKILL.md 内 `references/*.md`、`scripts/*.py` 与注册表、实际文件一一对应，未断裂；
+- **登记核验**：`html` 全部 9 个文件均在 `WorkSkillService.registry()` 白名单内，全部 md 文件已纳入 `check-docs.py`。
+
+### 结论
+- 未发现简化、缩略或自编行为；未改动任何内容（本轮为纯复查）；
+- 17 个技能 frontmatter 全部一致；`tsc` 通过。
+
+### 下一项
+- R9（下一单数轮）候选：`paper-reviewer`、`skill-creator` 等；非重大移植可一轮移植多个。
+
+## 2026-09-17 R9（单数轮）：新增 paper-reviewer + review-agent
+
+### 目标
+- 非重大文档型移植，本轮新增 2 个技能（上限 5 个以内）。
+
+### 变更
+- **paper-reviewer**（workbuddy 学术审稿）：完整复制 `SKILL.md` + `references/review-criteria.md` + `references/review-template.md`；仅在 SKILL.md 末尾加适配说明（PDF 用 parse_document/pdf_to_images，arXiv 用 download_file/web_fetch，搜索用 search_web）；
+- **review-agent**（ChatGPT 代码评审）：完整复制 `SKILL.md` + `agents/openai.yaml`；仅在 SKILL.md 末尾加适配说明（无 git/终端，依赖用户提供 diff，用 read_file/search_files 读取）；
+- `WorkSkillService.registry()` 登记 2 个技能（全部文件登记）；
+- `test/pptx-harness/check-docs.py` 加入 paper-reviewer 3 个 md + review-agent SKILL.md；
+- `SKILL_PORTING_REPORT.md` 更新为 9 个新技能并记录 R9。
+
+### 验证
+- references/yaml 哈希与参考源完全一致（IDENTICAL）；
+- 两个 SKILL.md 正文（去掉适配说明，忽略结尾空行）与参考源逐字符一致（paper-reviewer 2912=2913、review-agent 2659=2660）；
+- frontmatter：19 个技能目录名与 `name` 全部一致；
+- 文档体量：新技能全部 <1.2 万字符，代码围栏平衡（唯一告警仍为历史遗留 `ppt/SKILL.md`）；
+- `node check-setup.mjs && npx tsc -p check/tsconfig.json`：类型检查通过；
+- 未删除参考原文件；未覆盖既有技能内容；未改 `entry/build/` 副本。
+
+### 用户反馈修正（同轮 cleanup）：清理不可用工具/平台
+- 用户指出原样复制保留太多不可用工具/平台，要求删除/改写不匹配项；
+- **html**：删除 lark-apps-publish/windows-compat/embed.py/shot.py；SKILL.md 移除云电脑判定、妙搭发布、present_files、截图脚本自检，改为 write_file 交付 + 人工自检；
+- **pdf**：重写 SKILL.md 为读取/搜索/扫描件阅读版；删除 original-prompt-2..4、advanced-libraries、forms-guide、generation-guide、security-guide、troubleshooting、extraction-guide（原内容以不可用脚本/库为主）；
+- **translation**：移除 python-docx/pip/脚本与悬空 references；双语 Word 改 write_docx；medical-2/3/4/5 改为人工校验/文档交付，medical-5 移除不存在的豆包相邻技能路由；
+- **review-agent**：正文 git merge-base/git diff 改为“用户提供 diff + read_file”；
+- **questionnaire/content-rewrite**：飞书云文档/表格/Block 全局替换为 Markdown/Word/Excel/文档结构；
+- **paper-reviewer**：WebSearch 已替换 search_web；
+- 注册表与 check-docs 同步移除被删除文件；全部剩余文件仍登记；frontmatter 19 个、check-docs、tsc 均通过。
+
+### 下一项
+- R10（下一双数轮）全面复查 paper-reviewer + review-agent，并复查本轮不可用工具清理是否有遗漏；后续单数轮候选：`skill-creator`（meta，较大需拆段）等。
+
+## 2026-09-17 R10（目标第 1 轮，单数轮）：新增 5 个高优先级技能
+
+### 目标
+- 按“先移植高优先级，分 2-3 轮完成”目标第 1 轮，非重大文档型移植 5 个技能：paper-rebuttal / research-lineage-map / marketing-plan / reference-audit / paper-close-reading。
+
+### 变更
+- **paper-rebuttal**（workbuddy 学术审稿回复）：完整复制 SKILL.md + 3 个 references；末尾加适配说明（parse_document/read_file 读取、edit/write_file 修改、write_docx 交付）；
+- **research-lineage-map**（workbuddy 研究谱系演进图）：完整复制 SKILL.md + 2 个 references；删除不可用 `scripts/validate_mermaid.py`，第 6 步校验改为人工核对 Mermaid、交付用 write_file；WebSearch/WebFetch→search_web/web_fetch，present_files→write_file；
+- **marketing-plan**（doubao 营销策划方案）：完整复制 SKILL.md + 4 个 references；飞书/Lark Doc 交付改写为 write_file（Markdown）/write_docx（Word）；output-format.md 中 `<grid>/<column>` 飞书分栏改为表格/分栏并排说明；
+- **reference-audit**（doubao 参考文献审计）：完整复制 SKILL.md + assets/report-template.md；删除不可用 `scripts/lookup_metadata.py`，工具段改写为 search_web/web_fetch 核验 Crossref/PubMed/arXiv/DOI；飞书交付改为文件交付；
+- **paper-close-reading**（doubao 论文精读）：完整复制 SKILL.md + assets/report-template.md；飞书交付改为 write_file/write_docx；“不适用”段豆包相邻技能改为本项目技能映射（research/reference-audit/paper/llm-eval/paper-reviewer）；
+- 顺带清理：content-rewrite 参考资料残留的飞书 `<grid>/<column>`/Block 描述改为 Markdown/Word 排版规则；
+- `WorkSkillService.registry()` 登记 5 个技能（全部文件登记），技能总数 19 → 24；
+- `test/pptx-harness/check-docs.py` 加入 5 个技能全部 md；
+- README.md / README_EN.md 技能系统、项目树、工具表、维护地图与 6.2.0 底部条目同步为 24 个技能（10 核心 + 14 移植）；
+- SKILL_PORTING_REPORT.md 更新为 14 个新技能并记录本轮的 10h 段。
+
+### 验证
+- 新增文件全部为原提示词全文复制（仅删不可用脚本、改交付/检索工具描述，无简化）；各文件字符数 <1.2 万，无需拆段；
+- frontmatter：24 个技能目录名与 `name` 全部一致；
+- registry vs disk：24 个技能全部登记，无缺失、无未登记文件；
+- `python test/pptx-harness/check-docs.py`：通过；
+- `node check-setup.mjs && npx -y -p typescript@5.5.4 tsc -p check/tsconfig.json`：通过；
+- 未删除参考原文件；未覆盖既有技能内容；未改 `entry/build/` 副本。
+
+### 下一项
+- R11（下一单数轮）继续移植其余高优先级候选：khazix-writer / doubao-newmedia-writing / doubao-marketing-material-review / doubao-patent-drafting / doubao-journal-format / doubao-research-proposal / doubao-industry-analysis / doubao-sentiment-tracker 等（注意大文件拆段）。
+
+## 2026-09-17 R11（目标第 2 轮，单数轮）：新增 khazix-writer + newmedia-writing + marketing-material-review + patent-drafting + sentiment-tracker
+
+### 目标
+- 按“先移植高优先级，分 2-3 轮完成”目标第 2 轮，非重大文档型移植 5 个技能。
+
+### 变更
+- **khazix-writer**（workbuddy 公众号长文写作）：完整复制 SKILL.md + references/content_methodology.md + references/style_examples.md；SKILL.md 原长 11914 字符接近 1.2 万上限，适配说明追加到 references/content_methodology.md 末尾，避免 SKILL.md 超长；交付用 write_file/write_docx，搜索用 search_web/web_fetch。
+- **newmedia-writing**（doubao 新媒体写作）：完整复制 SKILL.md + 23 个 references；`references/genre-guide/lark-doc.writing-guide.md` 由 lark-cli 命令改写为 Markdown/Word 文档创建/写入/校验规则；`references/xhs.samples/xhs-note-proposal.samples.image-design-methods.md`（16324 字符）拆为 `image-design-methods.md`（上）+ `image-design-methods-2.md`（下），上篇末尾给出续读指引；SKILL.md 路由/自检与其余 guides/samples 全文保留。
+- **marketing-material-review**（doubao 营销素材审核）：完整复制 SKILL.md；飞书报告交付改为 write_file/write_docx；法规检索改为 search_web/web_fetch。
+- **patent-drafting**（doubao 专利申请文件撰写）：完整复制 SKILL.md + README.md + references/writing-style.md + sub-skills/{claims,intake-audit,specification}/SKILL.md；`scripts/patent_build.py` 本环境不可用已删除，“交付合同”改为「9 项人工自检清单（C1/C2/C3/C5/C7/C13/C14/格式一致性/事实分级）+ load_skill("docx") + write_docx 生成 Word」；降级路径改为 write_docx 失败时交付 draft.md + 手工自检；子 skill 中对脚本/C14 的引用同步改写。
+- **sentiment-tracker**（doubao 舆情追踪）：完整复制 SKILL.md + references/{evaluation-set,twitter-guide,weibo-guide}.md + agents/openai.yaml；浏览器自动化（interaction.request_action/browserControl/gui-browser-task-skill/browser-task）改为 search_web/web_fetch + 用户提供原帖链接/截图；“豆包文档”交付改为 write_file/write_docx；“网页端/手机端”触发限制改为“公开可读页面/登录墙”限制。
+- `WorkSkillService.registry()` 登记 5 个技能（khazix 2 + newmedia 23 + marketing 0 + patent 5 + sentiment 4 个 reference 文件），技能总数 24 → 29。
+- `test/pptx-harness/check-docs.py` 加入 5 个技能全部 md。
+- README.md / README_EN.md 技能系统、目录树、工具表、维护地图与 6.2.0 底部条目同步为 29 个技能（10 核心 + 19 移植）。
+- SKILL_PORTING_REPORT.md 更新为 19 个新技能并记录本轮的 10i 段。
+
+### 验证
+- 新增文件保持原文提示词全文复制（仅删不可用脚本/平台、改交付/检索工具描述，无简化）；
+- 各文件字符数 <1.2 万（唯一超长仍为历史遗留 `ppt/SKILL.md` 13026 字符）；`image-design-methods.md` 已拆分为上下篇；
+- frontmatter：29 个技能目录名与 `name` 全部一致；
+- registry vs disk：29 个技能全部登记，无缺失、无未登记文件；
+- `python test/pptx-harness/check-docs.py`：通过；
+- `node check-setup.mjs && npx -y -p typescript@5.5.4 tsc -p check/tsconfig.json`：通过；
+- 未删除参考源文件；未覆盖已有技能内容；未改 `entry/build/` 副本。
+
+### 下一项
+- R12（双数轮）全面复查本轮 5 个技能（重点核对 newmedia-writing 的 lark-doc.writing-guide.md 改写是否完整、patent-drafting 的脚本引用是否清干净、sentiment-tracker 的平台限制改写是否一致），并复查上一轮 5 个技能；
+- R13（下一单数轮）移植剩余高优先级候选：doubao-journal-format / doubao-research-proposal / doubao-industry-analysis；其中 doubao-journal-format 体量最大，需拆分多个 >1.2 万字符文件并删除大量 py 脚本；doubao-research-proposal 的 assets/templates/*.doc/.docx 为二进制模板，需决定排除或改写。
+
+## 2026-09-17 R13（目标第 3 轮，单数轮）：新增 journal-format + research-proposal + industry-analysis
+
+### 目标
+- 按“先移植高优先级，分 2-3 轮完成”目标第 3 轮（收尾），非重大文档型移植 3 个技能，完成全部 13 个高优先级候选。
+
+### 变更
+- **journal-format**（doubao 学术论文 DOCX 格式排版）：完整复制全部 .md；SKILL.md（11683 字符）与 6 个 references 均超 1.2 万字符上限，用 `test/pptx-harness/_split_jf.py` 拆分为 `SKILL.md`+`SKILL-2..5.md` 与 `references/*（含 -2/-3 片段）`，全部 <1.2 万字符；未复制 `scripts/*.py`、`render_docx.py`、`fallback_ooxml_spec.json`；`SKILL-5.md` 的 Command 整节改写为「本项目 `docx` 技能 + 人工自检执行说明」；references 中 soffice/PyMuPDF/pdfplumber/pdftotext/mutool/脚本命令统一改写为非可执行说明并加适配批注；拆分片段尾部统一加续读指引。
+- **research-proposal**（doubao 学术立项书/基金申请）：完整复制 SKILL.md + 7 个 references；二进制 `assets/templates/*.doc/.docx` 未移植，模板章节与 `academic-grant-guide.md` 改写为“官方最新模板/用户模板优先 + 结构要点表 + `【待补充：官方模板字段】` 占位”；飞书/lark-cli 交付改为 `write_file`/`write_docx`；相邻豆包技能（academic-researcher/polish/evaluator）改为本项目 research/paper/humanizer/paper-reviewer 映射；`literature-review-guide.md` 的 doubao-academic-researcher/scholar_search 改为本项目 research 技能 + search_web/web_fetch。
+- **industry-analysis**（doubao 行业深度研究）：完整复制 SKILL.md + 8 个 references + agents/openai.yaml；未复制 `scripts/{assemble_report,renumber_references,validate_report,upload_report,report_pipeline_common}.py`；`references/lark-doc-report-standard.md`（174 行）全文改写为 Markdown 拼接与文件交付标准（人工合并/整篇人工校验替代原脚本与 lark-cli）；OrganizerAgent/subagent 统筹改为同一执行者（可按需 `subagent` 并行取证）+ `write_file`/`write_docx` 交付；`general_search`/`seed_finance_search` 映射 `search_web`/`web_fetch` 定向检索；`agents/openai.yaml` 去飞书字样；report-finalization/data-grading/insight-spine/task-router 中零散飞书/脚本残留同步改写。
+- `WorkSkillService.registry()` 登记 3 个技能（journal-format 21 + research-proposal 7 + industry-analysis 9 个 reference 文件），技能总数 29 → 32。
+- `test/pptx-harness/check-docs.py` 加入 3 个技能全部 md（含拆分片段）。
+- README.md / README_EN.md 技能系统、目录树、工具表、维护地图与 6.2.0 底部条目同步为 32 个技能（10 核心 + 22 移植）。
+- SKILL_PORTING_REPORT.md 更新为 22 个新技能并记录本轮的 10j 段。
+- 清理：`test/pptx-harness/_split_jf.py`、`_cleanup_jf.py` 为临时工具，后续删除。
+
+### 验证
+- 新增文件保持原文提示词全文复制（仅删不可用脚本/平台、改交付/检索工具描述、拆分超大文件，无简化）；
+- 各文件字符数 <1.2 万（唯一超长仍为历史遗留 `ppt/SKILL.md` 13026 字符）；journal-format 拆分后全部片段 <1.2 万；
+- frontmatter：32 个技能目录名与 `name` 全部一致；
+- registry vs disk：32 个技能全部登记，无缺失、无未登记文件；
+- `python test/pptx-harness/check-docs.py`：通过（仅历史遗留 ppt/SKILL.md TOO LONG，且 fences 平衡）；
+- `node check-setup.mjs && npx -y -p typescript@5.5.4 tsc -p check/tsconfig.json`：通过；
+- 未删除参考源文件；未覆盖已有技能内容；未改 `entry/build/` 副本。
+
+### 下一项
+- R14（双数轮）全面复查本轮 3 个技能（重点核对 journal-format 拆分链与脚本改写是否一致、research-proposal 模板占位是否合理、industry-analysis 的 lark-doc-report-standard.md 改写是否完整），并复查 R11 的 5 个技能；
+- 全部 13 个高优先级候选已移植完毕，后续偶数轮进入系统性复查/迭代阶段。
+
+## 2026-09-17 R14（双数轮）：22 个移植技能结合本应用工具的定制化适配
+
+### 目标
+- 结合本应用真实工具（docx / xlsx / ppt / svg / data 核心技能 + read/write/edit 系列 + pdf/search_pdf/pdf_to_images + search_web/web_fetch + write_file + subagent），对全部 22 个移植技能做定制化适配，把「泛泛的写文件/上传文档」改写为可执行的「`load_skill(核心技能)` + 具体工具调用」指令。
+
+### 变更（按批次）
+- **批次 A（Office/方案类）**：
+  - `research-proposal`：Word 正式提案用 `load_skill("docx")` + `write_docx`；事实台账/参考文献清单可另交付 `load_skill("xlsx")` + `write_xlsx`。
+  - `industry-analysis`：数据台账与关键对比表用 `load_skill("xlsx")` + `write_xlsx`/`edit_xlsx`；报告 Markdown 或 `load_skill("docx")` + `write_docx`；可选执行摘要 `load_skill("ppt")` + `write_pptx`。
+  - `patent-drafting`：保持 docx 深度绑定；用户要求权利要求对照表时用 `load_skill("xlsx")` + `write_xlsx`（不暴露内部编码）。
+  - `marketing-plan`：Word 用 `load_skill("docx")` + `write_docx`；预算/排期/效果预估表用 `load_skill("xlsx")` + `write_xlsx`；配图用 `write_svg`。
+  - `newmedia-writing`：Word 用 `load_skill("docx")` + `write_docx`；分镜脚本表/内容日历用 `load_skill("xlsx")` + `write_xlsx`；封面/配图用 `write_svg`。
+  - `khazix-writer`：交付说明写入 `references/content_methodology.md`（长文 `write_file` / Word `load_skill("docx")` + `write_docx`；配图位 `write_svg`）。
+- **批次 B（学术/审计类）**：
+  - `questionnaire`：加深 M3/M4——标签体系+全量标注、清洗后数据+统计表用 `load_skill("xlsx")` + `write_xlsx`，M4 用 `transform_file`/`edit_xlsx` 清洗。
+  - `sentiment-tracker`：报告 `write_file` 或 `load_skill("docx")` + `write_docx`；舆情台账用 `load_skill("xlsx")` + `write_xlsx`（链接保持可点击）。
+  - `reference-audit`：Word 审查书用 `load_skill("docx")` + `write_docx`；待核验条目/核验结果台账用 `load_skill("xlsx")` + `write_xlsx`。
+  - `paper-rebuttal`：rebuttal 主交付 docx/Markdown；意见清单表/修改日志用 `load_skill("xlsx")` + `write_xlsx`；DOCX 论文修改用 `read_docx`/`edit_docx`。
+  - `paper-reviewer`：review 输出 docx/Markdown；修改清单用 `load_skill("xlsx")` + `write_xlsx`。
+  - `paper-close-reading`：Word 报告用 `load_skill("docx")` + `write_docx`；关键图表/数字核对表可选 `load_skill("xlsx")` + `write_xlsx`。
+- **批次 C（写作/通用类）**：
+  - `translation`：术语表用 `load_skill("xlsx")` + `write_xlsx`（保留 docx 双语交付）。
+  - `humanizer`：改写稿 Word 用 `load_skill("docx")` + `write_docx`；前后对照表可选 `load_skill("xlsx")` + `write_xlsx`。
+  - `prompt-engineering`：Prompt 清单/评估用例表用 `load_skill("xlsx")` + `write_xlsx`。
+  - `content-rewrite`：Word 分发包 `load_skill("docx")` + `write_docx`；平台分发对照表/发布检查表用 `load_skill("xlsx")` + `write_xlsx`。
+  - `marketing-material-review`：审核报告 docx/Markdown；逐条审核表用 `load_skill("xlsx")` + `write_xlsx`。
+  - `research-lineage-map`：节点明细表用 `load_skill("xlsx")` + `write_xlsx`；可选 SVG 版演进图用 `write_svg`。
+  - `html`/`pdf`/`journal-format`：移植期已深度接入，无需大改。
+- 新增 `ADAPTATION_PLAN.md` 记录 22 个技能的定制适配计划与状态（含已完成标记）。
+
+### 验证
+- 全文保持原文提示词体量不简化；适配均以「适配说明/定制段落」追加，未删原文规则；
+- `python test/pptx-harness/check-docs.py`：通过（仅历史遗留 ppt/SKILL.md TOO LONG，fences 平衡）；
+- frontmatter：32/32 目录名与 `name` 一致；
+- registry vs disk：无缺失、无未登记文件；
+- `node check-setup.mjs && npx -y -p typescript@5.5.4 tsc -p check/tsconfig.json`：通过；
+- README/README_EN 计数不变（仍 32 个 / 22 个移植），无需改动。
+
+### 下一项
+- 继续维护：若有新增候选技能移植，按奇数轮进行；偶数轮继续复查/迭代已适配技能与文档同步。

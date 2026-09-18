@@ -33,6 +33,7 @@ import { PluginToolExecutor, PluginToolResult } from './gen/PluginToolExecutor.t
 import { LoopError } from './gen/LoopError.ts';
 import { ToolCallRecord } from './gen/ToolCallRecord.ts';
 import { AbortSignal } from './gen/Types.ts';
+import { SubagentIsolation } from './gen/SubagentIsolation.ts';
 
 let passed = 0;
 let failed = 0;
@@ -369,6 +370,11 @@ console.log('[ToolRegistry]');
   check('readOnly 分类', ToolRegistry.isReadOnly('read_file') === true);
   check('mutating 分类', ToolRegistry.isMutating('write_file') === true);
   check('普通工具非只读', ToolRegistry.isReadOnly('admin_tool') === false);
+  check('parallelSafe 默认 false', ToolRegistry.isParallelSafe('admin_tool') === false);
+  ToolRegistry.setParallelSafe('admin_tool', true);
+  check('setParallelSafe 可标记', ToolRegistry.isParallelSafe('admin_tool') === true);
+  ToolRegistry.setParallelSafe('admin_tool', false);
+  check('setParallelSafe 可关闭', ToolRegistry.isParallelSafe('admin_tool') === false);
   check('names 排除子代理工具', ToolRegistry.names(['admin_tool']).join(',') === 'read_file,write_file');
   check('defCount 统计', ToolRegistry.defCount() === 3);
   check('listTools 排除', ToolRegistry.listTools(['admin_tool']).length === 2 &&
@@ -411,6 +417,79 @@ console.log('[ToolRegistry]');
   ToolRegistry.unregisterSkill('ppt');
   check('技能注销后不可见', ToolRegistry.findSkill('ppt') === null);
   ToolRegistry.clear();
+}
+
+// ===== SubagentIsolation =====
+console.log('[SubagentIsolation]');
+{
+  const out = 'subagents/sa_1';
+  const parse = (s) => JSON.parse(s);
+
+  check('裸路径写入重定向到 output_dir',
+    SubagentIsolation.redirectPath('same_name.txt', out) === 'subagents/sa_1/same_name.txt');
+  check('已带 output_dir 前缀不再重复',
+    SubagentIsolation.redirectPath('subagents/sa_1/a.txt', out) === 'subagents/sa_1/a.txt');
+  check('绝对路径去除前导斜杠后仍重定向',
+    SubagentIsolation.redirectPath('/abs.txt', out) === 'subagents/sa_1/abs.txt');
+  check('跨目录 ../ 仍保留供 resolveSafe 拒绝',
+    SubagentIsolation.redirectPath('../escape.txt', out) === 'subagents/sa_1/../escape.txt');
+
+  const w1 = parse(SubagentIsolation.isolatedArgsJson('write_file',
+    JSON.stringify({ path: 'main_marker.txt', content: 'x' }), out));
+  check('write_file 不覆盖主文件', w1.path === 'subagents/sa_1/main_marker.txt');
+
+  const del = parse(SubagentIsolation.isolatedArgsJson('delete_file',
+    JSON.stringify({ path: 'main_delete_probe.txt' }), out));
+  check('delete_file 只删自己目录内副本', del.path === 'subagents/sa_1/main_delete_probe.txt');
+
+  const mv = parse(SubagentIsolation.isolatedArgsJson('move_file',
+    JSON.stringify({ from: 'main.txt', to: 'moved.txt' }), out));
+  check('move_file 源与目标都重定向', mv.from === 'subagents/sa_1/main.txt' && mv.to === 'subagents/sa_1/moved.txt');
+
+  const tf = parse(SubagentIsolation.isolatedArgsJson('transform_file',
+    JSON.stringify({ input: 'main_data.csv', output: 'out.csv' }), out));
+  check('transform_file 输入读主文件、输出重定向',
+    tf.input === 'main_data.csv' && tf.output === 'subagents/sa_1/out.csv');
+
+  const docx = parse(SubagentIsolation.isolatedArgsJson('write_docx',
+    JSON.stringify({ path: 'report.docx', doc_file: 'main_doc.json' }), out));
+  check('write_docx 目标重定向、doc_file 输入保留',
+    docx.path === 'subagents/sa_1/report.docx' && docx.doc_file === 'main_doc.json');
+
+  const dl = parse(SubagentIsolation.isolatedArgsJson('download_file',
+    JSON.stringify({ url: 'https://x/a.png' }), out));
+  check('download_file 省略 path 时落入 output_dir', dl.path === 'subagents/sa_1/download');
+
+  const runJs = parse(SubagentIsolation.isolatedArgsJson('run_js',
+    JSON.stringify({ code: 'write("out.csv", "x")' }), out));
+  check('run_js 注入 _output_dir', runJs._output_dir === 'subagents/sa_1');
+
+  const read = SubagentIsolation.isolatedArgsJson('read_file',
+    JSON.stringify({ path: 'main_data.csv' }), out);
+  check('read_file 不重定向(可读主工作区)', read === JSON.stringify({ path: 'main_data.csv' }));
+
+  const view = parse(SubagentIsolation.isolatedArgsJson('str_replace_editor',
+    JSON.stringify({ command: 'view', path: 'main.txt' }), out));
+  check('str_replace_editor view 不重定向', view.path === 'main.txt');
+  const create = parse(SubagentIsolation.isolatedArgsJson('str_replace_editor',
+    JSON.stringify({ command: 'create', path: 'new.txt' }), out));
+  check('str_replace_editor create 重定向', create.path === 'subagents/sa_1/new.txt');
+
+  check('delete_file 清空工作区被拦截',
+    SubagentIsolation.isolationBlockReason('delete_file', JSON.stringify({ path: '' }), out) !== '');
+  check('delete_file 删自己目录内不拦截',
+    SubagentIsolation.isolationBlockReason('delete_file', JSON.stringify({ path: 'subagents/sa_1/x.txt' }), out) === '');
+  check('delete_file 越界(主文件)被拦截',
+    SubagentIsolation.isolationBlockReason('delete_file', JSON.stringify({ path: 'main/protected.txt' }), out) !== '');
+  check('move_file 源为主文件被拦截',
+    SubagentIsolation.isolationBlockReason('move_file', JSON.stringify({ from: 'main.txt', to: 'x.txt' }), out) !== '');
+  check('move_file 源在目录内放行',
+    SubagentIsolation.isolationBlockReason('move_file', JSON.stringify({ from: 'subagents/sa_1/a.txt', to: 'b.txt' }), out) === '');
+  const notice = SubagentIsolation.redirectNotice('write_file', JSON.stringify({ path: 'main/evil.txt' }), out);
+  check('写入越界返回重定向提示',
+    notice !== '' && notice.indexOf('main/evil.txt') >= 0 && notice.indexOf(out) >= 0);
+  check('目录内写入无提示',
+    SubagentIsolation.redirectNotice('write_file', JSON.stringify({ path: 'subagents/sa_1/ok.txt' }), out) === '');
 }
 
 // ===== PromptBuilder =====

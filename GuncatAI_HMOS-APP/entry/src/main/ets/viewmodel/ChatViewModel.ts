@@ -269,6 +269,8 @@ export class ChatViewModel {
     this.persistConversations();
     // 效率模式默认关闭深度思考、专家模式默认开启：新建对话时按当前智能体重置开关
     await this.applyAgentThinkingDefault();
+    // 立即刷新侧栏/抽屉的会话列表投影, 新建的会话马上可见
+    this.notifyUIChange();
   }
 
   private async cleanupEmptyConversation(): Promise<void> {
@@ -302,6 +304,8 @@ export class ChatViewModel {
       }
     }
     this.persistConversations();
+    // 立即通知 UI 重建侧栏/抽屉的会话列表投影, 删除后马上从列表消失
+    this.notifyUIChange();
   }
 
   // 抽屉

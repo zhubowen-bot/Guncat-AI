@@ -127,13 +127,15 @@ export class JsCodeService {
     }
 
     // 落盘: 只写执行成功时声明的输出(路径一律经 resolveSafe 校验在工作区内)
+    // 可选 outputDir(子代理写隔离注入): 输出自动落入该子目录, 脚本声明的路径自动加前缀
+    let outputDir: string = JsCodeService.strArg(args, '_output_dir', '');
     let written: string[] = [];
     let failedWrites: string[] = [];
     let outputNames: string[] = Object.keys(result.outputs);
     for (let i: number = 0; i < outputNames.length; i++) {
       let name: string = outputNames[i];
       let content: string = result.outputs[name];
-      let problem: string = JsCodeService.writeOutput(root, name, content);
+      let problem: string = JsCodeService.writeOutput(root, outputDir, name, content);
       if (problem === '') {
         written.push(name + ' (' + WorkFileService.formatSize(content.length) + ')');
       } else {
@@ -300,8 +302,24 @@ export class JsCodeService {
   // ===== 输出落盘 =====
 
   // 返回空串表示写入成功, 否则为失败原因
-  private static writeOutput(root: string, name: string, content: string): string {
-    let abs: string | null = WorkFileService.resolveSafe(root, name);
+  // outputDir 非空时(子代理写隔离), 脚本声明的输出路径自动落入该子目录
+  private static writeOutput(root: string, outputDir: string, name: string, content: string): string {
+    let rel: string = name;
+    if (outputDir !== '') {
+      let p: string = name.trim().replace(/\\/g, '/');
+      while (p.startsWith('./')) {
+        p = p.substring(2);
+      }
+      while (p.startsWith('/')) {
+        p = p.substring(1);
+      }
+      p = p.replace(/\/+/g, '/');
+      if (p !== '' && p !== '.' && p !== outputDir && !p.startsWith(outputDir + '/')) {
+        p = outputDir + '/' + p;
+      }
+      rel = p;
+    }
+    let abs: string | null = WorkFileService.resolveSafe(root, rel);
     if (abs === null) {
       return '非法路径(只能是工作区内相对路径)';
     }

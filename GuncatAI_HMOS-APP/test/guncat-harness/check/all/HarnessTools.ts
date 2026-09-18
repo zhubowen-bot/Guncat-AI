@@ -19,6 +19,7 @@ import { SessionLogService } from './SessionLogService.ts';
 import { JsCodeService } from './JsCodeService.ts';
 import { ToolExecResult, WorkFileService } from './WorkFileService.ts';
 import { Constants } from './Constants.ts';
+import { AbortSignal } from './Types.ts';
 
 // ===== 设备侧 FsAdapter(fileIo 实现) =====
 
@@ -95,7 +96,8 @@ export class HarnessTools {
   // ===== 分发(由 WorkFileService.dispatchTool 兜底转发) =====
 
   static async dispatch(context: common.UIAbilityContext, convId: string,
-    name: string, args: Record<string, Object>, root: string): Promise<ToolExecResult> {
+    name: string, args: Record<string, Object>, root: string,
+    abortSignal?: AbortSignal | null): Promise<ToolExecResult> {
     if (name === 'glob') {
       return HarnessTools.toolGlob(root, args);
     }
@@ -158,16 +160,19 @@ export class HarnessTools {
     }
     if (name === 'subagent') {
       let hook: ((ctx: common.UIAbilityContext, cid: string, desc: string,
-        prompt: string) => Promise<ToolExecResult>) | null = WorkFileService.subagentHook;
+        prompt: string, outputDir?: string,
+        abortSignal?: AbortSignal | null) => Promise<ToolExecResult>) | null =
+        WorkFileService.subagentHook;
       if (hook === null) {
         return HarnessTools.fail('子代理服务尚未初始化');
       }
       let description: string = HarnessTools.strArg(args, 'description', '');
       let prompt: string = HarnessTools.strArg(args, 'prompt', '');
+      let outputDir: string = HarnessTools.strArg(args, 'output_dir', '');
       if (description.trim() === '' || prompt.trim() === '') {
         return HarnessTools.fail('缺少参数 description / prompt');
       }
-      return await hook(context, convId, description, prompt);
+      return await hook(context, convId, description, prompt, outputDir, abortSignal);
     }
     if (name === 'session_search') {
       return HarnessTools.toolSessionSearch(context, convId, args);
@@ -620,10 +625,11 @@ export class HarnessTools {
         'bump_round', HarnessTools.strProp('可选: true 时轮次+1')),
       []));
     defs.push(HarnessTools.makeTool('subagent',
-      '派生一个子代理独立完成子任务(共享同一工作区, 独立上下文, 最多 40 步)。适合把可并行的独立调研/批量产出/大块检索外包出去, 主任务保持轻上下文。description 一句话概括子任务; prompt 是给子代理的完整执行指令(自包含, 含验收标准)。返回子代理的最终报告; 其产出文件通过工作区路径交接。不要在子代理指令里要求向用户提问(没有交互通道)。',
-      HarnessTools.props2(
+      '派生一个子代理独立完成子任务(共享同一工作区, 独立上下文, 最多 40 步)。适合把可并行的独立调研/批量产出/大块检索外包出去, 主任务保持轻上下文。description 一句话概括子任务; prompt 是给子代理的完整执行指令(自包含, 含验收标准); output_dir 可选——指定产出目录(工作区相对路径), 不传则自动分配独立子目录(默认 subagents/<n>/)以隔离并行子代理的产出, 避免互相覆盖。子代理仍可读取/搜索主工作区全部文件, 但所有写入/新建/移动/删除都会被自动限制到其产出目录内。返回子代理的最终报告; 其产出文件通过工作区路径交接。不要在子代理指令里要求向用户提问(没有交互通道)。',
+      HarnessTools.props3(
         'description', HarnessTools.strProp('子任务一句话概括(展示用)'),
-        'prompt', HarnessTools.strProp('子代理的完整执行指令(自包含)')),
+        'prompt', HarnessTools.strProp('子代理的完整执行指令(自包含)'),
+        'output_dir', HarnessTools.strProp('可选: 产出目录(工作区相对路径, 默认自动分配 subagents/<n>/, 并行隔离用)')),
       ['description', 'prompt']));
     defs.push(HarnessTools.makeTool('session_search',
       '在当前会话的事件日志(JSONL, 含历史用户消息/思考摘要/工具调用与结果)中检索, 返回命中事件行。用于找回早期轮次的关键信息(上下文压缩后历史细节可能已丢), 或核对"之前到底执行过什么"。按子串匹配, 最多返回 40 行。',

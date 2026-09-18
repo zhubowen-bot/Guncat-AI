@@ -1,5 +1,9 @@
-// 统一使用 Preferences 存储(对齐 web 版本 localStorage 的 KV 行为)
+// 配置类小数据仍用 Preferences; 对话历史改为文件存储(<filesDir>/guncat_conversations.json),
+// 不再受 Preferences 单值 16MB 上限约束, 历史多了也不会写失败或被迫丢会话。
 import { preferences } from '@kit.ArkData';
+import { fileIo } from '@kit.CoreFileKit';
+import { util } from '@kit.ArkTS';
+import { common } from '@kit.AbilityKit';
 import { Conversation } from '../model/Conversation';
 import { Message } from '../model/Message';
 import { Attachment } from '../model/Attachment';
@@ -18,38 +22,166 @@ async function getPreferences(context: Context): Promise<preferences.Preferences
 }
 
 export class StorageManager {
+  private static readonly CONVERSATIONS_FILE: string = 'guncat_conversations.json';
+
+  // ===== 对话历史: 文件存储(无 Preferences 体积上限) =====
+
+  private static conversationsFilePath(context: Context): string {
+    return (context as common.UIAbilityContext).filesDir + '/' + StorageManager.CONVERSATIONS_FILE;
+  }
+
   static async saveConversations(context: Context, convs: Conversation[]): Promise<void> {
     try {
-      // 必须先检查附件图片字节量再序列化: 一旦 stringify 出 16MB+ 的大字符串,
-      // Preferences 写入抛 401 且大字符串反复分配会直接撑爆共享堆(OOM 不可捕获)
+      // 附件图片字节超阈值时, 仍先剥离 dataUrl/thumbnail(保留文件名与解析文本)
       let arr: Object[] = [];
       for (let i: number = 0; i < convs.length; i++) {
         arr.push(convs[i].toJson());
       }
       if (StorageManager.hasHeavyAttachments(convs)) {
-        // 图片字节超阈值: 剥离附件 dataUrl/thumbnail 后持久化(保留文件名与解析文本)
         arr = StorageManager.sanitizeConversations(arr);
       }
-      // 工作模式长任务的 reasoning 会无限增长, 落盘前只保留末尾, 封顶序列化体积
+      // 工作模式长任务的 reasoning 会无限增长, 落盘前只保留末尾(原有行为, 不丢会话)
       StorageManager.capReasoning(arr);
       let jsonStr: string = JSON.stringify(arr);
-      // 总体积仍超限(码元数按 1/2 折算近似 UTF-8 字节): 丢弃最旧的会话重试
-      // (toJson/sanitize 产物均为全新对象, 此处 shift 不会影响内存中的会话数据)
-      let maxUnits: number = Constants.LS_CONVERSATIONS_SAFE_BYTES / 2;
-      let guard: number = 0;
-      while (jsonStr.length > maxUnits && arr.length > 1 && guard < 64) {
-        arr.shift();
-        jsonStr = JSON.stringify(arr);
-        guard++;
-      }
-      let prefs: preferences.Preferences = await getPreferences(context);
-      await prefs.put(Constants.LS_KEY_CONVERSATIONS, jsonStr);
-      await prefs.flush();
+      StorageManager.writeConversationsFile(context, jsonStr);
     } catch (error) {
-      // 保存失败(如仍超限)不抛出, 避免反复重试放大内存压力
+      // 保存失败不抛出, 避免反复重试放大内存压力
       console.error('saveConversations failed: ' + JSON.stringify(error));
     }
   }
+
+  static async loadConversations(context: Context): Promise<Conversation[]> {
+    try {
+      // 新存储优先读文件
+      let jsonStr: string = StorageManager.readConversationsFile(context);
+      if (jsonStr === '') {
+        // 首次升级到文件存储: 从 Preferences 迁移旧对话数据
+        let legacy: string = await StorageManager.readLegacyConversations(context);
+        if (legacy !== '') {
+          try {
+            let parsed: Object = JSON.parse(legacy);
+            if (parsed instanceof Array) {
+              StorageManager.writeConversationsFile(context, legacy);
+              await StorageManager.clearLegacyConversations(context);
+              jsonStr = legacy;
+            }
+          } catch (e) {
+            // 旧数据非法则忽略, 按空历史处理
+          }
+        }
+      }
+      return StorageManager.parseConversations(jsonStr);
+    } catch (error) {
+      // 读取失败(如文件损坏)不阻塞启动, 按无历史处理
+      console.error('loadConversations failed: ' + JSON.stringify(error));
+      return [];
+    }
+  }
+
+  private static parseConversations(jsonStr: string): Conversation[] {
+    if (jsonStr === '') {
+      return [];
+    }
+    let parsed: Object = JSON.parse(jsonStr);
+    if (!(parsed instanceof Array)) {
+      return [];
+    }
+    let rawArr: Object[] = parsed as Object[];
+    let result: Conversation[] = [];
+    for (let i: number = 0; i < rawArr.length; i++) {
+      result.push(Conversation.fromJson(rawArr[i] as Record<string, Object>));
+    }
+    return result;
+  }
+
+  private static async readLegacyConversations(context: Context): Promise<string> {
+    try {
+      let prefs: preferences.Preferences = await getPreferences(context);
+      return (await prefs.get(Constants.LS_KEY_CONVERSATIONS, '')) as string;
+    } catch (e) {
+      return '';
+    }
+  }
+
+  private static async clearLegacyConversations(context: Context): Promise<void> {
+    try {
+      let prefs: preferences.Preferences = await getPreferences(context);
+      await prefs.delete(Constants.LS_KEY_CONVERSATIONS);
+      await prefs.flush();
+    } catch (e) {
+      // 清理失败不影响使用, 旧 key 会作为无用的历史残留
+    }
+  }
+
+  // 原子写文件: 先写临时文件再 rename, 失败时回退直接截断写
+  private static writeConversationsFile(context: Context, jsonStr: string): void {
+    let abs: string = StorageManager.conversationsFilePath(context);
+    let encoder: util.TextEncoder = new util.TextEncoder();
+    let bytes: Uint8Array = encoder.encode(jsonStr);
+    let buffer: ArrayBuffer = bytes.buffer as ArrayBuffer;
+    if (bytes.byteOffset !== 0 || bytes.byteLength !== buffer.byteLength) {
+      buffer = bytes.slice().buffer as ArrayBuffer;
+    }
+    let tmpPath: string = abs + '.tmp';
+    let renamed: boolean = false;
+    try {
+      let tmp: fileIo.File = fileIo.openSync(tmpPath,
+        fileIo.OpenMode.READ_WRITE | fileIo.OpenMode.CREATE | fileIo.OpenMode.TRUNC);
+      try {
+        fileIo.writeSync(tmp.fd, buffer);
+      } finally {
+        fileIo.closeSync(tmp.fd);
+      }
+      try {
+        fileIo.renameSync(tmpPath, abs);
+      } catch (e) {
+        // 部分系统版本 rename 不覆盖已存在目标: 先删旧文件再改名
+        if (fileIo.accessSync(abs)) {
+          fileIo.unlinkSync(abs);
+        }
+        fileIo.renameSync(tmpPath, abs);
+      }
+      renamed = true;
+    } catch (e) {
+      try {
+        fileIo.unlinkSync(tmpPath);
+      } catch (e2) {
+        // 临时文件可能尚未创建成功
+      }
+    }
+    if (!renamed) {
+      // 改名仍失败时回退原地截断重写
+      let file: fileIo.File = fileIo.openSync(abs,
+        fileIo.OpenMode.READ_WRITE | fileIo.OpenMode.CREATE | fileIo.OpenMode.TRUNC);
+      try {
+        fileIo.writeSync(file.fd, buffer);
+      } finally {
+        fileIo.closeSync(file.fd);
+      }
+    }
+  }
+
+  private static readConversationsFile(context: Context): string {
+    let abs: string = StorageManager.conversationsFilePath(context);
+    if (!fileIo.accessSync(abs)) {
+      return '';
+    }
+    let stat: fileIo.Stat = fileIo.statSync(abs);
+    if (stat.size <= 0) {
+      return '';
+    }
+    let buffer: ArrayBuffer = new ArrayBuffer(stat.size);
+    let file: fileIo.File = fileIo.openSync(abs, fileIo.OpenMode.READ_ONLY);
+    try {
+      fileIo.readSync(file.fd, buffer, { offset: 0 });
+    } finally {
+      fileIo.closeSync(file.fd);
+    }
+    let decoder: util.TextDecoder = util.TextDecoder.create('utf-8', { ignoreBOM: true });
+    return decoder.decodeToString(new Uint8Array(buffer), { stream: false });
+  }
+
+  // ===== 原有会话预处理(保留, 非破坏性) =====
 
   // 持久化前修剪思考文本: 单条消息只保留末尾 REASONING_SAVE_MAX_CHARS
   // (toJson/sanitizeConversations 返回的都是全新对象, 原地修改不影响内存中的会话)
@@ -108,7 +240,8 @@ export class StorageManager {
         'agentId': (c['agentId'] as string) ?? '',
         'title': (c['title'] as string) ?? '',
         'messages': msgs,
-        'createdAt': (c['createdAt'] as number) ?? 0
+        'createdAt': (c['createdAt'] as number) ?? 0,
+        'mode': (c['mode'] as string) ?? 'chat'
       });
     }
     return out;
@@ -151,23 +284,7 @@ export class StorageManager {
     };
   }
 
-  static async loadConversations(context: Context): Promise<Conversation[]> {
-    let prefs: preferences.Preferences = await getPreferences(context);
-    let jsonStr: string = (await prefs.get(Constants.LS_KEY_CONVERSATIONS, '')) as string;
-    if (jsonStr === '') {
-      return [];
-    }
-    let parsed: Object = JSON.parse(jsonStr);
-    if (!(parsed instanceof Array)) {
-      return [];
-    }
-    let rawArr: Object[] = parsed as Object[];
-    let result: Conversation[] = [];
-    for (let i: number = 0; i < rawArr.length; i++) {
-      result.push(Conversation.fromJson(rawArr[i] as Record<string, Object>));
-    }
-    return result;
-  }
+  // ===== 配置类数据仍走 Preferences =====
 
   static async saveApiConfig(context: Context, config: ApiConfig): Promise<void> {
     let prefs: preferences.Preferences = await getPreferences(context);
