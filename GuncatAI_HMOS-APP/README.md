@@ -115,12 +115,12 @@ Guncat Work 是使用 ArkTS 与 ArkUI 开发的原生 HarmonyOS AI 对话客户�
 
 - **沙箱工作区**：每个工作会话对应 `filesDir/workspaces/<convId>/` 目录，支持上传文件、导出 `.zip` 打包、清空；全程应用沙箱内读写 + 系统安全组件选/存文件，无新增权限。
 - **42 个本地工具**：文件 CRUD（list/read/write/append/delete/create_dir/move/search，search_files 支持 glob 文件名过滤）、任务清单（todo_write）、图片查看（view_image，走主模型多模态）、网络下载（download_file，把链接文件拉进工作区）、PDF 解析（parse_document + read_file 自动路由）、Office 生成（write_docx / write_xlsx / write_csv）、数据管道（transform_file，大文件本地清洗/转换/互转，数据不经模型上下文）、PPT 读写编辑（write_pptx / read_ppt / edit_ppt，基于 Deck JSON 中间层）、Word 读写编辑（write_docx / read_docx / edit_docx，基于 Doc JSON 中间层）、Excel 读写编辑（write_xlsx / read_xlsx / edit_xlsx，基于 Workbook JSON 中间层）、SVG 生图（write_svg，矢量出图 + PNG 预览）、技能系统（list_skills / load_skill，按需加载领域操作指南）。6.1 新增（DeepSeek Harness 移植）：glob / grep（模式找文件与正则搜索）、edit / str_replace_editor（逐字符精确编辑 + diff 卡片）、web_fetch（抓取网页/接口原文）、ask_user_question（向用户提问并等待作答）、schedule_create/list/delete（会话内定时提醒）、goal_create/get/update（会话自主目标）、subagent（子代理委派）、session_search（会话事件日志检索）。**run_js（JSVM-API 沙箱）**：无 shell 环境下唯一的"执行代码"能力，详见下文"run_js：设备内 JS 执行沙箱"。
-- **技能系统**：领域操作指南打包在 `rawfile/skills/<id>/`（SKILL.md + reference/*.md），系统提示词只保留触发提示（保证 KV 缓存前缀稳定），模型通过 `list_skills`/`load_skill` 渐进式加载。内置 `ppt` 技能（Deck JSON 语法、设计规范、内容纪律、主题、常见演示文稿蓝图、自检清单）、`docx` 技能（Doc JSON 语法、排版规范、文档形态选型、常见 Word 文档蓝图、专业文书规范）、`xlsx` 技能（Workbook JSON 语法、公式优先、数字格式规范、数据分析链路、常见报表蓝图、数据分析玩法）、`svg` 技能（SVG 绘制规范、"生成→预览→修正"工作流、可视化类型选择、信息图蓝图、图标/流程图/柱状图/时间轴配方）与 `data` 技能（transform_file 管道 ops 与表达式完整语法、数据质量检查、清洗/提取/互转配方、能力边界）。**当前共 32 个技能**：除上述 10 个核心技能（另含 `paper`/`law`/`research`/`sift`/`llm-eval`）外，新增 22 个从四大主流 AI 工作平台移植并适配的领域技能——`humanizer`（去 AI 味/可读性）、`prompt-engineering`（提示词工程）、`pdf`（PDF 读取/搜索/扫描件阅读）、`translation`（法律/医学翻译与术语一致性）、`questionnaire`（问卷/深访/原声打标/定量分析）、`content-rewrite`（多平台内容改写分发）、`html`（单页 HTML 开发）、`paper-reviewer`（学术论文审稿）、`review-agent`（代码评审）、`paper-rebuttal`（审稿意见 rebuttal 回复）、`research-lineage-map`（研究谱系演进图）、`marketing-plan`（营销策划方案）、`reference-audit`（参考文献审计）、`paper-close-reading`（论文精读）、`khazix-writer`（公众号长文写作）、`newmedia-writing`（小红书/公众号/短视频新媒体写作）、`marketing-material-review`（营销素材审核）、`patent-drafting`（专利申请文件撰写）、`sentiment-tracker`（舆情追踪与溯源）、`journal-format`（学术论文 DOCX 格式排版）、`research-proposal`（学术立项书/基金申请撰写）、`industry-analysis`（行业深度研究）。
+- **技能系统**：领域操作指南打包在 `rawfile/skills/`（主 Skill 在顶层、分支 Skill 位于主 Skill 子目录；SKILL.md + reference/*.md），系统提示词技能库默认 full_index 并注入「技能使用铁律」（命中第一步必须 `load_skill`、不确定先 `list_skills`、技能正文优先），模型通过 `list_skills`/`load_skill` 渐进式加载。内置 `ppt` 技能（Deck JSON 语法、设计规范、内容纪律、主题、常见演示文稿蓝图、自检清单）、`docx` 技能（Doc JSON 语法、排版规范、文档形态选型、常见 Word 文档蓝图、专业文书规范）、`xlsx` 技能（Workbook JSON 语法、公式优先、数字格式规范、数据分析链路、常见报表蓝图、数据分析玩法）、`svg` 技能（SVG 绘制规范、"生成→预览→修正"工作流、可视化类型选择、信息图蓝图、图标/流程图/柱状图/时间轴配方）与 `data` 技能（transform_file 管道 ops 与表达式完整语法、数据质量检查、清洗/提取/互转配方、能力边界）。**当前共 32 个技能**：除上述 10 个核心技能（另含 `paper`/`law`/`research`/`sift`/`llm-eval`）外，新增 22 个从四大主流 AI 工作平台移植并适配的领域技能——`humanizer`（去 AI 味/可读性）、`prompt-engineering`（提示词工程）、`pdf`（PDF 读取/搜索/扫描件阅读）、`translation`（法律/医学翻译与术语一致性）、`questionnaire`（问卷/深访/原声打标/定量分析）、`content-rewrite`（多平台内容改写分发）、`html`（单页 HTML 开发）、`paper-reviewer`（学术论文审稿）、`review-agent`（代码评审）、`paper-rebuttal`（审稿意见 rebuttal 回复）、`research-lineage-map`（研究谱系演进图）、`marketing-plan`（营销策划方案）、`reference-audit`（参考文献审计）、`paper-close-reading`（论文精读）、`khazix-writer`（公众号长文写作）、`newmedia-writing`（小红书/公众号/短视频新媒体写作）、`marketing-material-review`（营销素材审核）、`patent-drafting`（专利申请文件撰写）、`sentiment-tracker`（舆情追踪与溯源）、`journal-format`（学术论文 DOCX 格式排版）、`research-proposal`（学术立项书/基金申请撰写）、`industry-analysis`（行业深度研究）。**结构重组（6.2.0）**：25 个内容/学术/法律/AI 类分支技能已物理归入 5 个主 Skill 子目录（`research-intelligence` 7 个 / `academic-publishing` 7 个 / `content-writing` 5 个 / `legal-ip` 4 个 / `ai-tooling` 2 个），7 个格式分支（`docx`/`xlsx`/`ppt`/`svg`/`html`/`pdf`/`data`）保持顶层直连；`list_skills` 只暴露 12 个可见技能，分支由主 Skill 路由后按原 id 加载（物理路径经 `WorkSkillService.skillPath()` 映射）。
 - **本地解析引擎**：`.docx/.xlsx/.pptx/.pdf` 全部在设备本地抽取文本，不依赖多模态解析 API、不消耗配额。
 - **任务清单纪律**：复杂任务先 `todo_write` 建清单，清单与工作区状态经「运行时上下文」快照注入对话尾部，逐项推进、完成后更新。
 - **Codex 式时间线**：每轮独立消息按「思考 → 工具步骤 → 正文」时序排列，单容器时间线 UI，工具步骤可展开查看参数与结果。
 - **Codex 式产物卡片**：任务结束后，生成/改动的文件会在对话流末尾以「产物」卡片汇总，默认展开；每个文件的行级 diff 缩略默认折叠、可单独展开；任务结束自动滚到底部，卡片无需手动下翻。
-- **文件就地预览与一键分享**：产物卡片、工作区弹层和右侧详情面板中的文件均可点击通过 HarmonyOS Preview Kit 就地预览，并一键通过系统分享面板分享原始文件；全程不暴露路径、不打包、不选择格式。
+- **文件就地预览与一键分享**：产物卡片、工作区弹层和右侧详情面板中的文件均可点击通过 HarmonyOS Preview Kit 就地预览，并一键通过系统分享面板分享原始文件；全程不暴露路径、不打包、不选择格式。系统预览不支持的格式（如 `.md`）会自动拉起系统“打开方式”选择框，用手机里已安装的对应应用打开。
 - **三协议工具调用**：OpenAI Completions / OpenAI Responses / Anthropic Messages 均支持流式 function-calling；联网搜索开关在工具行保留（服务端搜索工具与客户端工具并存）。
 
 ### UI 与动效（5.1.0）
@@ -233,7 +233,7 @@ entry/src/main/ets/
 
 entry/src/main/resources/rawfile/
 ├── agents.json + *_prompt*.md      # 聊天智能体定义与提示词
-└── skills/                         # 工作模式技能（AI 按需 load_skill 加载, 见「3.2 技能系统」）
+└── skills/                         # 工作模式技能（5 主 Skill + 7 格式分支顶层直连，25 分支位于主 Skill 子目录；见「3.3 技能系统」）
     ├── ppt/
     │   ├── SKILL.md                # PPT 技能正文（工作流/速查/自检清单）
     │   └── reference/              # deck-dsl.md / design-guide.md / themes.md / troubleshooting.md / deck-blueprints.md / visual-components.md / style-guidelines.md
@@ -249,7 +249,8 @@ entry/src/main/resources/rawfile/
     ├── svg/
     │   ├── SKILL.md                # SVG 生图技能（生成→预览→修正工作流/自检清单）
     │   └── reference/              # svg-craft.md / svg-recipes.md / infographic-blueprints.md
-    └── …/                          # 另含 paper/law/research/sift/llm-eval 与 22 个移植技能，共 32 个（humanizer/prompt-engineering/pdf/translation/questionnaire/content-rewrite/html/paper-reviewer/review-agent/paper-rebuttal/research-lineage-map/marketing-plan/reference-audit/paper-close-reading/khazix-writer/newmedia-writing/marketing-material-review/patent-drafting/sentiment-tracker/journal-format/research-proposal/industry-analysis）
+    ├── research-intelligence/ academic-publishing/ content-writing/ legal-ip/ ai-tooling/   # 5 个主 Skill 路由入口（各含 SKILL.md + ROUTING.md + 分支子目录）
+    └── …/                          # 另含 html/pdf 格式分支与 5 主 Skill 下 25 个分支，注册表共 37 项 = 32 原始 + 5 主路由
 
 test/
 ├── pptx-harness/                   # PPT/CSV/Word/Excel 服务层离线验证（Node 构建 + python 校验 + tsc 类型检查）
@@ -283,7 +284,7 @@ ChatService (SSE)
       → OfficeReader / PdfTextExtractor（读取）
       → DocxExporter / XlsxExporter（生成）
       → PptxBuilder / PptxImporter / PptxImage / DeckOps（PPT 写/读/编辑, 见「3.1」）
-      → WorkSkillService（list_skills / load_skill, 见「3.2」）
+      → WorkSkillService（list_skills / load_skill, 见「3.3」）
   → 工具结果回填 ToolCallRecord → 注入下一轮请求历史
   → 每轮一条 @Observed Message（思考/工具/文本）
   → ChatPage.buildWorkTimeline → WorkTurnView
@@ -344,7 +345,7 @@ ChatService (SSE)
 > - `BACKLOG.md`——当前待办与已完成的审计维度；
 > - `PORT_NOTES.md`——dsh 移植对照与后续核心层迭代说明；
 > - `test/pptx-harness/README.md`——PPT 生成器与 CSV 写入器的离线验证环境（Node 构建 + python-pptx 校验 + PNG 目检），改 `export/` 下任何文件后必跑；
-> - `entry/src/main/resources/rawfile/skills/`——**模型看到的**操作指南（`ppt`：deck-dsl 语法/设计规范/内容纪律/主题/演示文稿蓝图；`docx`：doc-dsl 语法/排版规范/文档形态选型/文档蓝图/专业文书规范；`xlsx`：workbook-dsl 语法/公式与数字格式/数据分析链路/报表蓝图/分析玩法；`svg`：绘制规范/可视化类型选择/信息图蓝图/生图配方；`data`：transform_file 管道语法/数据质量/配方；另含 `paper`/`law`/`research`/`sift`/`llm-eval` 与 22 个移植技能，共 32 个），是随工具演进同步维护的文档，也是可移植到其他 Agent 框架的复用资产。
+> - `entry/src/main/resources/rawfile/skills/`——**模型看到的**操作指南（5 个主 Skill：`research-intelligence`/`academic-publishing`/`content-writing`/`legal-ip`/`ai-tooling`，各含 `SKILL.md` + `ROUTING.md` + 分支子目录；7 个格式分支顶层直连：`ppt`/`docx`/`xlsx`/`svg`/`data`/`html`/`pdf`；`list_skills` 只暴露这 12 个可见技能，25 个分支由主 Skill 路由后按原 id 加载），是随工具演进同步维护的文档，也是可移植到其他 Agent 框架的复用资产。
 
 ### 1. 身份与会话模型
 
@@ -418,7 +419,7 @@ for step in 1..WORK_MAX_STEPS(200, 防失控保险):
 | `read_ppt`                                              | WorkToolRunner.toolReadPpt → PptxImporter.import                    | .pptx → Deck JSON 源（自家文件无损还原，外来近似导入）                                                                                                                                             |
 | `edit_ppt`                                              | WorkToolRunner.toolEditPpt → PptxImporter + DeckOps + PptxBuilder   | 读回→应用操作→重建（外来文件先备份）                                                                                                                                                              |
 | `write_svg`                                             | WorkToolRunner.toolWriteSvg → SvgUtil                               | SVG 源码→工作区 .svg + 栅格化 PNG 预览；xmlns/禁 script 校验，缺 width/height 自动按 viewBox 补齐（实机引擎必需），解码失败报精确诊断                                                                                   |
-| `list_skills` / `load_skill`                            | WorkFileService.dispatchTool → WorkSkillService                     | 技能清单与技能文档按需加载（rawfile/skills/ 下共 32 个技能：10 个核心 + 22 个移植）                                                                                                                               |
+| `list_skills` / `load_skill`                            | WorkFileService.dispatchTool → WorkSkillService                     | 技能清单与技能文档按需加载（rawfile/skills/ 下 5 个主 Skill + 7 个格式分支 = 12 个可见技能；25 个分支技能位于主 Skill 子目录；注册表共 37 项 = 32 原始 + 5 主路由）                                              |
 | `glob`                                                  | HarnessTools.toolGlob → FileSearchCore                              | glob 模式按路径找文件（`**`/`*`/`?`/`{a,b}`/`[...]`，顶层逗号不破坏 `{}` 分支），返回相对路径与大小（≤500 个）                                                                                                    |
 | `grep`                                                  | HarnessTools.toolGrep → FileSearchCore                              | 正则搜索文本文件内容，返回 `文件:行号: 内容`（≤200 命中；支持 glob 文件名过滤与 ignore_case，非法正则明确报错）                                                                                                           |
 | `edit`                                                  | HarnessTools.toolEdit → DiffUtil                                    | 逐字符唯一匹配替换（多处匹配拒绝，`replace_all` 全替）；结果附行级 diff hunks（meta 随会话持久化，UI 渲染 diff 卡片）                                                                                                   |
@@ -612,48 +613,51 @@ node check-setup.mjs && npx -y -p typescript@5.5.4 tsc -p check/tsconfig.json   
 
 ```text
 entry/src/main/resources/rawfile/skills/
-├── ppt/                        ← 技能 id（小写、唯一；目录名 = id）
-│   ├── SKILL.md                ← 技能正文（必备）：何时用 / 工具链 / 工作流 / 速查 / 自检清单
+├── ROUTE_INDEX.md               ← 全局路由总索引（【新增】，不属于任何原始技能正文）
+├── research-intelligence/       ← 主 Skill：情报调研与分析（路由入口）
+│   ├── SKILL.md                 ← 主 Skill 正文：命中即先加载、意图分流
+│   ├── ROUTING.md               ← 分支路由清单
+│   └── research/ sift/ llm-eval/ sentiment-tracker/
+│       industry-analysis/ research-lineage-map/ questionnaire/
+│                                ← 7 个分支 Skill 子目录（原 id 仍可直接 load_skill）
+├── academic-publishing/         ← 主 Skill：学术写作与论文全流程（路由入口）
+│   ├── SKILL.md / ROUTING.md
+│   └── paper/ paper-close-reading/ paper-reviewer/ paper-rebuttal/
+│       research-proposal/ reference-audit/ journal-format/   ← 7 个分支
+├── content-writing/             ← 主 Skill：内容创作与营销文案（5 个分支）
+│   ├── SKILL.md / ROUTING.md
+│   └── khazix-writer/ newmedia-writing/ content-rewrite/ humanizer/ marketing-plan/
+├── legal-ip/                    ← 主 Skill：法律/IP/合规（4 个分支）
+│   ├── SKILL.md / ROUTING.md
+│   └── law/ patent-drafting/ translation/ marketing-material-review/
+├── ai-tooling/                  ← 主 Skill：AI 工程与提示词（2 个分支）
+│   ├── SKILL.md / ROUTING.md
+│   └── prompt-engineering/ review-agent/
+├── ppt/                         ← 格式分支（保持顶层直连）
+│   ├── SKILL.md                 ← 技能正文（必备）：何时用 / 工具链 / 工作流 / 速查 / 自检清单
 │   └── reference/              ← 深入资料，按需逐文件加载（可选）
 │       ├── deck-dsl.md         # 字段级语法
 │       ├── design-guide.md     # 设计规范
 │       ├── themes.md           # 主题清单
 │       └── troubleshooting.md  # 症状→修复排查表
-├── docx/                       ← 内置技能 3：Word 文档制作与编辑
-│   ├── SKILL.md                # 工作流 A/B（新建 / 编辑）、块速查、排版规则、自检清单
-│   └── reference/
-│       ├── doc-dsl.md          # Doc JSON 字段级语法 + edit_docx 算子表
-│       ├── design-guide.md     # 中文文档排版规范
-│       └── troubleshooting.md  # 症状→修复排查表
-├── xlsx/                       ← 内置技能 4：Excel 表格制作与编辑
-│   ├── SKILL.md                # 工作流 A/B（新建 / 编辑）、公式优先、速查、自检清单
-│   └── reference/
-│       ├── workbook-dsl.md     # Workbook JSON 字段级语法 + edit_xlsx 算子表
-│       ├── format-guide.md     # 公式优先/数字格式/财务惯例/编辑完整性
-│       └── troubleshooting.md  # 症状→修复排查表
-├── data/                        ← 内置技能 5：数据管道（transform_file）
-│   ├── SKILL.md                # 管道 ops/表达式语法/数据质量检查/清洗·提取·互转配方
-│   └── reference/
-│       ├── data-pipeline.md    # ops 白名单 + 表达式求值器
-│       └── data-quality.md     # 质量检查/清洗/互转配方
-├── svg/                        ← 内置技能 6：SVG 矢量绘图（生图）
-│   ├── SKILL.md                # "生成→预览→修正"工作流 + 工具分界（照片用 download_file）
-│   └── reference/
-│       ├── svg-craft.md        # 绘制规范: xmlns/viewBox 硬要求、24 网格、path 优先、文字风险、配色纪律
-│       └── svg-recipes.md      # 可套用模板: 描边图标/流程图/架构图/信息图卡片/封面装饰
-└── …/                          # 另含 paper/law/research/sift/llm-eval 与 22 个移植技能，共 32 个
+├── docx/ xlsx/ data/ svg/ html/ pdf/
+│                                ← 其余 6 个格式分支同样保持顶层直连
+└── …/
 ```
 
 注册表在 `WorkSkillService.registry()`（**代码即注册表，无配置文件**）。每个 `SkillInfo = { id, name, description, files: SkillFileInfo[] }`；`files` 是 `load_skill` 允许的文件白名单（`SKILL.md` 恒可用），防路径探测。**没有登记的技能对模型不存在**——文档放了对目录里也不会被加载。
 
+**物理嵌套 + 原 id 加载**：分支 Skill 已从 `skills/` 顶层移入主 Skill 子目录，但 `load_skill` 仍按原 id 使用——`WorkSkillService.skillPath()` 把 id 映射到嵌套目录（如 `research` → `research-intelligence/research`），模型无需关心文件物理位置。**对外可见性**：`list_skills` 只返回 12 个可见技能（5 个主 Skill + 7 个格式分支），25 个分支 Skill 不在清单中，由主 Skill 的 `ROUTING.md` 路由后按原 id 加载。注册表共 37 项 = 32 个原始 Skill + 5 个主 Skill 路由入口。
+
 #### 加载链路（渐进披露）
 
 ```text
-系统提示词「技能系统」段(一行触发提示, 静态)
+系统提示词「技能库」段(默认 full_index: 技能清单 + 技能使用铁律, 静态)
   → 模型 list_skills()                        → WorkSkillService.listText()
-      返回: id + name + 触发语义 + 文件索引
-  → 模型 load_skill("ppt")                    → rawfile 读 SKILL.md 全文
-  → 模型 load_skill("ppt", "reference/deck-dsl.md") → 按文件加载深入资料
+      返回: 12 个可见技能(5 主 Skill + 7 格式分支) id + name + 触发语义 + 文件索引
+  → 命中主 Skill 领域 → load_skill("<主 Skill>")   → 读 SKILL.md/ROUTING.md, 路由到分支
+  → load_skill("research")                    → skillPath() 映射到 research-intelligence/research, 读 SKILL.md 全文
+  → load_skill("ppt", "reference/deck-dsl.md") → 按文件加载深入资料
 分发: WorkFileService.dispatchTool()（纯 TS, 无需 .ets）; 二者登记在 isReadOnlyTool() 可并发。
 结果与普通工具一致: 超 1.2 万字符被头尾保留式截断(WORK_SKILL_MAX_CHARS 是加载侧硬上限)。
 ```
@@ -692,6 +696,7 @@ description 同时承担两个职责：系统提示词触发提示的展开、`l
 3. 需要主动触发时，在 `AgentLoopService.buildWorkSystemPrompt()` 的「技能系统」段补一句（追加行不改历史行，静态红线不破坏）；
 4. **不用改 toolDefs / dispatchTool**：`list_skills`/`load_skill` 是通用工具，自动覆盖新技能；
 5. 自测：工作模式里 `list_skills` → 逐文件 `load_skill` 确认完整无截断 → 实跑一个对应任务看模型是否按技能执行。
+6. 若新技能是**分支 Skill**：物理目录放在对应主 Skill 子目录下，在 `WorkSkillService.skillPath()` 增加 id→子目录映射，并同步登记到对应主 Skill 的 `ROUTING.md`；若新增**主 Skill**：建 `SKILL.md` + `ROUTING.md`，在 `ROUTE_INDEX.md` 登记，并在 `registry()` 注册。
 
 #### 维护红线与可移植性
 
@@ -913,6 +918,10 @@ hvigorw --mode module -p product=default -p module=entry@default -p buildMode=de
 - **子代理工作区隔离（R67，版本仍为 6.2.0）**：每个子代理默认获得独立产出目录 `subagents/sa_<时间戳>_<序号>/`（也可用 `output_dir` 指定）；子代理仍可读取/搜索整个主工作区，但所有写入/新建/移动/删除会被自动重定向或限制到自己的产出目录（裸路径自动加前缀、`delete_file` 清空根目录被拦截、`run_js` 输出同样落入该目录），最终报告头部标注产出目录；并行子代理不再互相覆盖同名文件，也不会污染/改写/删除主循环文件。反馈明确：写入越界会在工具结果前提示“已自动重定向至…”；删除/移动主工作区文件会直接“越界拦截”，不再报“路径不存在”。
 - **对话历史改为文件存储（版本仍为 6.2.0）**：会话历史不再写入 Preferences 单值，改为保存在应用沙箱 `filesDir/guncat_conversations.json`，不再受 Preferences 16MB 单值上限约束；工作模式长任务或历史会话很多时也不会再出现“内容一多、重启后历史消失”的问题。首次启动新版本会自动把旧 Preferences 中的会话迁移到文件，迁移后清理旧 key。
 - **修复删除/新建会话后侧边栏不实时刷新（版本仍为 6.2.0）**：删除历史会话后条目会立即从侧边栏/抽屉消失，新建会话也会立即出现，不再需要手动切换条目或关闭侧边栏触发刷新。
+- **文件预览不支持时可用其他应用打开（版本仍为 6.2.0）**：当 HarmonyOS Preview Kit 不支持预览某些格式（如 `.md`）时，点击文件会直接拉起系统“打开方式”选择框，可选择手机上已安装的对应应用打开，不再只是提示“暂不支持系统预览”。
+- **技能生态位重组：主 Skill → 分支 Skill 子目录（版本仍为 6.2.0）**：为降低相似技能重叠、减少模型选错概率，把 25 个内容/学术/法律/AI 类分支 Skill 物理归入 5 个主 Skill 子目录——`research-intelligence`（7 分支）/ `academic-publishing`（7 分支）/ `content-writing`（5 分支）/ `legal-ip`（4 分支）/ `ai-tooling`（2 分支）；`docx`/`xlsx`/`ppt`/`svg`/`html`/`pdf`/`data` 7 个格式分支保持顶层直连。新增 `ROUTE_INDEX.md` 全局路由总索引，每个主 Skill 目录含 `SKILL.md` + `ROUTING.md` 路由清单。
+- **分支 Skill 不再直接暴露在技能清单（版本仍为 6.2.0）**：`list_skills` 现在只展示 12 个可见技能（5 个主 Skill + 7 个格式分支）；25 个分支 Skill 由主 Skill 路由后按原 id 加载（`load_skill("research")` 等仍可用，物理路径通过 `WorkSkillService.skillPath()` 映射，模型无需关心文件位置）。注册表共 37 项 = 32 个原始 Skill + 5 个主 Skill 路由入口。
+- **技能优先级强化：技能使用铁律（版本仍为 6.2.0）**：系统提示词技能库新增「技能使用铁律」——命中即加载（第一步必须 `load_skill`）、不确定先 `list_skills`、主 Skill 优先、技能正文优先于默认做法、未加载视为违规；`load_skill`/`list_skills` 工具描述、四步法「技能优先」步骤与主 Skill 触发词同步强化，提升模型按技能执行的命中率。
 
 ## 6.1.2 更新（新增 Guncat 3.1-Flash）
 
@@ -951,7 +960,7 @@ hvigorw --mode module -p product=default -p module=entry@default -p buildMode=de
 - **素材获取与生图**：`download_file` 把网络图片/文件拉进工作区（类型嗅探、html 告警、≤20MB）；`write_svg` 让模型手写 SVG 生成图标/示意图/信息图——自动校验（xmlns/viewBox/禁 script）并经设备图片引擎栅格化出 PNG 预览，配合 `view_image` 形成"生成→预览→修正"闭环；`write_pptx` 可直接引用 `.svg`（导出时自动栅格化）。`search_files` 新增 `glob` 文件名过滤（`*.md`、`*.png,*.jpg`）。`write_csv` 显式支持 CSV（RFC 4180 转义 + UTF-8 BOM）。
 - **PPT 工具链（Deck JSON 中间层）**：对齐 open-kimi-ppt-skill 的 PPTD 设计——AI 写结构化 Deck 源，`PptxBuilder` 渲染 13 种版式（封面/目录/分节/要点/双栏/图文/图片/全幅大图/表格/图表/引用/结尾/自由版面）、8 套主题 + 自定义色板、图表（柱/折线/面积/饼/圆环，数据内嵌）、表格、图片（工作区/data URL/http）、演讲备注；导出文件内嵌 `docProps/deck.json` 源，`read_ppt` 无损读回、`edit_ppt` 算子式编辑（外来 pptx 近似导入并在重建前自动备份）；深色背景文字与图表自动反白。新增 `DeckModel/PptxThemes/PptxCharts/PptxImage/PptxImporter` 五个模块并重写 `PptxBuilder`；配套离线验证环境 `test/pptx-harness/`（Node 构建全版式/负例 + python-pptx 结构校验 + PowerPoint 渲染 PNG 目检）。
 - **Excel 工具链（Workbook JSON 中间层）**：与 PPT/Word 同构的中间层设计——AI 写结构化 Workbook 源（多工作表/表头加粗三主题/`=公式`/数字格式 money·int·percent·year·date·number/列宽/冻结窗格），`XlsxBuilder` 渲染全部件（内嵌 `docProps/workbook.json` 源），`read_xlsx` 无损读回、`edit_xlsx` 算子式编辑（改表名/加删移表/增删改行/改单元格/全文替换；外来 xlsx 近似导入并在重建前自动备份）。**公式优先**与数字格式/负数零值显示约定吸收自 MiniMax 的 xlsx 参考技能，模型操作指南见 `xlsx` 技能。新增 `XlsxModel/XlsxBuilder/XlsxImporter` 三模块；`write_xlsx` 保留 table 文本快路径；配套离线验证环境 `test/xlsx-harness/`（Node 构建 + openpyxl 结构校验 + 内嵌源往返）。
-- **技能系统**：领域操作指南按 `rawfile/skills/<id>/`（SKILL.md + reference/）组织，`list_skills`/`load_skill` 渐进式加载；系统提示词只保留一行触发提示，KV 缓存前缀保持逐字节稳定。内置 `ppt` 技能（Deck JSON 语法/设计规范/内容纪律/主题/演示文稿蓝图/自检清单）、`docx` 技能（Doc JSON 语法/排版规范/文档形态选型/文档蓝图/专业文书规范）、`xlsx` 技能（Workbook JSON 语法/公式优先/数字格式/数据分析链路/报表蓝图/分析玩法/编辑完整性）、`svg` 技能（绘制规范/"生成→预览→修正"工作流/可视化类型选择/信息图蓝图/图标·流程图·柱状图·时间轴配方）与 `data` 技能（管道 ops/表达式语法/数据质量检查/清洗·提取·互转配方/能力边界）；技能格式对齐标准 Agent Skills 约定，可跨 Agent 框架复用；新增技能只需写文档 + `WorkSkillService.registry()` 登记（详见架构指南 3.2）。
+- **技能系统**：领域操作指南按 `rawfile/skills/<id>/`（SKILL.md + reference/）组织，`list_skills`/`load_skill` 渐进式加载；系统提示词只保留一行触发提示，KV 缓存前缀保持逐字节稳定。内置 `ppt` 技能（Deck JSON 语法/设计规范/内容纪律/主题/演示文稿蓝图/自检清单）、`docx` 技能（Doc JSON 语法/排版规范/文档形态选型/文档蓝图/专业文书规范）、`xlsx` 技能（Workbook JSON 语法/公式优先/数字格式/数据分析链路/报表蓝图/分析玩法/编辑完整性）、`svg` 技能（绘制规范/"生成→预览→修正"工作流/可视化类型选择/信息图蓝图/图标·流程图·柱状图·时间轴配方）与 `data` 技能（管道 ops/表达式语法/数据质量检查/清洗·提取·互转配方/能力边界）；技能格式对齐标准 Agent Skills 约定，可跨 Agent 框架复用；新增技能只需写文档 + `WorkSkillService.registry()` 登记（详见架构指南 3.3）。
 - **本地解析引擎**：新增 `OfficeReader`（OOXML 文本抽取，修复 `<w:t` 前缀误匹配导致的 XML 泄漏）、`PdfTextExtractor`（字节层对象表/ObjStm 展开/页面树资源继承/ToUnicode CJK 映射/内容流解析/兜底扫描与诊断）、`Flate`（纯 TS DEFLATE 解压）。不再依赖多模态解析 API。
 - **Codex 式时间线 UI**：单容器时间线（唯一 🛠 标识 + 任务卡 + 逐轮「思考→工具→正文」），工具步骤可展开参数与结果，中间轮隐藏操作按钮；工作区面板支持上传/导出 zip/清空。
 - **稳定性修复**：PDF 解析 OOM（整文件 latin1 拼接改为字节层扫描 + utf-16le 原生转换）；主线程阻塞 appfreeze（解析分阶段 yield、兜底扫描跳过字体/图片/超大流并限量限预检）；`arrayBufferToBase64` 同类 O(n²) 拼接一并修复。

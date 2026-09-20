@@ -11,6 +11,7 @@
 - [x] R12：tool_result 请求级 traceId。
 - [x] R66：子代理并行派发（parallelSafe + 全局并发闸 + 取消透传）。
 - [x] R67：子代理工作区隔离（自动独立 `subagents/sa_<ts>_<n>/` 产出目录 + 可选 `output_dir` + 执行层写入重定向/主工作区保护）。
+- [x] R15（产品功能）：文件系统预览不支持时支持“用其他应用打开”（隐式 Want 拉起系统打开方式选择框）。
 
 ### 新待办（按审计维度重新生成）
 - [x] LLMAdapter 统一（R20/R23/R24 完成：`LLMProtocol` 协议/端点、`ToolDefAdapter` 工具形态、`SSEProtocolAdapter` SSE 解析统一流水线，handleSseLine 大 if/switch 已收敛）。

@@ -45,7 +45,7 @@ import { generateMessageId } from '../common/Utils';
 import { arrayBufferToBase64 } from '../common/Utils';
 import { promptAction } from '@kit.ArkUI';
 import { pasteboard } from '@kit.BasicServicesKit';
-import { common } from '@kit.AbilityKit';
+import { common, Want, wantConstant } from '@kit.AbilityKit';
 import { cameraPicker, camera } from '@kit.CameraKit';
 import { util } from '@kit.ArkTS';
 import { image } from '@kit.ImageKit';
@@ -675,7 +675,8 @@ export class ChatViewModel {
     try {
       let supported: boolean = await filePreview.canPreview(this.context, uri);
       if (!supported) {
-        promptAction.showToast({ message: '该文件类型暂不支持系统预览', duration: 2000 });
+        // 系统预览不支持该格式: 直接拉起系统“打开方式”选择框
+        await this.openWorkspaceFileWithOtherApp(rel);
         return;
       }
       await filePreview.openPreview(this.context, {
@@ -686,6 +687,56 @@ export class ChatViewModel {
     } catch (e) {
       let err: Error = e as Error;
       promptAction.showToast({ message: '预览失败: ' + (err.message !== undefined ? err.message : String(e)), duration: 2000 });
+    }
+  }
+
+  // 用其他应用打开工作区文件: 通过隐式 Want 强制展示系统“打开方式”选择框
+  async openWorkspaceFileWithOtherApp(rel: string): Promise<void> {
+    if (this.context === null) {
+      promptAction.showToast({ message: '上下文未初始化', duration: 1500 });
+      return;
+    }
+    let ctx: common.UIAbilityContext = this.context;
+    let conv: Conversation | null = this.currentConversation;
+    if (conv === null) {
+      promptAction.showToast({ message: '当前没有工作会话', duration: 1500 });
+      return;
+    }
+    let root: string = WorkFileService.workspaceRoot(ctx, conv.id);
+    let abs: string | null = WorkFileService.resolveSafe(root, rel);
+    if (abs === null || !fileIo.accessSync(abs) || fileIo.statSync(abs).isDirectory()) {
+      promptAction.showToast({ message: '文件不存在或已被删除', duration: 1500 });
+      return;
+    }
+    let uri: string = fileUri.getUriFromPath(abs);
+    // type 推荐使用 UTD 类型，且必须与 uri 文件类型一致，否则系统可能匹配不到应用
+    let dot: number = rel.lastIndexOf('.');
+    let ext: string = dot >= 0 ? rel.substring(dot) : '';
+    let utd: string = ext !== '' ?
+      uniformTypeDescriptor.getUniformDataTypeByFilenameExtension(ext) : 'general.file';
+    if (utd === '') {
+      utd = 'general.file';
+    }
+    let want: Want = {
+      action: 'ohos.want.action.viewData',
+      uri: uri,
+      type: utd,
+      // 授权目标应用读写该文件（与官方示例一致）
+      flags: wantConstant.Flags.FLAG_AUTH_WRITE_URI_PERMISSION |
+        wantConstant.Flags.FLAG_AUTH_READ_URI_PERMISSION,
+      parameters: {
+        // 携带文件 URI 流，值必须为 string 类型的 URI 数组
+        'ability.params.stream': [uri],
+        // 强制展示文件打开方式选择弹框，避免直接拉起默认的文件预览应用
+        'ohos.ability.params.showDefaultPicker': true
+      }
+    };
+    try {
+      await ctx.startAbility(want);
+    } catch (e) {
+      let err: Error = e as Error;
+      promptAction.showToast({ message: '未找到可打开该文件的应用', duration: 2000 });
+      console.error(`openWorkspaceFileWithOtherApp failed: ${err.message !== undefined ? err.message : String(e)}`);
     }
   }
 

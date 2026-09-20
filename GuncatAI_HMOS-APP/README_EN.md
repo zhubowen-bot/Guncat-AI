@@ -115,12 +115,12 @@ Work mode is an **independent identity parallel to the chat agents** — the �
 
 - **Sandbox workspace**: each work conversation maps to `filesDir/workspaces/<convId>/`, with upload, `.zip` export, and clear actions. Everything stays inside the app sandbox plus system safe components (document picker) — **no new permissions**.
 - **41 local tools**: file CRUD (list/read/write/append/delete/create_dir/move/search, with `glob` filename filtering on search_files), task checklist (`todo_write`), image viewing (`view_image`, routed to the main model's multimodal vision), web download (`download_file`, pulls linked files into the workspace), PDF parsing (`parse_document` + automatic `read_file` routing), Office generation (`write_docx` / `write_xlsx` / `write_csv`), data pipeline (`transform_file`, local cleaning/transformation/conversion of large files without entering model context), PPT read/write/edit (`write_pptx` / `read_ppt` / `edit_ppt`, on a Deck JSON intermediate layer), Word read/write/edit (`write_docx` / `read_docx` / `edit_docx`, on a Doc JSON intermediate layer), Excel read/write/edit (`write_xlsx` / `read_xlsx` / `edit_xlsx`, on a Workbook JSON intermediate layer), SVG image generation (`write_svg`, vector output + PNG preview), and the skill system (`list_skills` / `load_skill`, on-demand domain guides). New in 6.1 (DeepSeek Harness port): `glob` / `grep` (pattern-based file lookup and regex content search), `edit` / `str_replace_editor` (exact character-level editing with a diff card), `web_fetch` (fetch page/API source as readable text), `ask_user_question` (ask the user and wait for an answer), `schedule_create/list/delete` (session-local reminders), `goal_create/get/update` (session goal), `subagent` (child-agent delegation), `session_search` (session event-log search).
-- **Skill system**: domain operation guides are packaged under `rawfile/skills/<id>/` (SKILL.md + reference/*.md). The system prompt keeps only a one-line trigger (preserving the byte-stable KV-cache prefix); the model loads skills on demand via `list_skills`/`load_skill`. The bundled `ppt` skill covers the Deck JSON syntax, design guidelines, content discipline, themes, common deck blueprints, and self-check lists; the `docx` skill covers the Doc JSON syntax, Chinese typography rules, document form-factor selection, common document blueprints, and professional-document norms; the `xlsx` skill covers the Workbook JSON syntax, formula-first / number-format conventions, the data-analysis delivery workflow, common report blueprints, and an analysis playbook; the `svg` skill covers SVG authoring rules, the "generate → preview → iterate" workflow, visualization-type selection, infographic blueprints, and recipes for icons/flowcharts/bar charts/timelines; the `data` skill covers the transform_file pipeline ops and expression syntax, data-quality checks, and cleaning/extraction/conversion recipes. **There are now 32 skills total**: in addition to the 10 core skills above (which also include `paper`, `law`, `research`, `sift`, and `llm-eval`), 22 domain skills were ported and adapted from four mainstream AI work platforms — `humanizer` (de-AI/humanize/readability), `prompt-engineering` (prompt engineering), `pdf` (PDF reading/search/scanned-page reading), `translation` (legal/medical translation & terminology consistency), `questionnaire` (survey/in-depth interview/verbatim tagging/quantitative analysis), `content-rewrite` (multi-platform content rewriting & distribution), `html` (single-page HTML development), `paper-reviewer` (academic paper review), `review-agent` (code review), `paper-rebuttal` (reviewer-rebuttal responses), `research-lineage-map` (research lineage/evolution maps), `marketing-plan` (marketing plan proposals), `reference-audit` (reference/citation auditing), and `paper-close-reading` (deep academic-paper reading), `khazix-writer` (WeChat long-form writing), `newmedia-writing` (Xiaohongshu/WeChat/short-video new-media writing), `marketing-material-review` (marketing-material compliance review), `patent-drafting` (patent application drafting), `sentiment-tracker` (public-opinion tracking & tracing), `journal-format` (academic DOCX formatting & repair), `research-proposal` (research proposal/grant application drafting), `industry-analysis` (industry deep research).
+- **Skill system**: domain operation guides are packaged under `rawfile/skills/` (main skills live at the top level, branch skills inside their main-skill subdirectory; SKILL.md + reference/*.md). The system-prompt skill section uses the full_index mode and opens with mandatory "skill usage golden rules" (on a hit the first step must be `load_skill`; when unsure, check `list_skills` first; the skill body outranks your default behavior); the model loads skills on demand via `list_skills`/`load_skill`. The bundled `ppt` skill covers the Deck JSON syntax, design guidelines, content discipline, themes, common deck blueprints, and self-check lists; the `docx` skill covers the Doc JSON syntax, Chinese typography rules, document form-factor selection, common document blueprints, and professional-document norms; the `xlsx` skill covers the Workbook JSON syntax, formula-first / number-format conventions, the data-analysis delivery workflow, common report blueprints, and an analysis playbook; the `svg` skill covers SVG authoring rules, the "generate → preview → iterate" workflow, visualization-type selection, infographic blueprints, and recipes for icons/flowcharts/bar charts/timelines; the `data` skill covers the transform_file pipeline ops and expression syntax, data-quality checks, and cleaning/extraction/conversion recipes. **There are now 32 skills total**: in addition to the 10 core skills above (which also include `paper`, `law`, `research`, `sift`, and `llm-eval`), 22 domain skills were ported and adapted from four mainstream AI work platforms — `humanizer` (de-AI/humanize/readability), `prompt-engineering` (prompt engineering), `pdf` (PDF reading/search/scanned-page reading), `translation` (legal/medical translation & terminology consistency), `questionnaire` (survey/in-depth interview/verbatim tagging/quantitative analysis), `content-rewrite` (multi-platform content rewriting & distribution), `html` (single-page HTML development), `paper-reviewer` (academic paper review), `review-agent` (code review), `paper-rebuttal` (reviewer-rebuttal responses), `research-lineage-map` (research lineage/evolution maps), `marketing-plan` (marketing plan proposals), `reference-audit` (reference/citation auditing), and `paper-close-reading` (deep academic-paper reading), `khazix-writer` (WeChat long-form writing), `newmedia-writing` (Xiaohongshu/WeChat/short-video new-media writing), `marketing-material-review` (marketing-material compliance review), `patent-drafting` (patent application drafting), `sentiment-tracker` (public-opinion tracking & tracing), `journal-format` (academic DOCX formatting & repair), `research-proposal` (research proposal/grant application drafting), `industry-analysis` (industry deep research). **Structure reorganization (6.2.0)**: the 25 content/academic/legal/AI branch skills have been physically moved into 5 main-skill subdirectories (`research-intelligence` 7 / `academic-publishing` 7 / `content-writing` 5 / `legal-ip` 4 / `ai-tooling` 2), while the 7 format branches (`docx`/`xlsx`/`ppt`/`svg`/`html`/`pdf`/`data`) stay top-level and direct. `list_skills` now exposes only 12 visible skills; branches are loaded by their original id after routing (physical paths are mapped through `WorkSkillService.skillPath()`).
 - **Local parsing engine**: `.docx/.xlsx/.pptx/.pdf` text is extracted entirely on-device — no multimodal parsing API and no quota consumption.
 - **Task checklist discipline**: complex tasks start with a `todo_write` checklist; checklist and workspace state reach the model through a "runtime context" snapshot appended to the tail of the conversation. Progress is updated item by item.
 - **Codex-style timeline**: each turn is its own message, laid out chronologically as "thinking → tool steps → answer" inside a single-container timeline; tool steps expand to show arguments and results.
 - **Codex-style artifacts card**: after a task finishes, generated/modified files are summarized in an "Artifacts" card at the end of the conversation, expanded by default; each file's line-diff thumbnail is collapsed by default and can be expanded individually. The view auto-scrolls to the bottom when the task finishes, so the card is immediately visible.
-- **In-place preview & one-click share**: files in the artifacts card, the workspace popover, and the right-hand details panel can be tapped to preview in place via HarmonyOS Preview Kit, or shared directly through the system share panel — no paths, zip archives, or format pickers involved.
+- **In-place preview & one-click share**: files in the artifacts card, the workspace popover, and the right-hand details panel can be tapped to preview in place via HarmonyOS Preview Kit, or shared directly through the system share panel — no paths, zip archives, or format pickers involved. Formats the system cannot preview (e.g. `.md`) automatically open the system "Open with" chooser, letting you pick an installed app that supports the file.
 - **Three-protocol tool calling**: OpenAI Completions / OpenAI Responses / Anthropic Messages all support streaming function calling; the web-search toggle remains in the tool row (the server-side search tool coexists with client tools).
 
 ### UI and motion (5.1.0)
@@ -233,7 +233,7 @@ entry/src/main/ets/
 
 entry/src/main/resources/rawfile/
 ├── agents.json + *_prompt*.md      # Chat agent definitions and prompt files
-└── skills/                         # Work-mode skills (loaded on demand via load_skill, see "3.2 Skill system")
+└── skills/                         # Work-mode skills (5 main skills + 7 format branches at top level, 25 branches inside main-skill subdirs; see "3.3 Skill system")
     ├── ppt/
     │   ├── SKILL.md                # PPT skill body (workflows / quick reference / self-check list)
     │   └── reference/              # deck-dsl.md / design-guide.md / themes.md / troubleshooting.md / deck-blueprints.md / visual-components.md / style-guidelines.md
@@ -249,7 +249,8 @@ entry/src/main/resources/rawfile/
     ├── svg/
     │   ├── SKILL.md                # SVG image-generation skill (generate→preview→iterate workflow / self-check)
     │   └── reference/              # svg-craft.md / svg-recipes.md / infographic-blueprints.md
-    └── …/                          # plus paper/law/research/sift/llm-eval and 22 ported skills, 32 total (humanizer/prompt-engineering/pdf/translation/questionnaire/content-rewrite/html/paper-reviewer/review-agent/paper-rebuttal/research-lineage-map/marketing-plan/reference-audit/paper-close-reading/khazix-writer/newmedia-writing/marketing-material-review/patent-drafting/sentiment-tracker/journal-format/research-proposal/industry-analysis)
+    ├── research-intelligence/ academic-publishing/ content-writing/ legal-ip/ ai-tooling/   # 5 main-skill routing entries (each has SKILL.md + ROUTING.md + branch subdirs)
+    └── …/                          # plus html/pdf format branches and 25 branches under the 5 main skills; registry = 37 entries = 32 original + 5 main routing
 
 test/
 ├── pptx-harness/                   # Offline verification for PPT/CSV/Word/Excel services (Node build + python checks + tsc)
@@ -283,7 +284,7 @@ User task → ChatViewModel.executeWorkLoop
       → OfficeReader / PdfTextExtractor (reading)
       → DocxExporter / XlsxExporter (generation)
       → PptxBuilder / PptxImporter / PptxImage / DeckOps (PPT write/read/edit, see "3.1")
-      → WorkSkillService (list_skills / load_skill, see "3.2")
+      → WorkSkillService (list_skills / load_skill, see "3.3")
   → Tool results written back to ToolCallRecord → injected into next request history
   → one @Observed Message per turn (thinking/tools/answer)
   → ChatPage.buildWorkTimeline → WorkTurnView
@@ -337,7 +338,7 @@ Work mode is a standalone agent execution environment: a virtual agent + a per-c
 > - `BACKLOG.md` — current open items and completed audit dimensions.
 > - `PORT_NOTES.md` — dsh port map and subsequent core-layer iteration notes.
 > - `test/pptx-harness/README.md` — the offline verification harness for the PPT pipeline and CSV writer (Node build + python-pptx checks + PNG review). Mandatory after touching anything under `export/`.
-> - `entry/src/main/resources/rawfile/skills/` — the **model-facing** operation guides (`ppt`: deck-dsl syntax / design guidelines / content discipline / themes / deck blueprints; `docx`: doc-dsl syntax / typography / document form-factor selection / document blueprints / professional-document norms; `xlsx`: workbook-dsl syntax / formula & number-format conventions / data-analysis delivery / report blueprints / analysis playbook; `svg`: authoring rules / visualization-type selection / infographic blueprints / image-generation recipes; `data`: transform_file pipeline syntax / data-quality / recipes; plus `paper`/`law`/`research`/`sift`/`llm-eval` and 22 ported skills, 32 total). They evolve in lockstep with the tools and double as reusable assets portable to other agent frameworks.
+> - `entry/src/main/resources/rawfile/skills/` — the **model-facing** operation guides (5 main skills: `research-intelligence` / `academic-publishing` / `content-writing` / `legal-ip` / `ai-tooling`, each with `SKILL.md` + `ROUTING.md` + branch subdirs; 7 format branches stay top-level and direct: `ppt` / `docx` / `xlsx` / `svg` / `data` / `html` / `pdf`; `list_skills` exposes only these 12 visible skills, and the 25 branches are loaded by their original id after routing). They evolve in lockstep with the tools and double as reusable assets portable to other agent frameworks.
 
 ### 1. Identity and conversation model
 
@@ -413,7 +414,7 @@ Dispatch chain: `ChatViewModel` → `WorkToolRunner.execute()` (.ets entry) → 
 | `read_ppt` | toolReadPpt → PptxImporter.import | .pptx → Deck JSON source (lossless restore for app-generated files, approximate import otherwise) |
 | `edit_ppt` | toolEditPpt → PptxImporter + DeckOps + PptxBuilder | Restore → apply ops → rebuild (foreign files are backed up first) |
 | `write_svg` | WorkToolRunner.toolWriteSvg → SvgUtil | SVG source → workspace .svg + rasterized PNG preview; xmlns/no-script validation, missing width/height auto-filled from viewBox (required by the device engine), precise diagnostics on decode failure |
-| `list_skills` / `load_skill` | WorkFileService.dispatchTool → WorkSkillService | Skill list and on-demand skill-doc loading (32 skills under rawfile/skills/: 10 core + 22 ported) |
+| `list_skills` / `load_skill` | WorkFileService.dispatchTool → WorkSkillService | Skill list and on-demand skill-doc loading (12 visible skills under rawfile/skills/: 5 main + 7 format; 25 branches inside main-skill subdirs; registry = 37 entries = 32 original + 5 main routing) |
 | `glob` | HarnessTools.toolGlob → FileSearchCore | Find files by glob pattern (`**`/`*`/`?`/`{a,b}`/`[...]`; top-level commas don't break `{}` branches); returns relative paths with sizes (≤500) |
 | `grep` | HarnessTools.toolGrep → FileSearchCore | Regex search over text files, returning `file:line: text` (≤200 hits; optional `glob` filename filter and `ignore_case`; invalid patterns fail with a clear error) |
 | `edit` | HarnessTools.toolEdit → DiffUtil | Exact character-level replacement (multiple matches rejected; `replace_all` overrides); the result carries line-level diff hunks (meta persisted with the session, rendered as a diff card) |
@@ -604,48 +605,51 @@ A skill = an **id-organized, pure-Markdown domain operation guide** (no code) th
 
 ```text
 entry/src/main/resources/rawfile/skills/
-├── ppt/                        ← skill id (lowercase, unique; directory name = id)
-│   ├── SKILL.md                ← skill body (required): when-to-use / toolchain / workflows / quick ref / self-check
+├── ROUTE_INDEX.md               ← global routing index (added; not part of any original skill body)
+├── research-intelligence/       ← main skill: research & intelligence analysis (routing entry)
+│   ├── SKILL.md                 ← main-skill body: load first, then route by intent
+│   ├── ROUTING.md               ← branch routing list
+│   └── research/ sift/ llm-eval/ sentiment-tracker/
+│       industry-analysis/ research-lineage-map/ questionnaire/
+│                                ← 7 branch-skill subdirs (original ids still work in load_skill)
+├── academic-publishing/         ← main skill: academic writing & paper lifecycle (routing entry)
+│   ├── SKILL.md / ROUTING.md
+│   └── paper/ paper-close-reading/ paper-reviewer/ paper-rebuttal/
+│       research-proposal/ reference-audit/ journal-format/   ← 7 branches
+├── content-writing/             ← main skill: content creation & marketing copy (5 branches)
+│   ├── SKILL.md / ROUTING.md
+│   └── khazix-writer/ newmedia-writing/ content-rewrite/ humanizer/ marketing-plan/
+├── legal-ip/                    ← main skill: legal/IP/compliance (4 branches)
+│   ├── SKILL.md / ROUTING.md
+│   └── law/ patent-drafting/ translation/ marketing-material-review/
+├── ai-tooling/                  ← main skill: AI engineering & prompts (2 branches)
+│   ├── SKILL.md / ROUTING.md
+│   └── prompt-engineering/ review-agent/
+├── ppt/                         ← format branch (stays top-level and direct)
+│   ├── SKILL.md                 ← skill body (required): when-to-use / toolchain / workflows / quick ref / self-check
 │   └── reference/              ← deep-dive material, loaded file by file (optional)
 │       ├── deck-dsl.md         # field-level syntax
 │       ├── design-guide.md     # design guidelines
 │       ├── themes.md           # theme catalog
 │       └── troubleshooting.md  # symptom→fix lookup
-├── docx/                       ← built-in skill 3: Word document authoring/editing
-│   ├── SKILL.md                # workflows A/B (new doc / edit), block quick reference, typography rules, self-check
-│   └── reference/
-│       ├── doc-dsl.md          # Doc JSON field-level syntax + edit_docx ops
-│       ├── design-guide.md     # Chinese document typography guidelines
-│       └── troubleshooting.md  # symptom→fix lookup
-├── xlsx/                       ← built-in skill 4: Excel spreadsheet authoring/editing
-│   ├── SKILL.md                # workflows A/B (new / edit), formula-first, quick reference, self-check
-│   └── reference/
-│       ├── workbook-dsl.md     # Workbook JSON field-level syntax + edit_xlsx ops
-│       ├── format-guide.md     # formula-first / number formats / financial conventions / edit integrity
-│       └── troubleshooting.md  # symptom→fix lookup
-├── data/                        ← built-in skill 5: data pipeline (transform_file)
-│   ├── SKILL.md                # pipeline ops / expression syntax / data-quality checks / cleaning·extraction·conversion recipes
-│   └── reference/
-│       ├── data-pipeline.md    # ops whitelist + expression evaluator
-│       └── data-quality.md     # quality checks / cleaning / conversion recipes
-├── svg/                        ← built-in skill 6: SVG vector drawing (image generation)
-│   ├── SKILL.md                # "generate → preview → iterate" workflow + tool boundaries (photos via download_file)
-│   └── reference/
-│       ├── svg-craft.md        # authoring rules: xmlns/viewBox requirements, 24 grid, path-first, text risk, color discipline
-│       └── svg-recipes.md      # ready-to-use templates: stroke icons / flowcharts / architecture / infographic cards / cover decor
-└── …/                          # plus paper/law/research/sift/llm-eval and 22 ported skills, 32 total
+├── docx/ xlsx/ data/ svg/ html/ pdf/
+│                                ← the other 6 format branches stay top-level and direct
+└── …/
 ```
 
 The registry lives in `WorkSkillService.registry()` (**the code is the registry, no config file**). Each `SkillInfo = { id, name, description, files: SkillFileInfo[] }`; `files` is the whitelist of files `load_skill` may read (`SKILL.md` is always allowed), guarding against path probing. **Unregistered skills are invisible to the model** — dropping docs into the directory without registering them does nothing.
 
+**Physical nesting + original-id loading**: branch skills have been moved out of the top-level `skills/` directory into their main-skill subdirectories, but `load_skill` still uses the original ids — `WorkSkillService.skillPath()` maps an id to its nested directory (e.g. `research` → `research-intelligence/research`), so the model never needs to know file locations. **Visibility**: `list_skills` returns only 12 visible skills (5 main skills + 7 format branches); the 25 branch skills are not listed directly and are loaded by their original id after routing through the main skill's `ROUTING.md`. The registry now contains 37 entries = 32 original skills + 5 main-skill routing entries.
+
 #### Loading chain (progressive disclosure)
 
 ```text
-System prompt "Skill system" section (a one-line trigger, static)
+System prompt "Skill library" section (default full_index: skill list + skill usage golden rules, static)
   → the model calls list_skills()            → WorkSkillService.listText()
-      returns: id + name + trigger semantics + file index
-  → the model calls load_skill("ppt")        → rawfile read of SKILL.md
-  → the model calls load_skill("ppt", "reference/deck-dsl.md") → load deep-dive file by file
+      returns: 12 visible skills (5 main + 7 format) id + name + trigger semantics + file index
+  → hit a main-skill domain → load_skill("<main skill>") → read SKILL.md/ROUTING.md, route to a branch
+  → load_skill("research")                   → skillPath() maps to research-intelligence/research, reads SKILL.md
+  → load_skill("ppt", "reference/deck-dsl.md") → load deep-dive file by file
 Dispatch: WorkFileService.dispatchTool() (pure TS, no .ets needed); both are registered in isReadOnlyTool() and may run concurrently.
 Results follow the normal tool rules: over 12K chars they are truncated head+tail (WORK_SKILL_MAX_CHARS is the hard cap on the loading side).
 ```
@@ -684,6 +688,7 @@ The description plays two roles: the expansion of the system-prompt trigger line
 3. If proactive triggering is wanted, add a sentence to the "Skill system" section of `AgentLoopService.buildWorkSystemPrompt()` (appending lines does not break the static red line);
 4. **No toolDefs/dispatchTool changes needed**: `list_skills`/`load_skill` are generic tools that automatically cover new skills;
 5. Self-test: in work mode run `list_skills` → `load_skill` every file to confirm nothing is truncated → run a real matching task and check the model follows the skill.
+6. If the new skill is a **branch skill**: place its directory under the matching main skill, add the id→subdirectory mapping in `WorkSkillService.skillPath()`, and add it to that main skill's `ROUTING.md`. If it is a new **main skill**: create `SKILL.md` + `ROUTING.md`, register it in `ROUTE_INDEX.md`, and add the entry in `registry()`.
 
 #### Maintenance red lines & portability
 
@@ -696,7 +701,7 @@ The description plays two roles: the expansion of the system-prompt trigger line
 1. `WorkFileService.toolDefs()`: register the schema (name/description/parameters) — this is what the model sees; use `props0`/`props1`/`props2`/`props3` to build property maps.
 2. `WorkFileService.dispatchTool()`: add the dispatch branch (for capabilities requiring `.ets` modules, dispatch from `WorkToolRunner.execute()` instead).
 3. Implement the executor returning a `ToolExecResult` (`ok`/`output`; `imageDataUrl` is reserved for view-image-style tools).
-4. `AgentLoopService.buildWorkSystemPrompt()`: document the tool and its discipline (stay byte-static; do not put large bodies of domain knowledge here — make it a skill, see 3.2).
+4. `AgentLoopService.buildWorkSystemPrompt()`: document the tool and its discipline (stay byte-static; do not put large bodies of domain knowledge here — make it a skill, see 3.3).
 5. If it mutates the workspace, register it in `WorkFileService.isMutatingTool()`; read-only tools go into `isReadOnlyTool()` (they may run concurrently).
 
 > Content that "teaches the model how to use the new tool" (DSL syntax, format specs, workflows) should become a skill doc rather than being stuffed into the tool description or the system prompt — the description states the purpose in one line, and the details are fetched via `load_skill` on demand.
@@ -867,6 +872,10 @@ You can also select content in Gallery or a file manager and choose Guncat Work 
 - **Child-agent workspace isolation (R67, version stays 6.2.0)**: each child agent gets its own output directory `subagents/sa_<timestamp>_<seq>/` by default (or use `output_dir`); the child can still read/search the entire main workspace, but all writes/creates/moves/deletes are automatically redirected or restricted into its own output directory (bare paths are auto-prefixed, `delete_file` clearing the workspace root is blocked, and `run_js` outputs land there too); the final report header includes the output directory — parallel child agents no longer overwrite each other's same-named files and cannot pollute, clobber, or delete main-loop files. Feedback is explicit: out-of-bounds writes show an "already redirected to…" notice before the tool result, and deleting/moving main-workspace files is blocked with a clear "out-of-bounds" error instead of "path not found".
 - **Conversation history moved to file storage (version stays 6.2.0)**: conversations no longer use a single Preferences value; they are saved to `filesDir/guncat_conversations.json`, removing the Preferences 16 MB single-value limit. Long work-mode tasks or many history conversations no longer disappear after restarting. On first launch after upgrading, existing Preferences conversations are migrated automatically and the legacy key is cleaned up.
 - **Fixed sidebar not refreshing immediately after delete/new (version stays 6.2.0)**: deleting a history conversation now removes the item from the sidebar/drawer immediately, and newly created conversations appear right away — no need to switch entries or close the drawer to force a refresh.
+- **Open unsupported file types with other apps (version stays 6.2.0)**: when HarmonyOS Preview Kit cannot preview a file (e.g. `.md`), tapping the file now directly opens the system "Open with" chooser, letting you pick an installed app that supports the file — no longer just an "unsupported preview" toast.
+- **Skill ecosystem reorganization: main skill → branch-skill subdirectories (version stays 6.2.0)**: to reduce overlapping skills and improve routing accuracy, 25 content/academic/legal/AI branch skills were physically moved into 5 main-skill subdirectories — `research-intelligence` (7 branches) / `academic-publishing` (7 branches) / `content-writing` (5 branches) / `legal-ip` (4 branches) / `ai-tooling` (2 branches); the 7 format branches (`docx`/`xlsx`/`ppt`/`svg`/`html`/`pdf`/`data`) remain top-level and direct. Added a global routing index `ROUTE_INDEX.md`; every main-skill directory ships `SKILL.md` + `ROUTING.md`.
+- **Branch skills no longer appear directly in the skill list (version stays 6.2.0)**: `list_skills` now exposes only 12 visible skills (5 main skills + 7 format branches). The 25 branch skills are loaded by their original id after routing (`load_skill("research")` still works — physical paths are mapped via `WorkSkillService.skillPath()`, so the model never needs to know file locations). The registry now has 37 entries = 32 original skills + 5 main-skill routing entries.
+- **Skill priority boost: skill usage golden rules (version stays 6.2.0)**: the system-prompt skill section now opens with mandatory golden rules — load on hit (the first step must be `load_skill`), check `list_skills` when unsure, main skill first, skill body outranks default behavior, and skipping a skill on a covered task counts as a violation. The `load_skill`/`list_skills` tool descriptions, the "skill-first" step of the four-step method, and the main-skill trigger words were all strengthened to raise the probability the model follows the skills.
 
 ## Version 6.1.2 (New agent: Guncat 3.1-Flash)
 
@@ -905,7 +914,7 @@ Alongside chat mode, this release adds an independent work mode: the 🛠 "Work 
 - **Material acquisition & image generation**: `download_file` pulls network images/files into the workspace (type sniffing, html warning, ≤20MB); `write_svg` lets the model hand-write SVG for icons/diagrams/infographics — validated automatically (xmlns/viewBox/no script) and rasterized to a PNG preview via the device image engine, forming a "generate → preview → iterate" loop with `view_image`; `write_pptx` can reference `.svg` directly (rasterized automatically on export). `search_files` gains a `glob` filename filter (`*.md`, `*.png,*.jpg`). `write_csv` adds explicit CSV support (RFC 4180 escaping + UTF-8 BOM).
 - **PPT pipeline (Deck JSON intermediate layer)**: aligned with open-kimi-ppt-skill's PPTD design — the AI writes a structured Deck source, and `PptxBuilder` renders 13 layouts (cover/TOC/section/bullets/two-column/image-text/image/full-bleed image/table/chart/quote/closing/free-form), 8 themes + custom palettes, charts (bar/line/area/pie/doughnut with embedded data), tables, images (workspace/data URL/http), and speaker notes; exported files embed a `docProps/deck.json` source so `read_ppt` restores them losslessly and `edit_ppt` applies operator-style edits (foreign pptx files are imported approximately and automatically backed up before rebuild); dark backgrounds lighten text and chart labels automatically. Five new modules (`DeckModel/PptxThemes/PptxCharts/PptxImage/PptxImporter`) plus a rewritten `PptxBuilder`; comes with the offline verification harness `test/pptx-harness/` (Node builds of all layouts + negatives, python-pptx structural checks, PowerPoint-rendered PNG reviews).
 - **Excel pipeline (Workbook JSON intermediate layer)**: an intermediate layer isomorphic to PPT/Word — the AI writes a structured Workbook source (multi-sheet / bold header fills in 3 themes / `=formulas` / number formats money·int·percent·year·date·number / column widths / freeze panes), `XlsxBuilder` renders all parts (embedding a `docProps/workbook.json` source), `read_xlsx` restores losslessly, and `edit_xlsx` applies operator-style edits (rename / add-delete-move sheets, row CRUD, set cell, replace text; foreign xlsx files are imported approximately and automatically backed up before rebuild). **Formula-first** plus the number-format and negative/zero display conventions draw on the MiniMax xlsx reference skill; the model-facing guide is the `xlsx` skill. Three new modules (`XlsxModel/XlsxBuilder/XlsxImporter`); `write_xlsx` keeps the `table` text fast path; comes with the offline verification harness `test/xlsx-harness/` (Node builds + openpyxl structural checks + embedded-source round-trip).
-- **Skill system**: domain operation guides are organized under `rawfile/skills/<id>/` (SKILL.md + reference/) and loaded progressively via `list_skills`/`load_skill`; the system prompt keeps only a one-line trigger, so the KV-cache prefix stays byte-stable. The bundled `ppt` skill covers Deck JSON syntax / design guidelines / content discipline / themes / deck blueprints / self-check lists, the `docx` skill covers Doc JSON syntax / typography rules / document form-factor selection / document blueprints / professional-document norms, the `xlsx` skill covers Workbook JSON syntax / formula-first / number formats / data-analysis delivery / report blueprints / analysis playbook / edit integrity, the `svg` skill covers authoring rules / the "generate → preview → iterate" workflow / visualization-type selection / infographic blueprints / recipes for icons, flowcharts, bar charts, and timelines, and the `data` skill covers pipeline ops / expression syntax / data-quality checks / cleaning-extraction-conversion recipes / capability boundaries; the skill format follows the standard Agent Skills convention and is portable across agent frameworks. Adding a skill = writing docs + registering it in `WorkSkillService.registry()` (see architecture guide 3.2).
+- **Skill system**: domain operation guides are organized under `rawfile/skills/<id>/` (SKILL.md + reference/) and loaded progressively via `list_skills`/`load_skill`; the system prompt keeps only a one-line trigger, so the KV-cache prefix stays byte-stable. The bundled `ppt` skill covers Deck JSON syntax / design guidelines / content discipline / themes / deck blueprints / self-check lists, the `docx` skill covers Doc JSON syntax / typography rules / document form-factor selection / document blueprints / professional-document norms, the `xlsx` skill covers Workbook JSON syntax / formula-first / number formats / data-analysis delivery / report blueprints / analysis playbook / edit integrity, the `svg` skill covers authoring rules / the "generate → preview → iterate" workflow / visualization-type selection / infographic blueprints / recipes for icons, flowcharts, bar charts, and timelines, and the `data` skill covers pipeline ops / expression syntax / data-quality checks / cleaning-extraction-conversion recipes / capability boundaries; the skill format follows the standard Agent Skills convention and is portable across agent frameworks. Adding a skill = writing docs + registering it in `WorkSkillService.registry()` (see architecture guide 3.3).
 - **Local parsing engine**: new `OfficeReader` (OOXML text extraction, fixing the `<w:t` prefix mismatch that leaked XML), `PdfTextExtractor` (byte-level object table / ObjStm expansion / page-tree resource inheritance / ToUnicode CJK mapping / content-stream parsing / fallback scan with diagnostics), and `Flate` (pure-TS DEFLATE inflate). The multimodal parsing API is no longer required.
 - **Codex-style timeline UI**: a single-container timeline (unique 🛠 header + task cards + per-turn "thinking→tools→answer"); tool steps expand to show arguments and results; intermediate turns hide action buttons; the workspace panel supports upload / zip export / clear.
 - **Stability fixes**: PDF parsing OOM (whole-file latin1 concatenation replaced with byte-level scanning + native utf-16le decoding); main-thread block appfreeze (parsing yields in stages and the fallback scan skips fonts/images/oversized streams with caps and pre-checks); the same O(n²) concatenation in `arrayBufferToBase64` was fixed as well.

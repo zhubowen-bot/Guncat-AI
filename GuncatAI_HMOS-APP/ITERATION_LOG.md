@@ -2383,3 +2383,25 @@
 
 ### 下一项
 - 继续维护：若有新增候选技能移植，按奇数轮进行；偶数轮继续复查/迭代已适配技能与文档同步。
+
+## 2026-09-20 R15：文件预览不支持时支持“用其他应用打开”
+
+### 目标
+- 工作区文件点击“预览”时，如果系统 Preview Kit 不支持该格式（如 `.md`），不再只提示“暂不支持”，而是提供“用其他应用打开”入口，拉起系统“打开方式”选择框，让用户选择手机上已安装的对应应用打开文件。
+
+### 变更
+- `entry/src/main/ets/viewmodel/ChatViewModel.ets`：
+  - `previewWorkspaceFile()`：`filePreview.canPreview()` 返回不支持时，直接调用 `openWorkspaceFileWithOtherApp()`，不再弹中间确认框。
+  - 新增 `openWorkspaceFileWithOtherApp()`：构造隐式 `Want`（`action: 'ohos.want.action.viewData'` + `uri` + UTD `type` + 读写 `flags` + `ability.params.stream` 数组 + `ohos.ability.params.showDefaultPicker=true`）并调用 `startAbility()`，强制系统展示“打开方式”选择弹框；无可用应用时 toast 提示“未找到可打开该文件的应用”。
+  - 从 `@kit.AbilityKit` 增加导入 `Want`、`wantConstant`。
+- 该入口自动覆盖 `WorkspaceBar`、`WorkArtifactsCard`、`ChatPage` 工作区列表等所有调用 `previewWorkspaceFile` 的位置。
+
+### 验证
+- 真机反馈：初版 `.md` 选择“用其他应用打开”时直接拉起系统“文件预览”应用并显示预览失败，而不是应用列表。
+- 已对照官方文档修正：`type` 改用 UTD（与文件后缀一致）、增加 `flags` URI 读写授权、`ability.params.stream` 改为 string 数组、并设置 `ohos.ability.params.showDefaultPicker=true` 强制展示打开方式弹框。
+- 本机尝试 `assembleHap` 构建验证时遇到环境问题：`~/.hvigor/project_caches/.../workspace/node_modules/@ohos/hvigor` 工程缓存已损坏（首次构建即报 `ENOENT ... hvigor.js`），且 DevEco Studio 正在运行导致缓存目录被占用，无法按提示重建。
+- 建议在 DevEco Studio 中关闭工程/退出 IDE 后清理 `~/.hvigor` 重建缓存，再执行 `assembleHap` 做最终编译验证。
+
+### 下一项
+- 在真机/模拟器验证 `.md` 等不支持系统预览的文件：点击预览 → 系统直接弹出“打开方式”选择应用并成功打开；无可用应用时提示友好。
+- 如产品需要，可再为支持预览的文件增加“更多”菜单里的“用其他应用打开”快捷入口。
