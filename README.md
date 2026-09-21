@@ -468,7 +468,7 @@ This project has been fully restructured, with **agent series** and **deployment
 
 ## License
 
-MIT License
+Apache-2.0 license
 
 Copyright (c) 2026 Zhu Bowen
 
@@ -876,6 +876,6 @@ Guncat Eval-LLM 的设计与提示词工程已开源技术报告：[技术报告
 
 ## 许可证
 
-MIT License
+Apache-2.0 license
 
 Copyright (c) 2026 Zhu Bowen
