@@ -79,7 +79,7 @@ The app is registered as a HarmonyOS system share target:
 
 - Receives images, text, and general files, up to five items at a time.
 - Guncat Work can be selected from the Gallery or file manager share sheet.
-- Shared items are added to the current chat's pending attachment area and are never sent automatically.
+- Shared items are added to the current chat's pending attachment area and are never sent automatically; if Work Mode is active, shared files are also copied into that conversation's sandbox workspace (`<filesDir>/workspaces/<convId>`) and picked up by the next task. The preview-area attachments are kept, so they can still be sent as attachments after switching back to Chat Mode.
 - Uses Share Kit UTD matching and `systemShare.getSharedData()` for reception.
 
 ### CoreSpeechKit read-aloud
@@ -789,7 +789,7 @@ Multimodal pre-parsing has a separate model, endpoint, and API key configuration
 3. Wait for pre-parsing; when pre-parsing is disabled, attachments are passed directly to a compatible multimodal endpoint.
 4. Review pending attachments and explicitly tap Send.
 
-You can also select content in Gallery or a file manager and choose Guncat Work from the system share sheet. The app only stages the items as attachments and does not submit a request automatically.
+You can also select content in Gallery or a file manager and choose Guncat Work from the system share sheet. The app stages the items as attachments and does not submit a request automatically; if Work Mode is active at the time, the shared files are also copied into the sandbox workspace so tasks can read them.
 
 #### Attachment strategy
 
@@ -876,6 +876,7 @@ You can also select content in Gallery or a file manager and choose Guncat Work 
 - **Skill ecosystem reorganization: main skill → branch-skill subdirectories (version stays 6.2.0)**: to reduce overlapping skills and improve routing accuracy, 25 content/academic/legal/AI branch skills were physically moved into 5 main-skill subdirectories — `research-intelligence` (7 branches) / `academic-publishing` (7 branches) / `content-writing` (5 branches) / `legal-ip` (4 branches) / `ai-tooling` (2 branches); the 7 format branches (`docx`/`xlsx`/`ppt`/`svg`/`html`/`pdf`/`data`) remain top-level and direct. Added a global routing index `ROUTE_INDEX.md`; every main-skill directory ships `SKILL.md` + `ROUTING.md`.
 - **Branch skills no longer appear directly in the skill list (version stays 6.2.0)**: `list_skills` now exposes only 12 visible skills (5 main skills + 7 format branches). The 25 branch skills are loaded by their original id after routing (`load_skill("research")` still works — physical paths are mapped via `WorkSkillService.skillPath()`, so the model never needs to know file locations). The registry now has 37 entries = 32 original skills + 5 main-skill routing entries.
 - **Skill priority boost: skill usage golden rules (version stays 6.2.0)**: the system-prompt skill section now opens with mandatory golden rules — load on hit (the first step must be `load_skill`), check `list_skills` when unsure, main skill first, skill body outranks default behavior, and skipping a skill on a covered task counts as a violation. The `load_skill`/`list_skills` tool descriptions, the "skill-first" step of the four-step method, and the main-skill trigger words were all strengthened to raise the probability the model follows the skills.
+- **Fixed system-shared files not reaching the Work Mode sandbox (version stays 6.2.0)**: files/images shared into the app through the system share sheet previously landed only in the pending-send preview area while in Work Mode — they were never written to the sandbox workspace, so work tasks could not read them. Shared files are now also copied into the current conversation's workspace (`<filesDir>/workspaces/<convId>`, reusing the upload path so original file names are kept), and the next task send automatically injects the "files uploaded to workspace" note. The preview area is kept as-is, so shared files can still be sent as attachments after switching back to Chat Mode; sharing while in Chat Mode behaves unchanged (preview only).
 
 ## Version 6.1.2 (New agent: Guncat 3.1-Flash)
 

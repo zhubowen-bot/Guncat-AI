@@ -1046,11 +1046,44 @@ export class ChatViewModel {
       promptAction.showToast({ message: '无法读取分享的文件', duration: 2000 });
       return;
     }
+    // 工作模式: 分享文件在进入预览区的同时写入沙箱工作区(工作模式发送只消费工作区文件)。
+    // 预览区照常保留: 之后切回聊天模式, 分享文件仍可作为附件发送。
+    let workspaceSynced: number = -1;
+    if (this.workMode && this.context !== null) {
+      let conv: Conversation | null = this.currentConversation;
+      if (conv !== null) {
+        let saved: string[] = WorkFileService.savePickedFiles(this.context, conv.id, files);
+        workspaceSynced = saved.length;
+        for (let i: number = 0; i < saved.length; i++) {
+          this.workspaceJustAdded.push(saved[i]);
+        }
+        if (saved.length > 0) {
+          await this.refreshWorkspace();
+        }
+      }
+    }
     await this.enqueueFiles(files);
-    promptAction.showToast({
-      message: files.length.toString() + ' 个分享文件已加入附件',
-      duration: 2000
-    });
+    if (workspaceSynced === files.length) {
+      promptAction.showToast({
+        message: files.length.toString() + ' 个分享文件已加入附件并同步到工作区',
+        duration: 2000
+      });
+    } else if (workspaceSynced > 0) {
+      promptAction.showToast({
+        message: workspaceSynced.toString() + '/' + files.length.toString() + ' 个分享文件已同步到工作区',
+        duration: 2000
+      });
+    } else if (workspaceSynced === 0) {
+      promptAction.showToast({
+        message: files.length.toString() + ' 个分享文件已加入附件, 但同步到工作区失败',
+        duration: 2000
+      });
+    } else {
+      promptAction.showToast({
+        message: files.length.toString() + ' 个分享文件已加入附件',
+        duration: 2000
+      });
+    }
   }
 
   // 附件能力前置检查
